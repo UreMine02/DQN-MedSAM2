@@ -3,6 +3,9 @@ from .amos import AMOS
 from .combined import Combined
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import Subset
+
+
 
 
 
@@ -27,9 +30,12 @@ def get_dataloader(args, rank=None, world_size=None):
     #     transforms.ToTensor(),
     # ])
     
-    if args.dataset == 'btcv':
+    if args.dataset == 'btcv': #png
         '''btcv data'''
         btcv_train_dataset = BTCV(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
+        # btcv_train_dataset = Subset(btcv_train_dataset, [0,1])
+        print(len(btcv_train_dataset)) 
+
         btcv_test_dataset = BTCV(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
         
         if args.distributed:
@@ -42,7 +48,7 @@ def get_dataloader(args, rank=None, world_size=None):
             nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True)
             nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
         '''end'''
-    elif args.dataset == 'combined':
+    elif args.dataset == 'combined': #nii
         combined_train_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
         combined_test_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
         

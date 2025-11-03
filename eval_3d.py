@@ -69,17 +69,30 @@ def train(rank=0, world_size=0):
     
     net.eval()
 
-    loss, iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
-
+    # loss, iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
+    iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
+    # loss = 0
+    # if args.distributed:
+    #     dist.all_reduce(loss), dist.all_reduce(iou), dist.all_reduce(dice)
+    #     loss, iou, dice = loss/world_size, iou/world_size, dice/world_size
+    #     print(f"val/loss: {loss}, val/IOU: {iou}, val/dice : {dice}")
+    # else:
+    #     print(f"val/loss: {loss}, val/IOU: {iou}, val/dice : {dice}")
+    
+    # if args.wandb_enabled:
+    #     wandb.log({'val/loss': loss,'val/IOU' : iou, 'val/dice' : dice})
+            
+    # if args.distributed:
+    #     cleanup()         
     if args.distributed:
-        dist.all_reduce(loss), dist.all_reduce(iou), dist.all_reduce(dice)
-        loss, iou, dice = loss/world_size, iou/world_size, dice/world_size
-        print(f"val/loss: {loss}, val/IOU: {iou}, val/dice : {dice}")
+        dist.all_reduce(iou), dist.all_reduce(dice)
+        iou, dice = iou/world_size, dice/world_size
+        print(f"val/IOU: {iou}, val/dice : {dice}")
     else:
-        print(f"val/loss: {loss}, val/IOU: {iou}, val/dice : {dice}")
+        print(f"val/IOU: {iou}, val/dice : {dice}")
     
     if args.wandb_enabled:
-        wandb.log({'val/loss': loss,'val/IOU' : iou, 'val/dice' : dice})
+        wandb.log({'val/IOU' : iou, 'val/dice' : dice})
             
     if args.distributed:
         cleanup()         

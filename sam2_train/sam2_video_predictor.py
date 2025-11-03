@@ -10,9 +10,14 @@ import torch
 
 from tqdm import tqdm
 
+import numpy as np
+
 from sam2_train.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, load_video_frames_from_data
 from torch.utils.checkpoint import checkpoint
+from sam2_train.q_learning_agent import DeepQAgent, ACTION_SPACE, map_action
+from sam2_train.q_learning_utils import compute_relative_loss, compute_loss_for_frame
+
 
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
@@ -34,6 +39,11 @@ class SAM2VideoPredictor(SAM2Base):
         self.non_overlap_masks = non_overlap_masks
         self.clear_non_cond_mem_around_input = clear_non_cond_mem_around_input
         self.clear_non_cond_mem_for_multi_obj = clear_non_cond_mem_for_multi_obj
+        # self.q_agent = DeepQAgent(max_memory=10, alpha=0.1, gamma=0.9, epsilon=0.2)
+        self.q_agent = DeepQAgent(
+        state_dim=18,      # 2 + 16 (features)
+        ACTION_DIM=len(ACTION_SPACE),    # fix = 5
+        lr=1e-3, gamma=0.99, epsilon=0.1)
 
     @torch.inference_mode()
     def init_state(
@@ -226,6 +236,7 @@ class SAM2VideoPredictor(SAM2Base):
         # the original video height and width, used for resizing final output scores
         inference_state["video_height"] = video_height
         inference_state["video_width"] = video_width
+        inference_state["gt_masks"] = masks_tensor
         if offload_state_to_cpu:
             inference_state["device"] = torch.device("cpu")
         else:
@@ -1092,7 +1103,7 @@ class SAM2VideoPredictor(SAM2Base):
         
         inference_state["support_set_stage"] = False
         processing_order = range(num_frames)
-
+        print("processing_order: ", processing_order)
         for frame_idx in processing_order:
             # We skip those frames already in consolidated outputs (these are frames
             # that received input clicks or mask). Note that we cannot directly run
@@ -1183,7 +1194,8 @@ class SAM2VideoPredictor(SAM2Base):
                 inference_state, pred_masks
             )
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks
-
+    
+    # add features to memory bank
     def _add_output_per_object(
         self, inference_state, frame_idx, current_out, storage_key
     ):
@@ -1206,11 +1218,152 @@ class SAM2VideoPredictor(SAM2Base):
                 "pred_masks": current_out["pred_masks"][obj_slice],
                 "obj_ptr": current_out["obj_ptr"][obj_slice],
             }
+            # if maskmem_features is not None:
+            #     obj_out["maskmem_features"] = maskmem_features[obj_slice]
+            # if maskmem_pos_enc is not None:
+            #     obj_out["maskmem_pos_enc"] = [x[obj_slice] for x in maskmem_pos_enc]
+            # obj_output_dict[storage_key][frame_idx] = obj_out
+
+            # --- Q-learning decision to add memory or skip ---
+            # candidate tensors for this object/frame
+            candidate_features = None
+            candidate_pos_enc = None
+            candidate_score = None
+
             if maskmem_features is not None:
-                obj_out["maskmem_features"] = maskmem_features[obj_slice]
+                candidate_features = maskmem_features[obj_slice]  
             if maskmem_pos_enc is not None:
-                obj_out["maskmem_pos_enc"] = [x[obj_slice] for x in maskmem_pos_enc]
-            obj_output_dict[storage_key][frame_idx] = obj_out
+                candidate_pos_enc = [x[obj_slice] for x in maskmem_pos_enc]
+            candidate_score = None
+            if "ious" in current_out and current_out["ious"] is not None:
+                # if iou is batched, pick obj_idx in some consistent way -> conducting fallback:
+                try:
+                    candidate_score = float(current_out["ious"].mean().item())
+                except Exception:
+                    candidate_score = None
+
+            # default: if no maskmem features -> nothing to add
+            if candidate_features is None:
+                obj_output_dict[storage_key][frame_idx] = obj_out
+            else:
+                # state representation: current memory size and candidate_score
+                mem_list = obj_output_dict[storage_key]  # dict keyed by frame index
+                current_mem_len = len(mem_list)
+                # state: use tuple to be hashable; extend as you wish
+                # add mem_feature
+                # state = (current_mem_len, (candidate_score if candidate_score is not None else 0.0))
+                
+                
+                # feature_vec = torch.mean(candidate_features, dim=[2, 3]).flatten().detach().cpu().numpy()
+                feature_vec = candidate_features.float().mean(dim=[2, 3]).flatten().detach().cpu().numpy()
+
+                feature_vec = feature_vec[:16] 
+
+                state = np.concatenate([
+                    np.array([current_mem_len, candidate_score or 0.0]),
+                    feature_vec
+                ])
+
+                # available actions: 0=skip; if not full -> 1 = add; if full -> 1..N for drop index
+                max_mem = getattr(self, "num_maskmem", None)
+                if max_mem is None:
+                    # fallback to model attr or global config
+                    max_mem = getattr(self, "max_mem", args.memory_bank_size) if 'args' in globals() else 8
+
+                # if current_mem_len < max_mem:
+                #     available = [0, 1]
+                # else:
+                #     available = [0] + [i+1 for i in range(current_mem_len)]
+
+                # get agent 
+                agent = getattr(self, "q_agent", None)
+                if agent is None:
+                    # no agent present: fallback to previous behavior (add)
+                    # assign as normal
+                    obj_out["maskmem_features"] = candidate_features
+                    if candidate_pos_enc is not None:
+                        obj_out["maskmem_pos_enc"] = candidate_pos_enc
+                    obj_output_dict[storage_key][frame_idx] = obj_out
+                else:
+                    # ask agent
+                    action = agent.select_action(state)
+
+                    # compute loss_before 
+                    loss_before = compute_loss_for_frame(self, inference_state, frame_idx, obj_output_dict, maskmem=True)
+
+                    if action == 0:
+                        # skip add: do not include maskmem_features
+                        reward = 0.0
+                    else:
+                        drop_key = None
+                        dropped = None
+                        if current_mem_len >= max_mem:
+                            drop_key = map_action(action, obj_output_dict, storage_key, current_out)
+                            # safety: ensure drop_key exists in dict
+                            if drop_key is not None and drop_key in obj_output_dict[storage_key]:
+                                # pop but keep a copy for logging/rollback if needed
+                                dropped = obj_output_dict[storage_key].pop(drop_key)
+                            else:
+                                # no valid drop_key (maybe map_action returned None) -> nothing popped
+                                dropped = None  
+                            if drop_key is None:
+                                # map_action couldn't select drop (no mem or action was skip)
+                                pass
+                            else:
+                                print(f"[Q] obj {obj_idx} frame {frame_idx} action {action} drop_key {drop_key}")
+
+                        # rebuild temp_mem 
+                        temp_mem = [obj_output_dict[storage_key][k] for k in sorted(obj_output_dict[storage_key].keys())]
+
+
+                        # append candidate (as structure similar to obj_out)
+                        candidate_out = obj_out.copy()
+                        candidate_out["maskmem_features"] = candidate_features
+                        if candidate_pos_enc is not None:
+                            candidate_out["maskmem_pos_enc"] = candidate_pos_enc
+                        temp_mem.append(candidate_out)
+
+                        # compute loss_after using helper that runs model forward with temp_mem
+                        loss_after = compute_loss_for_frame(self, inference_state, frame_idx, temp_mem_list=temp_mem, maskmem=True)
+
+                        # relative loss reward (compute_relative_loss can wrap this)
+                        eps = 1e-8
+                        # relative loss
+                        reward = (loss_before - loss_after) / (abs(loss_before) + eps)
+
+                        # now apply the action to the real obj_output_dict:
+                        # if we popped dropped above, it already removed; else if we created dropped variable, we've already popped it.
+                        # Append the candidate to obj_output_dict with this frame_idx
+                        obj_out["maskmem_features"] = candidate_features
+                        if candidate_pos_enc is not None:
+                            obj_out["maskmem_pos_enc"] = candidate_pos_enc
+
+                    # commit to store (skip or add)
+                    obj_output_dict[storage_key][frame_idx] = obj_out
+
+                    # update agent: compute next_state & next_available
+                    next_mem_len = len(obj_output_dict[storage_key])
+                    # next_feature_vec = torch.mean(candidate_features, dim=[2,3]).flatten().detach().cpu().numpy()
+                    next_feature_vec = torch.mean(candidate_features.float(), dim=[2, 3]).flatten().detach().cpu().numpy()
+                    next_feature_vec = next_feature_vec[:16]
+
+                    next_state = np.concatenate([
+                        np.array([next_mem_len, candidate_score or 0.0]),
+                        next_feature_vec
+                    ])
+
+                    # if next_mem_len < max_mem:
+                    #     next_available = [0, 1]
+                    # else:
+                    #     next_available = [0] + [i+1 for i in range(next_mem_len)]
+
+                    done = False  # hoặc True nếu hết video
+                    agent.store(state, action, reward, next_state, done)
+                    # with torch.enable_grad():
+                    #     if self.training:
+                    #         agent.update()
+
+
 
     # @torch.inference_mode()
     def reset_state(self, inference_state):

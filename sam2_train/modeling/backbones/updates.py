@@ -81,11 +81,11 @@ class PointEmbeddingExtractor(nn.Module):
         mask_softmax = F.softmax(mask_flat, dim=0)
         mask_softmax_2d = mask_softmax.view(mask.shape)  # Shape: [H, W]
         # Proba = 0.5
-        coords = torch.nonzero(mask_softmax_2d > 0.001, as_tuple=False)  # [num_points, 2]
+        coords = torch.nonzero(mask_softmax_2d > 0.002, as_tuple=False)  # [num_points, 2]
 
         # Calculate the number of points where mask == 1
         num_points = coords.size(0)
-        print('numpoint', num_points)
+        # print('numpoint', num_points)
         # Sample coordinates if necessary (in case the number of points is large)
         if num_points > 0:
             sample = np.random.choice(num_points, num_points, replace=False)  # Sample without replacement

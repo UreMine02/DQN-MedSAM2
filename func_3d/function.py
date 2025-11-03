@@ -18,6 +18,7 @@ import wandb
 import matplotlib.pyplot as plt
 from torchvision.utils import save_image
 
+
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
@@ -32,13 +33,15 @@ global_step_best = 0
 epoch_loss_values = []
 metric_values = []
 
+
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
         net = net.module
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
-
+    # _q_agent = SimpleQAgent(max_memory=args.memory_bank_size)
+    # net.q_agent = _q_agent
     # train mode
     net.train()
     video_length = args.video_length
@@ -49,7 +52,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     # Record total loss thoroughout the entire epoch
     total_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
     target_class = 4 
-
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img') as pbar:
         for packs in train_loader:
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -76,6 +78,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 if obj_id not in dice_loss_per_class.keys():
                     dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0} 
                 imgs_tensor = pack['image']
+                # print('imgs_tensor',imgs_tensor.shape)
                 masks_tensor = pack['label']
 
                 support_imgs_tensor = pack["support_image"]
@@ -96,12 +99,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 support_pair = []
                 for frame_idx in range(support_imgs_tensor.shape[0]):
                     support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
+                    # print(support_imgs_tensor[frame_idx].shape)
+                    # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
+                    # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
                     support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
                     support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
 
                 # if args.wandb_enabled:
                 #     wandb.log({"train/support set": support_pair})
-
+                
                 with torch.cuda.amp.autocast():
                     for frame_idx in range(support_masks_tensor.shape[0]):
                         mask = support_masks_tensor[frame_idx]
@@ -136,16 +142,19 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
                             for i, out_obj_id in enumerate(out_obj_ids)
                         }
-
+                    
                     # Record the loss in this step
                     class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0} 
                     wandb_result = []
+                    # print('video_segments',list(video_segments.keys()))
                     for frame_idx in video_segments.keys():
                         if args.wandb_enabled:
                             whole_gt_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
                             whole_pred_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
                             output = video_segments[frame_idx]
+                            # print('img',imgs_tensor.shape)
                             original_img_wandb = imgs_tensor[frame_idx, 0, :, :].detach().cpu().numpy()
+                            # original_img_wandb = imgs_tensor[frame_idx, :, :].detach().cpu().numpy()
 
                             pred_mask = torch.where(torch.sigmoid(output[obj_id]["pred_mask"][0, :, :])>=0.5, obj_id, 0)
                             whole_pred_mask += pred_mask
@@ -177,7 +186,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             #                 wandb.Image(original_img_wandb, masks={"ground_truth": {"mask_data": whole_gt_mask}}, caption="label"),
                             #                 wandb.Image(original_img_wandb, masks={"predictions": {"mask_data": whole_pred_mask}}, caption="prediction")]
                             #                 ]
-
+                        
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
                         if mask is not None:
@@ -205,7 +214,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         wandb_result = [wandb_input for wandb_inputs in wandb_result for wandb_input in wandb_inputs]
                         # wandb.log({f"train image/ {int(obj_id)}": wandb_result})
                         # wandb.log({f"train image": wandb_result})
-
+                    
                     # Average loss of this class
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"]
@@ -213,6 +222,21 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     optimizer.zero_grad()
                     avg_loss.backward()
                     optimizer.step()
+
+                    try:
+                        # lấy agent từ model (nếu có attach)
+                        agent = getattr(net, "q_agent", None)
+                        if agent is not None:
+                            # chỉ update nếu buffer đủ lớn AND đang train (not validation)
+                            # optional: bạn có tham số điều chỉnh số update per step
+                            q_updates_per_step = getattr(args, "q_updates_per_step", 1)
+                            # ensure grad enabled (in case update() called while global no_grad)
+                            for _ in range(q_updates_per_step):
+                                with torch.enable_grad():
+                                    agent.update()
+                    except Exception as e:
+                        # không crash toàn bộ training vì agent; log lỗi để debug
+                        print("[Q-agent] update failed:", e)
 
                     # Add the loss of the class to the instance
                     update_loss(instance_loss, class_loss["focal_loss"], class_loss["dice_loss"], class_loss["mae_loss"], class_loss["bce_loss"])
@@ -295,13 +319,14 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                 if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
                     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
                     continue
-
+        
                 train_state = net.val_init_state(imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor)
-                
+                # print('train_st:', train_state)
                 support_pair = []
                 filtered_support_pair = []
                 for frame_idx in range(support_imgs_tensor.shape[0]):
                     support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
+                    # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
                     support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
                     support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
                      # Add to the filtered support pair if the label contains the current obj_id
@@ -319,6 +344,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         for frame_idx in range(support_masks_tensor.shape[0]):
+                            
                             mask = support_masks_tensor[frame_idx]
                             _, _, _ = net.train_add_new_mask(
                                 inference_state=train_state,
@@ -459,7 +485,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
 
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
-                
                 if args.wandb_enabled:
                     if len(wandb_result) > 5:
                         sampled_index = np.random.choice(range(len(wandb_result)), size=5)
@@ -471,6 +496,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
 
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
+
                 instance_score["num_step"] += 1
 
             average_score(instance_score)

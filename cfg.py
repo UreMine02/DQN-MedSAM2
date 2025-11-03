@@ -12,7 +12,8 @@ def parse_args():
     parser.add_argument('-prompt_freq', type=int, default=2, help='frequency of giving prompt in 3D images')
     # parser.add_argument('-pretrain', type=str, default="/workspace/fred/MedSeg/medsam2-fred/checkpoint/best_mix_selector_checkpoint.pth", help='path of pretrain weights')
     # parser.add_argument('-pretrain', type=str, default="/workspace/03_khoa/medsam2-icl/checkpoint/2024-12-31-16-37-21/epoch_64.pth", help='path of pretrain weights')
-    parser.add_argument('-pretrain', type=str, default="/mnt/12T/cuong/medsam2-icl/checkpoint/MedSAM2_pretrain.pth", help='path of pretrain weights')
+    # parser.add_argument('-pretrain', type=str, default="/mnt/12T/cuong/medsam2-icl/checkpoint/MedSAM2_pretrain.pth", help='path of pretrain weights')
+    parser.add_argument('-pretrain', type=str, default="", help='path of pretrain weights')
     # parser.add_argument('-pretrain', type=str, default=None, help='path of pretrain weights')
     parser.add_argument('-val_freq',type=int,default=3,help='interval between each validation')
     parser.add_argument('-gpu', type=bool, default=True, help='use gpu or not')
@@ -31,7 +32,7 @@ def parse_args():
     parser.add_argument('-multimask_output', type=int, default=1 , help='the number of masks output for multi-class segmentation')
     parser.add_argument('-memory_bank_size', type=int, default=16, help='sam 2d memory bank size')
     parser.add_argument('-support_instance', type=str, default="img0039", help='support instance'),
-    parser.add_argument('-data_path', type=str, default='/mnt/12T/fred/medical_image/btcv', help='The path of segmentation data'),
+    parser.add_argument('-data_path', type=str, default='/mnt/12T/cuong/AAAI/Combined_Dataset', help='The path of segmentation data'),
     parser.add_argument('-num_support', type=int, default=10, help='saving trained checkpoints')
     parser.add_argument('-save_ckpt', type=bool, default=True, help='enable wandb')
     parser.add_argument('-wandb_enabled', type=bool, default=True, help='enable wandb')

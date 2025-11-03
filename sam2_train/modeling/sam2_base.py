@@ -95,7 +95,7 @@ class SAM2Base(torch.nn.Module):
         sam_mask_decoder_extra_args=None,
         compile_image_encoder: bool = False,
         # number loops of final iterative masking
-        num_iterative_loop=2,
+        num_iterative_loop=1,
     ):
         super().__init__()
 
@@ -379,8 +379,8 @@ class SAM2Base(torch.nn.Module):
             # print('low_res_multimasks', low_res_multimasks.size())
             # print('multimask_output', multimask_output)
             
-            if i < self.num_iterative_loop - 1:
-                backbone_features = self.backboneUpdate(backbone_features, low_res_multimasks)
+            # if i < self.num_iterative_loop - 1:
+            #     backbone_features = self.backboneUpdate(backbone_features, low_res_multimasks)
                 # print('backbone_features_after', backbone_features.size())
                 # print('low_res_multimasks_after', low_res_multimasks.size())
                 # res_mask_encoding = X(low_res_multimasks)
@@ -410,7 +410,7 @@ class SAM2Base(torch.nn.Module):
         else:
             low_res_masks, high_res_masks = low_res_multimasks, high_res_multimasks
             best_iou = ious
-        print('best iou', best_iou)
+        # print('best iou', best_iou)
 
 
            

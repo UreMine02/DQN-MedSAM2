@@ -427,10 +427,10 @@ def average_loss(loss_dict):
         loss_dict["bce_loss"] = 0
         loss_dict["total_loss"] = 0
         return
-    loss_dict["focal_loss"] = loss_dict["focal_loss"]/loss_dict["num_step"]
-    loss_dict["dice_loss"] = loss_dict["dice_loss"]/loss_dict["num_step"]
-    loss_dict["mae_loss"] = loss_dict["mae_loss"]/loss_dict["num_step"]
-    loss_dict["bce_loss"] = loss_dict["bce_loss"]/loss_dict["num_step"]
+    loss_dict["focal_loss"] = loss_dict["focal_loss"]/(loss_dict["num_step"]+ 1e-6)
+    loss_dict["dice_loss"] = loss_dict["dice_loss"]/(loss_dict["num_step"]+ 1e-6)
+    loss_dict["mae_loss"] = loss_dict["mae_loss"]/(loss_dict["num_step"]+ 1e-6)
+    loss_dict["bce_loss"] = loss_dict["bce_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["total_loss"] += loss_dict["focal_loss"] + loss_dict["dice_loss"] + loss_dict["mae_loss"] + loss_dict["bce_loss"]
 
 def update_score(score_dict, dice_score, iou_score):
@@ -438,8 +438,8 @@ def update_score(score_dict, dice_score, iou_score):
     score_dict["iou_score"] += iou_score
 
 def average_score(score_dict):
-    score_dict["dice_score"] = score_dict["dice_score"]/score_dict["num_step"]
-    score_dict["iou_score"] = score_dict["iou_score"]/score_dict["num_step"]
+    score_dict["dice_score"] = score_dict["dice_score"]/(score_dict["num_step"] + 1e-6)
+    score_dict["iou_score"] = score_dict["iou_score"]/(score_dict["num_step"] + 1e-6)
     score_dict["total_score"] += score_dict["dice_score"] + score_dict["iou_score"]
 
 def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
