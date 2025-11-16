@@ -4,20 +4,18 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import numpy as np
+from tqdm import tqdm
 from collections import OrderedDict
 
 import torch
-
-from tqdm import tqdm
-
-import numpy as np
+from torch.utils.checkpoint import checkpoint
 
 from sam2_train.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, load_video_frames_from_data
-from torch.utils.checkpoint import checkpoint
-from sam2_train.q_learning_agent import DeepQAgent, ACTION_SPACE, map_action
-from sam2_train.q_learning_utils import compute_relative_loss, compute_loss_for_frame
-
+from sam2_train.q_learning_agent import DeepQAgent, ACTION_SPACE
+from sam2_train.q_learning_utils import prepare_rl_state, compute_loss
+from monai.losses import FocalLoss, DiceLoss
 
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
@@ -39,11 +37,12 @@ class SAM2VideoPredictor(SAM2Base):
         self.non_overlap_masks = non_overlap_masks
         self.clear_non_cond_mem_around_input = clear_non_cond_mem_around_input
         self.clear_non_cond_mem_for_multi_obj = clear_non_cond_mem_for_multi_obj
-        # self.q_agent = DeepQAgent(max_memory=10, alpha=0.1, gamma=0.9, epsilon=0.2)
         self.q_agent = DeepQAgent(
-        state_dim=18,      # 2 + 16 (features)
-        ACTION_DIM=len(ACTION_SPACE),    # fix = 5
-        lr=1e-3, gamma=0.99, epsilon=0.1)
+            action_dim=len(ACTION_SPACE),
+            num_maskmem=self.num_maskmem-1,
+            lr=1e-4, gamma=0.99, beta=0.9,
+            batch_size=64
+        )
 
     @torch.inference_mode()
     def init_state(
@@ -94,6 +93,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["output_dict"] = {
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+            "await_outputs": {}
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -116,6 +116,7 @@ class SAM2VideoPredictor(SAM2Base):
     @torch.inference_mode()
     def val_init_state(
         self,
+        args,
         imgs_tensor,
         masks_tensor,
         support_imgs_tensor,
@@ -155,6 +156,7 @@ class SAM2VideoPredictor(SAM2Base):
         # the original video height and width, used for resizing final output scores
         inference_state["video_height"] = video_height
         inference_state["video_width"] = video_width
+        inference_state["gt_masks"] = masks_tensor
         if offload_state_to_cpu:
             inference_state["storage_device"] = torch.device("cpu")
         else:
@@ -174,6 +176,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["output_dict"] = {
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+            "await_outputs": {}
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -191,11 +194,16 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["frames_already_tracked"] = {}
         # Warm up the visual backbone and cache the image feature on frame 0
         inference_state["support_set_stage"] = True
+        inference_state["rl_config"] = {
+            "lazy_penalty": args.lazy_penalty,
+            "invalid_penalty": args.invalid_penalty
+        }
         return inference_state
 
     # @torch.inference_mode()
     def train_init_state(
         self,
+        args,
         imgs_tensor,
         masks_tensor,
         support_imgs_tensor,
@@ -256,6 +264,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["output_dict"] = {
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+            "await_outputs": {},
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -274,6 +283,11 @@ class SAM2VideoPredictor(SAM2Base):
         # Warm up the visual backbone and cache the image feature on frame 0
 
         inference_state["support_set_stage"] = True
+        
+        inference_state["rl_config"] = {
+            "lazy_penalty": args.lazy_penalty,
+            "invalid_penalty": args.invalid_penalty
+        }
         return inference_state
 
     def _obj_id_to_idx(self, inference_state, obj_id):
@@ -297,6 +311,7 @@ class SAM2VideoPredictor(SAM2Base):
             inference_state["output_dict_per_obj"][obj_idx] = {
                 "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
                 "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
+                "await_outputs": {}
             }
             inference_state["temp_output_dict_per_obj"][obj_idx] = {
                 "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
@@ -1144,6 +1159,7 @@ class SAM2VideoPredictor(SAM2Base):
         start_frame_idx=None,
         max_frame_num_to_track=None,
         reverse=False,
+        train_agent=False,
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1168,7 +1184,7 @@ class SAM2VideoPredictor(SAM2Base):
             # batched forward on them via `_run_single_frame_inference` because the
             # number of clicks on each object might be different.
             
-            storage_key = "non_cond_frame_outputs"
+            storage_key = "await_outputs"
             current_out, pred_masks = self._run_single_frame_inference(
                 inference_state=inference_state,
                 output_dict=output_dict,
@@ -1179,6 +1195,8 @@ class SAM2VideoPredictor(SAM2Base):
                 mask_inputs=None,
                 reverse=reverse,
                 run_mem_encoder=True,
+                agent_act=True,
+                train_agent=train_agent,
             )
             output_dict[storage_key][frame_idx] = current_out
             # Create slices of per-object outputs for subsequent interaction with each
@@ -1194,8 +1212,10 @@ class SAM2VideoPredictor(SAM2Base):
                 inference_state, pred_masks
             )
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks
+            
+        self.q_agent.clear_await()
     
-    # add features to memory bank
+    
     def _add_output_per_object(
         self, inference_state, frame_idx, current_out, storage_key
     ):
@@ -1218,151 +1238,11 @@ class SAM2VideoPredictor(SAM2Base):
                 "pred_masks": current_out["pred_masks"][obj_slice],
                 "obj_ptr": current_out["obj_ptr"][obj_slice],
             }
-            # if maskmem_features is not None:
-            #     obj_out["maskmem_features"] = maskmem_features[obj_slice]
-            # if maskmem_pos_enc is not None:
-            #     obj_out["maskmem_pos_enc"] = [x[obj_slice] for x in maskmem_pos_enc]
-            # obj_output_dict[storage_key][frame_idx] = obj_out
-
-            # --- Q-learning decision to add memory or skip ---
-            # candidate tensors for this object/frame
-            candidate_features = None
-            candidate_pos_enc = None
-            candidate_score = None
-
             if maskmem_features is not None:
-                candidate_features = maskmem_features[obj_slice]  
+                obj_out["maskmem_features"] = maskmem_features[obj_slice]
             if maskmem_pos_enc is not None:
-                candidate_pos_enc = [x[obj_slice] for x in maskmem_pos_enc]
-            candidate_score = None
-            if "ious" in current_out and current_out["ious"] is not None:
-                # if iou is batched, pick obj_idx in some consistent way -> conducting fallback:
-                try:
-                    candidate_score = float(current_out["ious"].mean().item())
-                except Exception:
-                    candidate_score = None
-
-            # default: if no maskmem features -> nothing to add
-            if candidate_features is None:
-                obj_output_dict[storage_key][frame_idx] = obj_out
-            else:
-                # state representation: current memory size and candidate_score
-                mem_list = obj_output_dict[storage_key]  # dict keyed by frame index
-                current_mem_len = len(mem_list)
-                # state: use tuple to be hashable; extend as you wish
-                # add mem_feature
-                # state = (current_mem_len, (candidate_score if candidate_score is not None else 0.0))
-                
-                
-                # feature_vec = torch.mean(candidate_features, dim=[2, 3]).flatten().detach().cpu().numpy()
-                feature_vec = candidate_features.float().mean(dim=[2, 3]).flatten().detach().cpu().numpy()
-
-                feature_vec = feature_vec[:16] 
-
-                state = np.concatenate([
-                    np.array([current_mem_len, candidate_score or 0.0]),
-                    feature_vec
-                ])
-
-                # available actions: 0=skip; if not full -> 1 = add; if full -> 1..N for drop index
-                max_mem = getattr(self, "num_maskmem", None)
-                if max_mem is None:
-                    # fallback to model attr or global config
-                    max_mem = getattr(self, "max_mem", args.memory_bank_size) if 'args' in globals() else 8
-
-                # if current_mem_len < max_mem:
-                #     available = [0, 1]
-                # else:
-                #     available = [0] + [i+1 for i in range(current_mem_len)]
-
-                # get agent 
-                agent = getattr(self, "q_agent", None)
-                if agent is None:
-                    # no agent present: fallback to previous behavior (add)
-                    # assign as normal
-                    obj_out["maskmem_features"] = candidate_features
-                    if candidate_pos_enc is not None:
-                        obj_out["maskmem_pos_enc"] = candidate_pos_enc
-                    obj_output_dict[storage_key][frame_idx] = obj_out
-                else:
-                    # ask agent
-                    action = agent.select_action(state)
-
-                    # compute loss_before 
-                    loss_before = compute_loss_for_frame(self, inference_state, frame_idx, obj_output_dict, maskmem=True)
-
-                    if action == 0:
-                        # skip add: do not include maskmem_features
-                        reward = 0.0
-                    else:
-                        drop_key = None
-                        dropped = None
-                        if current_mem_len >= max_mem:
-                            drop_key = map_action(action, obj_output_dict, storage_key, current_out)
-                            # safety: ensure drop_key exists in dict
-                            if drop_key is not None and drop_key in obj_output_dict[storage_key]:
-                                # pop but keep a copy for logging/rollback if needed
-                                dropped = obj_output_dict[storage_key].pop(drop_key)
-                            else:
-                                # no valid drop_key (maybe map_action returned None) -> nothing popped
-                                dropped = None  
-                            if drop_key is None:
-                                # map_action couldn't select drop (no mem or action was skip)
-                                pass
-                            else:
-                                print(f"[Q] obj {obj_idx} frame {frame_idx} action {action} drop_key {drop_key}")
-
-                        # rebuild temp_mem 
-                        temp_mem = [obj_output_dict[storage_key][k] for k in sorted(obj_output_dict[storage_key].keys())]
-
-
-                        # append candidate (as structure similar to obj_out)
-                        candidate_out = obj_out.copy()
-                        candidate_out["maskmem_features"] = candidate_features
-                        if candidate_pos_enc is not None:
-                            candidate_out["maskmem_pos_enc"] = candidate_pos_enc
-                        temp_mem.append(candidate_out)
-
-                        # compute loss_after using helper that runs model forward with temp_mem
-                        loss_after = compute_loss_for_frame(self, inference_state, frame_idx, temp_mem_list=temp_mem, maskmem=True)
-
-                        # relative loss reward (compute_relative_loss can wrap this)
-                        eps = 1e-8
-                        # relative loss
-                        reward = (loss_before - loss_after) / (abs(loss_before) + eps)
-
-                        # now apply the action to the real obj_output_dict:
-                        # if we popped dropped above, it already removed; else if we created dropped variable, we've already popped it.
-                        # Append the candidate to obj_output_dict with this frame_idx
-                        obj_out["maskmem_features"] = candidate_features
-                        if candidate_pos_enc is not None:
-                            obj_out["maskmem_pos_enc"] = candidate_pos_enc
-
-                    # commit to store (skip or add)
-                    obj_output_dict[storage_key][frame_idx] = obj_out
-
-                    # update agent: compute next_state & next_available
-                    next_mem_len = len(obj_output_dict[storage_key])
-                    # next_feature_vec = torch.mean(candidate_features, dim=[2,3]).flatten().detach().cpu().numpy()
-                    next_feature_vec = torch.mean(candidate_features.float(), dim=[2, 3]).flatten().detach().cpu().numpy()
-                    next_feature_vec = next_feature_vec[:16]
-
-                    next_state = np.concatenate([
-                        np.array([next_mem_len, candidate_score or 0.0]),
-                        next_feature_vec
-                    ])
-
-                    # if next_mem_len < max_mem:
-                    #     next_available = [0, 1]
-                    # else:
-                    #     next_available = [0] + [i+1 for i in range(next_mem_len)]
-
-                    done = False  # hoặc True nếu hết video
-                    agent.store(state, action, reward, next_state, done)
-                    # with torch.enable_grad():
-                    #     if self.training:
-                    #         agent.update()
-
+                obj_out["maskmem_pos_enc"] = [x[obj_slice] for x in maskmem_pos_enc]
+            obj_output_dict[storage_key][frame_idx] = obj_out
 
 
     # @torch.inference_mode()
@@ -1438,6 +1318,8 @@ class SAM2VideoPredictor(SAM2Base):
         reverse,
         run_mem_encoder,
         prev_sam_mask_logits=None,
+        agent_act=False,
+        train_agent=False,
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -1448,6 +1330,42 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             feat_sizes,
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
+        
+        storage_device = inference_state["device"]
+        # QAgent
+        if agent_act and frame_idx > 0:
+            # Finalize replay buffer instance from previous frame
+            if frame_idx > 1 and train_agent:
+                self.agent_update_second_stage(
+                    inference_state=inference_state,
+                    output_dict=output_dict,
+                    frame_idx=frame_idx,
+                    storage_device=storage_device,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                )
+            
+            # Initiate replay buffer instance for current frame
+            track_step_kwargs = {
+                "is_init_cond_frame": is_init_cond_frame,
+                "feat_sizes": feat_sizes,
+                "point_inputs": point_inputs,
+                "mask_inputs": mask_inputs,
+                "num_frames": inference_state["num_frames"],
+                "track_in_reverse": reverse,
+                "run_mem_encoder": run_mem_encoder,
+                "prev_sam_mask_logits": prev_sam_mask_logits,
+            }
+            self.agent_update_first_stage(
+                inference_state=inference_state,
+                storage_device=storage_device,
+                frame_idx=frame_idx,
+                current_vision_feats=current_vision_feats,
+                current_vision_pos_embeds=current_vision_pos_embeds,
+                output_dict=output_dict,
+                train_agent=train_agent,
+                **track_step_kwargs
+            )
 
         # point and mask should not appear as input simultaneously on the same frame
         assert point_inputs is None or mask_inputs is None
@@ -1467,7 +1385,6 @@ class SAM2VideoPredictor(SAM2Base):
         )
 
         # optionally offload the output to CPU memory to save GPU space
-        storage_device = inference_state["device"]
         maskmem_features = current_out["maskmem_features"]
         if maskmem_features is not None:
             maskmem_features = maskmem_features.to(torch.bfloat16)
@@ -1571,3 +1488,137 @@ class SAM2VideoPredictor(SAM2Base):
             non_cond_frame_outputs.pop(t, None)
             for obj_output_dict in inference_state["output_dict_per_obj"].values():
                 obj_output_dict["non_cond_frame_outputs"].pop(t, None)
+
+    def agent_update_first_stage(
+        self,
+        inference_state,
+        storage_device,
+        frame_idx,
+        current_vision_feats,
+        current_vision_pos_embeds,
+        output_dict,
+        train_agent,
+        **kwargs
+    ):
+        # compute loss before
+        loss_before = None
+        if train_agent:
+            with torch.no_grad():
+                output_before = self.track_step(
+                    frame_idx=frame_idx,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    **kwargs
+                )
+
+            pred_masks = output_before["pred_masks"]
+            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+            gt_masks = gt_masks.to(torch.float32) 
+                
+            loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+        
+        state, action_frame_map = prepare_rl_state(
+            current_vision_feats,
+            current_vision_pos_embeds,
+            output_dict,
+            frame_idx,
+            self.num_maskmem - 1,
+            offload_to_cpu=False,
+            training=train_agent
+        )
+        
+        bank_size = len(output_dict["non_cond_frame_outputs"])
+        bank_full = (bank_size >= self.num_maskmem - 1)
+        valid_actions = [0] if bank_full else [0, 1]
+        valid_actions.extend(list(action_frame_map.keys()))
+        with torch.no_grad():
+            action = self.q_agent.select_action(
+                state,
+                valid_actions=torch.tensor(valid_actions),
+                bank_size=bank_size,
+                training=train_agent
+            ) # ask agent
+            
+        state.offload_to_cpu()
+
+        reward = 0
+        drop_frame = None
+        storage_key = "non_cond_frame_outputs"
+        if action == 0:
+            if not bank_full:
+                reward = inference_state["rl_config"]["lazy_penalty"]
+            else:
+                reward = 0
+        elif action == 1:
+            if bank_full:
+                raise ValueError(
+                    f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
+                # penalty for adding to full bank without dropping
+                reward = inference_state["rl_config"]["invalid_penalty"]
+            else:
+                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        else:
+            # drop_frame = map_action(action, output_dict, storage_key)
+            # # safety: ensure drop_key exists in dict
+            # if drop_frame is not None:
+            #     # pop but keep a copy for logging/rollback if needed
+            #     output_dict[storage_key].pop(drop_frame)
+            #     output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            # else:
+            #     # penalty for droppingw from empty bank
+            #     reward = -10
+            
+            if action not in action_frame_map.keys():
+                # penalty for dropping blank
+                raise ValueError(
+                    f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
+                reward = inference_state["rl_config"]["invalid_penalty"]
+            else:
+                # drop_frame = list(output_dict[storage_key].keys())[drop_key]
+                drop_frame = action_frame_map[action]
+                output_dict[storage_key].pop(drop_frame)    
+                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        
+        # if not train_agent:
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} reward {reward}")
+        
+        if train_agent:
+            replay_instance_info = {
+                "frame_idx": frame_idx,
+                "state": state,
+                "action": action,
+                "loss_before": loss_before.detach().cpu(),
+                "reward": reward
+            }
+            
+            self.q_agent.init_new_replay_instance(**replay_instance_info)
+
+    # loss_after + next_state
+    def agent_update_second_stage(
+        self,
+        inference_state,
+        output_dict,
+        frame_idx,
+        storage_device,
+        current_vision_feats,
+        current_vision_pos_embeds,
+    ):
+        pred_masks_gpu = output_dict["await_outputs"][frame_idx-1]["pred_masks"]
+        pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
+        gt_masks = inference_state["gt_masks"][frame_idx-1].to(device=storage_device, non_blocking=True)
+        gt_masks = gt_masks.to(torch.float32) 
+        
+        loss_after = compute_loss(pred_masks, gt_masks, inference_state)
+        
+        next_state, action_frame_map = prepare_rl_state(
+            current_vision_feats,
+            current_vision_pos_embeds,
+            output_dict,
+            frame_idx,
+            self.num_maskmem - 1,
+            offload_to_cpu=True
+        )
+        
+        self.q_agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)

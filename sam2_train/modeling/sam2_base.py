@@ -493,15 +493,15 @@ class SAM2Base(torch.nn.Module):
 
     def forward_image(self, img_batch: torch.Tensor):
         """Get the image feature on the input batch."""
-        backbone_out = checkpoint(self.image_encoder, img_batch, use_reentrant=False)
+        backbone_out = self.image_encoder(img_batch)
         if self.use_high_res_features_in_sam:
             # precompute projected level 0 and level 1 features in SAM decoder
             # to avoid running it again on every SAM click
-            backbone_out["backbone_fpn"][0] = checkpoint(self.sam_mask_decoder.conv_s0, 
-                backbone_out["backbone_fpn"][0], use_reentrant=False
+            backbone_out["backbone_fpn"][0] = self.sam_mask_decoder.conv_s0( 
+                backbone_out["backbone_fpn"][0]
             )
-            backbone_out["backbone_fpn"][1] = checkpoint(self.sam_mask_decoder.conv_s1,
-                backbone_out["backbone_fpn"][1], use_reentrant=False
+            backbone_out["backbone_fpn"][1] = self.sam_mask_decoder.conv_s1(
+                backbone_out["backbone_fpn"][1]
             )
         return backbone_out
 
@@ -532,6 +532,7 @@ class SAM2Base(torch.nn.Module):
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
     ):
+        # print("output_dict", output_dict["non_cond_frame_outputs"].keys())
         """Fuse the current frame's visual feature map with previous memory."""
         B = current_vision_feats[-1].size(1)  # batch size on this frame
         C = self.hidden_dim
@@ -544,6 +545,7 @@ class SAM2Base(torch.nn.Module):
             return pix_feat
 
         num_obj_ptr_tokens = 0
+        prev_frame_idx_list = []
         # Step 1: condition the visual features of the current frame on previous memories
         if not is_init_cond_frame:
             # Retrieve the memories encoded with the maskmem backbone
@@ -562,37 +564,43 @@ class SAM2Base(torch.nn.Module):
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
             # We also allow taking the memory frame non-consecutively (with r>1), in which case
             # we take (self.num_maskmem - 2) frames among every r-th frames plus the last frame.
-            r = self.memory_temporal_stride_for_eval
-            for t_pos in range(1, self.num_maskmem):
-                t_rel = self.num_maskmem - t_pos  # how many frames before current frame
-                if t_rel == 1:
-                    # for t_rel == 1, we take the last frame (regardless of r)
-                    if not track_in_reverse:
-                        # the frame immediately before this frame (i.e. frame_idx - 1)
-                        prev_frame_idx = frame_idx - t_rel
-                    else:
-                        # the frame immediately after this frame (i.e. frame_idx + 1)
-                        prev_frame_idx = frame_idx + t_rel
-                else:
-                    # for t_rel >= 2, we take the memory frame from every r-th frames
-                    if not track_in_reverse:
-                        # first find the nearest frame among every r-th frames before this frame
-                        # for r=1, this would be (frame_idx - 2)
-                        prev_frame_idx = ((frame_idx - 2) // r) * r
-                        # then seek further among every r-th frames
-                        prev_frame_idx = prev_frame_idx - (t_rel - 2) * r
-                    else:
-                        # first find the nearest frame among every r-th frames after this frame
-                        # for r=1, this would be (frame_idx + 2)
-                        prev_frame_idx = -(-(frame_idx + 2) // r) * r
-                        # then seek further among every r-th frames
-                        prev_frame_idx = prev_frame_idx + (t_rel - 2) * r
-                out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
-                if out is None:
-                    # If an unselected conditioning frame is among the last (self.num_maskmem - 1)
-                    # frames, we still attend to it as if it's a non-conditioning frame.
-                    out = unselected_cond_outputs.get(prev_frame_idx, None)
-                t_pos_and_prevs.append((t_pos, out))
+            # r = self.memory_temporal_stride_for_eval
+            # for t_pos in range(1, self.num_maskmem):
+            #     t_rel = self.num_maskmem - t_pos  # how many frames before current frame
+            #     if t_rel == 1:
+            #         # for t_rel == 1, we take the last frame (regardless of r)
+            #         if not track_in_reverse:
+            #             # the frame immediately before this frame (i.e. frame_idx - 1)
+            #             prev_frame_idx = frame_idx - t_rel
+            #         else:
+            #             # the frame immediately after this frame (i.e. frame_idx + 1)
+            #             prev_frame_idx = frame_idx + t_rel
+            #     else:
+            #         # for t_rel >= 2, we take the memory frame from every r-th frames
+            #         if not track_in_reverse:
+            #             # first find the nearest frame among every r-th frames before this frame
+            #             # for r=1, this would be (frame_idx - 2)
+            #             prev_frame_idx = ((frame_idx - 2) // r) * r
+            #             # then seek further among every r-th frames
+            #             prev_frame_idx = prev_frame_idx - (t_rel - 2) * r
+            #         else:
+            #             # first find the nearest frame among every r-th frames after this frame
+            #             # for r=1, this would be (frame_idx + 2)
+            #             prev_frame_idx = -(-(frame_idx + 2) // r) * r
+            #             # then seek further among every r-th frames
+            #             prev_frame_idx = prev_frame_idx + (t_rel - 2) * r
+            #     out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
+            #     if out is None:
+            #         # If an unselected conditioning frame is among the last (self.num_maskmem - 1)
+            #         # frames, we still attend to it as if it's a non-conditioning frame.
+            #         out = unselected_cond_outputs.get(prev_frame_idx, None)
+            #     if out is not None:
+            #         prev_frame_idx_list.append(prev_frame_idx)
+            #     t_pos_and_prevs.append((t_pos, out))
+
+            t_pos_and_prevs.extend(
+                [(t_pos, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
+            )
 
             for t_pos, prev in t_pos_and_prevs:
                 if prev is None:
@@ -682,7 +690,7 @@ class SAM2Base(torch.nn.Module):
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
-
+        
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
