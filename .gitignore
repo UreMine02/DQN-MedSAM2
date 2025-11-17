@@ -1,6 +1,7 @@
 checkpoint/
 !checkpoint/download_ckpts.sh
 checkpoints/
+output/
 wandb/
 full_grad/
 __pycache__/

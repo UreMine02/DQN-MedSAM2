@@ -4,6 +4,8 @@
 
 import os
 import matplotlib.pyplot as plt
+import time
+import psutil
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -18,6 +20,7 @@ import wandb
 import matplotlib.pyplot as plt
 from torchvision.utils import save_image
 
+import tracemalloc
 
 args = cfg.parse_args()
 
@@ -33,8 +36,8 @@ global_step_best = 0
 epoch_loss_values = []
 metric_values = []
 
-
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
+    tracemalloc.start()
     if args.distributed:
         net = net.module
         GPUdevice = torch.device('cuda', rank)
@@ -44,6 +47,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     # net.q_agent = _q_agent
     # train mode
     net.train()
+    net.q_agent.set_epoch(epoch, distributed=args.distributed)
+    for name, param in net.named_parameters():
+        if "image_encoder" in name:
+            param.requires_grad_(False)
+        if "sam_prompt_encoder" in name:
+            param.requires_grad_(False)
+        if "memory_encoder" in name:
+            param.requires_grad_(False)
+        
     video_length = args.video_length
     dice_loss_per_class = {}
 
@@ -51,7 +63,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
     # Record total loss thoroughout the entire epoch
     total_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
-    target_class = 4 
+    target_class = 4
+    agent_loss = 0
+    agent_step = 0
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img') as pbar:
         for packs in train_loader:
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -74,9 +88,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # print(f"Query Tensor: Slices={whole_imgs_tensor.shape[0]}, Unique Classes={torch.unique(whole_masks_tensor)}")
                     # print(f"Support Tensor: Slices={whole_support_imgs_tensor.shape[0]}, Unique Classes={torch.unique(whole_support_masks_tensor)}")
                     continue
-                torch.cuda.empty_cache()
+                # torch.cuda.empty_cache()
                 if obj_id not in dice_loss_per_class.keys():
-                    dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0} 
+                    dice_loss_per_class[name] = {"dice_loss":0, "num_step": 0} 
                 imgs_tensor = pack['image']
                 # print('imgs_tensor',imgs_tensor.shape)
                 masks_tensor = pack['label']
@@ -94,16 +108,20 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 # support_imgs_tensor, support_masks_tensor = sample_diverse_support(
                 #     support_imgs_tensor, support_masks_tensor, num_samples=args.num_support
                 # )
-                train_state = net.train_init_state(imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor)
+                train_state = net.train_init_state(
+                    args=args,
+                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
+                )
                 
-                support_pair = []
-                for frame_idx in range(support_imgs_tensor.shape[0]):
-                    support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
-                    # print(support_imgs_tensor[frame_idx].shape)
-                    # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
-                    # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
-                    support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
-                    support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
+                if args.wandb_enabled:
+                    support_pair = []
+                    for frame_idx in range(support_imgs_tensor.shape[0]):
+                        support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
+                        # print(support_imgs_tensor[frame_idx].shape)
+                        # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
+                        # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
+                        support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
+                        support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
 
                 # if args.wandb_enabled:
                 #     wandb.log({"train/support set": support_pair})
@@ -135,8 +153,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         #     )
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
-                
-                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state):
+
+                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, train_agent=True):
                         video_segments[out_frame_idx] = {
                             out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                             "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
@@ -145,48 +163,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     
                     # Record the loss in this step
                     class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0} 
-                    wandb_result = []
-                    # print('video_segments',list(video_segments.keys()))
+
                     for frame_idx in video_segments.keys():
-                        if args.wandb_enabled:
-                            whole_gt_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
-                            whole_pred_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
-                            output = video_segments[frame_idx]
-                            # print('img',imgs_tensor.shape)
-                            original_img_wandb = imgs_tensor[frame_idx, 0, :, :].detach().cpu().numpy()
-                            # original_img_wandb = imgs_tensor[frame_idx, :, :].detach().cpu().numpy()
-
-                            pred_mask = torch.where(torch.sigmoid(output[obj_id]["pred_mask"][0, :, :])>=0.5, obj_id, 0)
-                            whole_pred_mask += pred_mask
-
-                            gt_mask = video_segments[frame_idx][obj_id]["image_label"]
-                            if gt_mask is not None:
-                                gt_mask = torch.where(gt_mask==1, obj_id, 0).to(device=GPUdevice)
-                                whole_gt_mask += gt_mask
-
-                            whole_pred_mask = whole_pred_mask.detach().cpu().numpy()
-                            whole_gt_mask = whole_gt_mask.detach().cpu().numpy()
-                            # Normalize original image
-                            original_img_wandb = (original_img_wandb - original_img_wandb.min()) / (original_img_wandb.max() - original_img_wandb.min())
-                            original_img_wandb = (original_img_wandb * 255).astype(np.uint8)  # Scale to 0–255
-                            # Overlap visualization
-                            overlap = np.stack([original_img_wandb] * 3, axis=-1)  # Shape: (H, W, 3)
-                            overlap[whole_gt_mask == obj_id] = [0, 255, 0]  # Green for ground truth
-                            overlap[whole_pred_mask == obj_id] = [255, 0, 0]  # Red for prediction
-                            overlap[(whole_gt_mask == obj_id) & (whole_pred_mask == obj_id)] = [255, 255, 0]  # Yellow for overlap
-
-                            # Append the WandB result
-                            wandb_result += [[
-                                wandb.Image(original_img_wandb, caption="Image"),
-                                wandb.Image(original_img_wandb, masks={"ground_truth": {"mask_data": whole_gt_mask}}, caption="Label"),
-                                wandb.Image(original_img_wandb, masks={"predictions": {"mask_data": whole_pred_mask}}, caption="Prediction"),
-                                wandb.Image(overlap, caption="Overlap")
-                            ] + support_pair]
-                            # wandb_result += [[wandb.Image(original_img_wandb, caption="image"),
-                            #                 wandb.Image(original_img_wandb, masks={"ground_truth": {"mask_data": whole_gt_mask}}, caption="label"),
-                            #                 wandb.Image(original_img_wandb, masks={"predictions": {"mask_data": whole_pred_mask}}, caption="prediction")]
-                            #                 ]
-                        
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
                         if mask is not None:
@@ -197,23 +175,13 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
                         _, iou_gt = eval_seg(pred, mask)
-                        dice_loss, focal_loss, mae_loss, bce_loss= lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
+                        dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss)
 
-                        dice_loss_per_class[obj_id]["dice_loss"] += dice_loss
-                        dice_loss_per_class[obj_id]["num_step"] += 1
-
-                    if args.wandb_enabled:
-                        if len(wandb_result) > 5:
-                            sampled_index = np.random.choice(range(len(wandb_result)), size=5)
-                        else:
-                            sampled_index = range(len(wandb_result))
-                        wandb_result = [wandb_inputs for frame_idx, wandb_inputs in enumerate(wandb_result) if frame_idx in sampled_index]
-                        wandb_result = [wandb_input for wandb_inputs in wandb_result for wandb_input in wandb_inputs]
-                        # wandb.log({f"train image/ {int(obj_id)}": wandb_result})
-                        # wandb.log({f"train image": wandb_result})
+                        dice_loss_per_class[name]["dice_loss"] += dice_loss.item()
+                        dice_loss_per_class[name]["num_step"] += 1
                     
                     # Average loss of this class
                     average_loss(class_loss)
@@ -223,23 +191,34 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss.backward()
                     optimizer.step()
 
-                    try:
+                    # try:
                         # lấy agent từ model (nếu có attach)
-                        agent = getattr(net, "q_agent", None)
-                        if agent is not None:
-                            # chỉ update nếu buffer đủ lớn AND đang train (not validation)
-                            # optional: bạn có tham số điều chỉnh số update per step
-                            q_updates_per_step = getattr(args, "q_updates_per_step", 1)
-                            # ensure grad enabled (in case update() called while global no_grad)
-                            for _ in range(q_updates_per_step):
-                                with torch.enable_grad():
-                                    agent.update()
-                    except Exception as e:
-                        # không crash toàn bộ training vì agent; log lỗi để debug
-                        print("[Q-agent] update failed:", e)
+                    if args.distributed:
+                        torch.distributed.barrier()
+                    agent = getattr(net, "q_agent", None)
+                    if agent is not None:
+                        # chỉ update nếu buffer đủ lớn AND đang train (not validation)
+                        # optional: bạn có tham số điều chỉnh số update per step
+                        q_updates_per_step = getattr(args, "q_updates_per_step", 1)
+                        # ensure grad enabled (in case update() called while global no_grad)
+                        with torch.enable_grad():
+                            agent_step_loss = agent.update(q_updates_per_step)
+                            if agent_step_loss is not None:
+                                agent_loss += agent_step_loss
+                                agent_step += 1
+                                
+                    # except Exception as e:
+                    #     # không crash toàn bộ training vì agent; log lỗi để debug
+                    #     print("[Q-agent] update failed:", e)
 
                     # Add the loss of the class to the instance
-                    update_loss(instance_loss, class_loss["focal_loss"], class_loss["dice_loss"], class_loss["mae_loss"], class_loss["bce_loss"])
+                    update_loss(
+                        instance_loss, 
+                        class_loss["focal_loss"].item(),
+                        class_loss["dice_loss"].item(),
+                        class_loss["mae_loss"].item(),
+                        class_loss["bce_loss"].item()
+                    )
                     instance_loss["num_step"] += 1
             
             average_loss(instance_loss)
@@ -247,19 +226,28 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             # avg_loss.backward()
             # optimizer.step()
 
-            update_loss(total_loss, instance_loss["focal_loss"], instance_loss["dice_loss"], instance_loss["mae_loss"], instance_loss["bce_loss"])
+            update_loss(total_loss, 
+                instance_loss["focal_loss"], 
+                instance_loss["dice_loss"], 
+                instance_loss["mae_loss"], 
+                instance_loss["bce_loss"]
+            )
             total_loss["num_step"] += 1
-
             pbar.update()
+            
+            # process = psutil.Process(os.getpid())
+            # memory_info = process.memory_info()
+            # print(f"Memory Usage (RSS): {memory_info.rss / (1024 * 1024):.2f} MB")
+
         
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
-
+    
     if args.wandb_enabled:
         for class_, dice_loss in dice_loss_per_class.items():
-            wandb.log({f"train/Class {class_}": dice_loss})
+            wandb.log({f"train/Class {class_} loss": dice_loss}, step=epoch)
 
-    return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"]
+    return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], agent_loss / agent_step
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank=None):
     if args.distributed:
@@ -301,7 +289,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
                 if obj_id not in dice_score_per_class.keys():
-                    dice_score_per_class[obj_id] = {"dice_score":0, "num_step": 0} 
+                    dice_score_per_class[name] = {"dice_score":0, "num_step": 0} 
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -320,7 +308,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
                     continue
         
-                train_state = net.val_init_state(imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor)
+                train_state = net.val_init_state(
+                    args=args,
+                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
+                )
                 # print('train_st:', train_state)
                 support_pair = []
                 filtered_support_pair = []
@@ -340,7 +331,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                         )
                 
                 if args.wandb_enabled:
-                    wandb.log({"test/support set": support_pair})
+                    wandb.log({"test/support set": support_pair}, step=epoch)
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -439,37 +430,37 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                 wandb_result = []
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
-                    if args.wandb_enabled:
-                        whole_gt_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
-                        whole_pred_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
-                        output = video_segments[frame_idx]
-                        original_img_wandb = imgs_tensor[frame_idx, 0, :, :].detach().cpu().numpy()
+                    # if args.wandb_enabled:
+                    #     whole_gt_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
+                    #     whole_pred_mask = torch.zeros(imgs_tensor.shape[2:]).to(device=GPUdevice)
+                    #     output = video_segments[frame_idx]
+                    #     original_img_wandb = imgs_tensor[frame_idx, 0, :, :].detach().cpu().numpy()
 
-                        pred_mask = torch.where(torch.sigmoid(output[obj_id]["pred_mask"][0, :, :])>=0.5, obj_id, 0)
-                        whole_pred_mask += pred_mask
+                    #     pred_mask = torch.where(torch.sigmoid(output[obj_id]["pred_mask"][0, :, :])>=0.5, obj_id, 0)
+                    #     whole_pred_mask += pred_mask
 
-                        gt_mask = output[obj_id]["image_label"]
-                        if gt_mask is not None:
-                            gt_mask = torch.where(gt_mask==1, obj_id, 0).to(device=GPUdevice)
-                            whole_gt_mask += gt_mask
+                    #     gt_mask = output[obj_id]["image_label"]
+                    #     if gt_mask is not None:
+                    #         gt_mask = torch.where(gt_mask==1, obj_id, 0).to(device=GPUdevice)
+                    #         whole_gt_mask += gt_mask
 
-                        whole_pred_mask = whole_pred_mask.detach().cpu().numpy()
-                        whole_gt_mask = whole_gt_mask.detach().cpu().numpy()
-                        # Normalize original image
-                        original_img_wandb = (original_img_wandb - original_img_wandb.min()) / (original_img_wandb.max() - original_img_wandb.min())
-                        original_img_wandb = (original_img_wandb * 255).astype(np.uint8)  # Scale to 0–255
-                        # Overlap visualization
-                        overlap = np.stack([original_img_wandb] * 3, axis=-1)  # Shape: (H, W, 3)
-                        overlap[whole_gt_mask == obj_id] = [0, 255, 0]  # Green for ground truth
-                        overlap[whole_pred_mask == obj_id] = [255, 0, 0]  # Red for prediction
-                        overlap[(whole_gt_mask == obj_id) & (whole_pred_mask == obj_id)] = [255, 255, 0]  # Yellow for overlap
+                    #     whole_pred_mask = whole_pred_mask.detach().cpu().numpy()
+                    #     whole_gt_mask = whole_gt_mask.detach().cpu().numpy()
+                    #     # Normalize original image
+                    #     original_img_wandb = (original_img_wandb - original_img_wandb.min()) / (original_img_wandb.max() - original_img_wandb.min())
+                    #     original_img_wandb = (original_img_wandb * 255).astype(np.uint8)  # Scale to 0–255
+                    #     # Overlap visualization
+                    #     overlap = np.stack([original_img_wandb] * 3, axis=-1)  # Shape: (H, W, 3)
+                    #     overlap[whole_gt_mask == obj_id] = [0, 255, 0]  # Green for ground truth
+                    #     overlap[whole_pred_mask == obj_id] = [255, 0, 0]  # Red for prediction
+                    #     overlap[(whole_gt_mask == obj_id) & (whole_pred_mask == obj_id)] = [255, 255, 0]  # Yellow for overlap
 
-                        wandb_result += [[
-                            wandb.Image(original_img_wandb, caption="Image"),
-                            wandb.Image(original_img_wandb, masks={"ground_truth": {"mask_data": whole_gt_mask}}, caption="Label"),
-                            wandb.Image(original_img_wandb, masks={"predictions": {"mask_data": whole_pred_mask}}, caption="Prediction"),
-                            wandb.Image(overlap, caption="Overlap")
-                        ] + support_pair]  # Append support_pair directly to the WandB result
+                    #     wandb_result += [[
+                    #         wandb.Image(original_img_wandb, caption="Image"),
+                    #         wandb.Image(original_img_wandb, masks={"ground_truth": {"mask_data": whole_gt_mask}}, caption="Label"),
+                    #         wandb.Image(original_img_wandb, masks={"predictions": {"mask_data": whole_pred_mask}}, caption="Prediction"),
+                    #         wandb.Image(overlap, caption="Overlap")
+                    #     ] + support_pair]  # Append support_pair directly to the WandB result
                         
                         
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
@@ -480,19 +471,19 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                         update_score(class_score, dice_score, iou_score)
                         class_score["num_step"] += 1
 
-                        dice_score_per_class[obj_id]["dice_score"] += dice_score
-                        dice_score_per_class[obj_id]["num_step"] += 1
+                        dice_score_per_class[name]["dice_score"] += dice_score
+                        dice_score_per_class[name]["num_step"] += 1
 
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
-                if args.wandb_enabled:
-                    if len(wandb_result) > 5:
-                        sampled_index = np.random.choice(range(len(wandb_result)), size=5)
-                    else:
-                        sampled_index = range(len(wandb_result))
-                    wandb_result = [wandb_inputs for frame_idx, wandb_inputs in enumerate(wandb_result) if frame_idx in sampled_index]
-                    wandb_result = [wandb_input for wandb_inputs in wandb_result for wandb_input in wandb_inputs]
-                    wandb.log({f"test image/ {int(obj_id)}": wandb_result})
+                # if args.wandb_enabled:
+                #     if len(wandb_result) > 5:
+                #         sampled_index = np.random.choice(range(len(wandb_result)), size=5)
+                #     else:
+                #         sampled_index = range(len(wandb_result))
+                #     wandb_result = [wandb_inputs for frame_idx, wandb_inputs in enumerate(wandb_result) if frame_idx in sampled_index]
+                #     wandb_result = [wandb_input for wandb_inputs in wandb_result for wandb_input in wandb_inputs]
+                #     wandb.log({f"test image/ {int(obj_id)}": wandb_result}, step=epoch)
 
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
@@ -500,7 +491,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                 instance_score["num_step"] += 1
 
             average_score(instance_score)
-            print(f"Name: {name} Dice score: {instance_score["dice_score"]} IoU score: {instance_score["iou_score"]}")
+            print(f"Name: {name} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
             total_score["num_step"] += 1
             pbar.update()
@@ -511,7 +502,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
 
     if args.wandb_enabled:
         for class_, dice_score in dice_score_per_class.items():
-            wandb.log({f"test/Class {class_}": dice_score})
+            wandb.log({f"test/Class {class_}": dice_score}, step=epoch)
 
     dice_score_string = ""
     for class_, dice_score in dice_score_per_class.items():

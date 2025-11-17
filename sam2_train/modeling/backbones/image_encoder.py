@@ -31,7 +31,8 @@ class ImageEncoder(nn.Module):
         # feature: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
         # pos: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
 
-        features, pos = checkpoint(self.neck, checkpoint(self.trunk, sample, use_reentrant=False), use_reentrant=False) 
+        # features, pos = checkpoint(self.neck, checkpoint(self.trunk, sample, use_reentrant=False), use_reentrant=False) 
+        features, pos = self.neck(self.trunk(sample)) 
         if self.scalp > 0:
             # Discard the lowest resolution features
             features, pos = features[: -self.scalp], pos[: -self.scalp]

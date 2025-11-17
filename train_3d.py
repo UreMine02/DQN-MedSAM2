@@ -44,27 +44,24 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', args.gpu_device)
 
     if args.wandb_enabled:
-        # wandb.init(
-        #     project="branch-3-test",  # New project name
-        #     entity="medsam2-icl",           # New team workspace
-        #     name=args.exp_name              # Experiment name from args
-        # )
         wandb.init(
-            project="branch-3-test",  # New project name
-            entity="phammanhcuong1808-victoria-university-of-wellington",           # New team workspace
+            project="dqn-medsam2",
             name=args.exp_name              # Experiment name from args
         )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
     net.to(dtype=torch.bfloat16)
-
+    
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
+        if "q_agent" in weights.keys():
+            net.q_agent.q_net.load_state_dict(weights["q_agent"])
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])
+        net.module.q_agent.q_net = DDP(net.module.q_agent.q_net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False)
     # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
@@ -88,27 +85,45 @@ def train(rank=0, world_size=0):
         print(f"checkpoint saved in {checkpoint_path}")
 
     '''begain training'''
-    for epoch in range(settings.EPOCH):
+    for epoch in range(args.ep):
         net.train()
         time_start = time.time()
-        loss, dice_loss, focal_loss, mae_loss, bce_loss = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
+        loss, dice_loss, focal_loss, mae_loss, bce_loss, agent_loss = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
+        loss_dict = {
+            'train/loss': loss, 
+            'train/dice loss': dice_loss, 
+            'train/focal loss': focal_loss, 
+            'train/mae_loss': mae_loss, 
+            'train/bce_loss': bce_loss, 
+            "train/agent_loss": agent_loss
+        }
+        
         if args.wandb_enabled and loss is not None:
-            wandb.log({'train/loss': loss, 'train/dice loss': dice_loss, 'train/focal loss': focal_loss, 'train/mae_loss': mae_loss, 'train/bce_loss': bce_loss})
+            wandb.log(loss_dict, step=epoch)
         time_end = time.time()
-        print(f"train/loss: {loss}, train/dice loss: {dice_loss}, train/focal loss: {focal_loss}, train/mae_loss: {mae_loss}, 'train/bce_loss': {bce_loss}")
+        print(loss_dict)
         print('time_for_training ', time_end - time_start)
 
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:
-                torch.save({'model': net.module.state_dict()}, os.path.join(checkpoint_path, f"epoch_{epoch}.pth"))
+                torch.save({
+                    'model': net.module.state_dict(),
+                    'q_agent': net.module.q_agent.q_net.module.state_dict(),
+                },
+                os.path.join(checkpoint_path, f"epoch_{epoch}.pth")
+            )
             elif not args.distributed:
-                torch.save({'model': net.state_dict()}, os.path.join(checkpoint_path, f"epoch_{epoch}.pth"))
+                torch.save({
+                    'model': net.state_dict(),
+                    'q_agent': net.q_agent.q_net.state_dict(),
+                },
+                os.path.join(checkpoint_path, f"epoch_{epoch}.pth"))
 
         if args.distributed:
             torch.distributed.barrier()
         
         net.eval()
-        if epoch % args.val_freq == 0 or epoch == settings.EPOCH-1:
+        if epoch % args.val_freq == 0 or epoch == args.ep-1:
             
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
 
@@ -120,7 +135,7 @@ def train(rank=0, world_size=0):
                 print(f"val/IOU: {iou}, val/dice : {dice}")
             
             if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice})
+                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
             
     if args.distributed:
         cleanup()         

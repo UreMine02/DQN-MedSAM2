@@ -42,6 +42,9 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
 
     if use_gpu:
         net = net.to(device=gpu_device)
+        q_agent = getattr(net, "q_agent", None)
+        if q_agent is not None:
+            q_agent.to(device=gpu_device)
 
     return net
 
@@ -385,7 +388,7 @@ class DiceCoeff(Function):
 #         mae = self.mae_loss(iou_pred, iou_gt)
 #         return self.dice_weight*dice, self.focal_weight*focal, self.mae_weight*mae
 
-# Occulsion score is included in the loss function
+# Occlusion score is included in the loss function
 class CombinedLoss(nn.Module):
     def __init__(self, dice_weight=1, focal_weight=20, mae_weight=1, bce_weight=1):
         super(CombinedLoss, self).__init__()

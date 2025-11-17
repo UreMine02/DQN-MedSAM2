@@ -49,23 +49,9 @@ def normalization(image):
     image = ((image - image_min)/(image_max-image_min))*255
     return image
 
-def remove_negative_samples(image_tensor, mask_tensor):
-    if np.sum(mask_tensor) == 0:
-        return image_tensor[..., 0:0], mask_tensor[..., 0:0]
-    
-    for i in range(mask_tensor.shape[-1]):
-        if np.sum(mask_tensor[..., i]) > 0:
-            mask_tensor = mask_tensor[..., i:]
-            image_tensor = image_tensor[..., i:]
-            break
-
-    for j in reversed(range(mask_tensor.shape[-1])):
-        if np.sum(mask_tensor[..., j]) > 0:
-            mask_tensor = mask_tensor[..., :j+1]
-            image_tensor = image_tensor[..., :j+1]
-            break
-
-    return image_tensor, mask_tensor
+def remove_negative_samples(image, mask):
+    pos_slices = np.sum(mask, axis=(0,1)) > 0
+    return image[:, :, pos_slices], mask[:, :, pos_slices]
 
 class Combined(Dataset):
     def __init__(self, args, data_path , transform = None, transform_msk = None, mode = 'Training',prompt = 'click', seed=None, variation=0):
@@ -82,10 +68,11 @@ class Combined(Dataset):
         self.dataset_list = os.listdir(data_path)
         
         for dataset in self.dataset_list:
-            if dataset.startswith("."):
-                continue
             data = Data(dataset)
             for task in os.listdir(os.path.join(data_path, dataset)):
+                if not task.startswith("Task01"):
+                    continue
+                
                 if task.startswith("."):
                     continue
                 new_task = Task(task)
@@ -104,6 +91,7 @@ class Combined(Dataset):
 
         self.name_list = [volume for dataset in self.dataset for task in dataset.task for volume in task.volume]
         
+        print(len(self.name_list))
         # Set the basic information of the dataset
         self.data_path = data_path
         self.mode = mode
@@ -125,111 +113,7 @@ class Combined(Dataset):
     def __len__(self):
         return len(self.name_list)
 
-    # def __getitem__(self, index):
-
-    #     """Get the images"""
-    #     name = self.name_list[index]
-
-    #     img_path = name.train_path
-    #     mask_path = name.label_path
-
-    #     image = nib.load(img_path, mmap=True)
-    #     data_seg_3d = nib.load(mask_path, mmap=True)
-
-    #     image_header = image.header
-    #     data_seg_3d_header = data_seg_3d.header
-
-    #     if len(image_header.get_data_shape()) == 4:
-    #         num_frame = image_header.get_data_shape()[-2]
-    #     else:
-    #         num_frame = image_header.get_data_shape()[-1]
-
-    #     image_chunks, mask_chunks = [], []
-
-    #     for current_chunk in range(0, num_frame, 10):
-    #         if len(image_header.get_data_shape()) == 4:
-    #             if image.shape[-1] > 2:
-    #                 image_chunk = image.slicer[:, :, current_chunk:current_chunk+10, 2].get_fdata()
-    #             else:
-    #                 image_chunk = image.slicer[:, :, current_chunk:current_chunk+10, 0].get_fdata()
-    #         else:
-    #             image_chunk = image.slicer[:, :, current_chunk:current_chunk+10].get_fdata()
-    #         mask_chunk = data_seg_3d.slicer[:, :, current_chunk:current_chunk+10].get_fdata()
-
-    #         image_chunk, mask_chunk = remove_negative_samples(image_chunk, mask_chunk)
-
-    #         image_chunks.append(image_chunk)
-    #         mask_chunks.append(mask_chunk)
-
-    #         current_chunk += 10
-        
-    #     image_3d = np.concat(image_chunks, axis=2)
-    #     data_seg_3d =np.concat(mask_chunks, axis=2)
-
-    #     image_3d = normalization(image_3d)
-    #     image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-    #     data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
-    #     image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.img_size, self.img_size), mode='trilinear', align_corners=False)
-    #     data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.img_size, self.img_size), mode='nearest')
-    #     image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
-    #     data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-
-    #     support_img_path = name.support_volume.train_path
-    #     support_mask_path = name.support_volume.label_path
-
-    #     support_image = nib.load(support_img_path, mmap=True)
-    #     support_data_seg_3d = nib.load(support_mask_path, mmap=True)
-
-    #     support_image_header = support_image.header
-    #     support_data_seg_3d_header = support_data_seg_3d.header
-
-    #     if len(support_image_header.get_data_shape()) == 4:
-    #         support_num_frame = support_image_header.get_data_shape()[-2]
-    #     else:
-    #         support_num_frame = support_image_header.get_data_shape()[-1]
-        
-    #     support_image_chunks, support_mask_chunks = [], []
-
-    #     for current_chunk in range(0, support_num_frame, 10):
-    #         if len(support_image_header.get_data_shape()) == 4:
-    #             if support_image.shape[-1] > 2:
-    #                 support_image_chunk = support_image.slicer[:, :, current_chunk:current_chunk+10, 2].get_fdata()
-    #             else:
-    #                 support_image_chunk = support_image.slicer[:, :, current_chunk:current_chunk+10, 0].get_fdata()
-    #         else:
-    #             support_image_chunk = support_image.slicer[:, :, current_chunk:current_chunk+10].get_fdata()
-    #         support_mask_chunk = support_data_seg_3d.slicer[:, :, current_chunk:current_chunk+10].get_fdata()
-
-    #         support_image_chunk, support_mask_chunk = remove_negative_samples(support_image_chunk, support_mask_chunk)
-
-    #         support_image_chunks.append(support_image_chunk)
-    #         support_mask_chunks.append(support_mask_chunk)
-
-    #         current_chunk += 10
-
-    #     support_image_3d = np.concat(support_image_chunks, axis=2)
-    #     support_data_seg_3d =np.concat(support_mask_chunks, axis=2) 
-
-    #     support_image_3d = normalization(support_image_3d)
-    #     support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-    #     support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
-    #     support_image_3d = F.interpolate(support_image_3d, size=(support_image_3d.shape[2], self.img_size, self.img_size), mode='trilinear', align_corners=False)
-    #     support_data_seg_3d = F.interpolate(support_data_seg_3d, size=(support_data_seg_3d.shape[2], self.img_size, self.img_size), mode='nearest')
-    #     support_image_3d = support_image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
-    #     support_data_seg_3d = support_data_seg_3d.squeeze(0).squeeze(0)
-
-    #     # print("combined: ", image_3d.shape, data_seg_3d.shape, support_image_3d.shape, support_data_seg_3d.shape)
-    #     # torch.Size([20, 3, 1024, 1024]) torch.Size([20, 1024, 1024]) torch.Size([25, 3, 1024, 1024]) torch.Size([25, 1024, 1024])
-    #     output_dict ={"image": image_3d, "label": data_seg_3d,
-    #             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-    #             "name": "name"}
-        
-    #     return output_dict
-
     def normalization_safe(self, image):
-        
         """Safe normalization to avoid zero-size or flat arrays."""
         if image is None or image.size == 0:
             raise ValueError("Empty image passed to normalization_safe()")
@@ -248,122 +132,12 @@ class Combined(Dataset):
         img_path = name.train_path
         mask_path = name.label_path
 
-        image = nib.load(img_path, mmap=True)
-        data_seg_3d = nib.load(mask_path, mmap=True)
-
-        image_header = image.header
-        data_seg_3d_header = data_seg_3d.header
-
-        if len(image_header.get_data_shape()) == 4:
-            num_frame = image_header.get_data_shape()[-2]
-        else:
-            num_frame = image_header.get_data_shape()[-1]
-
-        num_slices = min(8, num_frame)
-        if num_frame <= 0:
-            raise ValueError(f"Invalid image with 0 frame: {img_path}")
-
-        start_idx = np.random.randint(0, max(1, num_frame - num_slices + 1))
-        end_idx = min(num_frame, start_idx + num_slices)
-
-
-        if len(image_header.get_data_shape()) == 4:
-            if image.shape[-1] > 2:
-                image_3d = image.slicer[:, :, start_idx:end_idx, 2].get_fdata()
-            else:
-                image_3d = image.slicer[:, :, start_idx:end_idx, 0].get_fdata()
-        else:
-            image_3d = image.slicer[:, :, start_idx:end_idx].get_fdata()
-
-        data_seg_3d = data_seg_3d.slicer[:, :, start_idx:end_idx].get_fdata()
-
-        if image_3d.size == 0 or data_seg_3d.size == 0:
-            print(f"[Warning] Empty patch in {img_path}, retrying random slice...")
-            return self.__getitem__(np.random.randint(len(self.name_list)))
-
-        # Remove slide full of 0
-        image_3d, data_seg_3d = remove_negative_samples(image_3d, data_seg_3d)
-
-        if image_3d.size == 0 or data_seg_3d.size == 0:
-            print(f"[Warning] All slices removed after filtering {img_path}, skipping...")
-            return self.__getitem__(np.random.randint(len(self.name_list)))
-
-        image_3d = self.normalization_safe(image_3d)
-
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
-        image_3d = F.interpolate(
-            image_3d, size=(image_3d.shape[2], self.img_size, self.img_size),
-            mode='trilinear', align_corners=False
-        )
-        data_seg_3d = F.interpolate(
-            data_seg_3d, size=(data_seg_3d.shape[2], self.img_size, self.img_size),
-            mode='nearest'
-        )
-
-        image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
-        data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-
-
         support_img_path = name.support_volume.train_path
         support_mask_path = name.support_volume.label_path
-
-        support_image = nib.load(support_img_path, mmap=True)
-        support_data_seg_3d = nib.load(support_mask_path, mmap=True)
-
-        support_image_header = support_image.header
-        if len(support_image_header.get_data_shape()) == 4:
-            support_num_frame = support_image_header.get_data_shape()[-2]
-        else:
-            support_num_frame = support_image_header.get_data_shape()[-1]
-
-        support_num_slices = min(8, support_num_frame)
-        if support_num_frame <= 0:
-            raise ValueError(f"Invalid support image: {support_img_path}")
-
-        support_start_idx = np.random.randint(0, max(1, support_num_frame - support_num_slices + 1))
-        support_end_idx = min(support_num_frame, support_start_idx + support_num_slices)
-
-        # Load slice
-        if len(support_image_header.get_data_shape()) == 4:
-            if support_image.shape[-1] > 2:
-                support_image_3d = support_image.slicer[:, :, support_start_idx:support_end_idx, 2].get_fdata()
-            else:
-                support_image_3d = support_image.slicer[:, :, support_start_idx:support_end_idx, 0].get_fdata()
-        else:
-            support_image_3d = support_image.slicer[:, :, support_start_idx:support_end_idx].get_fdata()
-
-        support_data_seg_3d = support_data_seg_3d.slicer[:, :, support_start_idx:support_end_idx].get_fdata()
-
-
-        if support_image_3d.size == 0 or support_data_seg_3d.size == 0:
-            print(f"[Warning] Empty support patch in {support_img_path}, retrying...")
-            return self.__getitem__(np.random.randint(len(self.name_list)))
-
-
-        support_image_3d, support_data_seg_3d = remove_negative_samples(support_image_3d, support_data_seg_3d)
-        if support_image_3d.size == 0 or support_data_seg_3d.size == 0:
-            print(f"[Warning] Empty support after filtering {support_img_path}, retrying...")
-            return self.__getitem__(np.random.randint(len(self.name_list)))
-
-
-        support_image_3d = self.normalization_safe(support_image_3d)
-        support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
-        # Resize
-        support_image_3d = F.interpolate(
-            support_image_3d, size=(support_image_3d.shape[2], self.img_size, self.img_size),
-            mode='trilinear', align_corners=False
-        )
-        support_data_seg_3d = F.interpolate(
-            support_data_seg_3d, size=(support_data_seg_3d.shape[2], self.img_size, self.img_size),
-            mode='nearest'
-        )
-
-        support_image_3d = support_image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
-        support_data_seg_3d = support_data_seg_3d.squeeze(0).squeeze(0)
+        
+        image_3d, data_seg_3d = self.load_image_label(img_path, mask_path)
+        support_image_3d, support_data_seg_3d = self.load_image_label(support_img_path, support_mask_path)
+        
 
         # Output dictionary
         output_dict = {
@@ -375,6 +149,37 @@ class Combined(Dataset):
         }
 
         return output_dict
+    
+    def load_image_label(self, image_path, label_path):
+        image_3d = nib.load(image_path, mmap=True)
+        data_seg_3d = nib.load(label_path, mmap=True)
+        image_3d = image_3d.get_fdata()
+        data_seg_3d = data_seg_3d.get_fdata()
+        
+        if image_3d.ndim == 4:
+            if image_3d.shape[-1] == 4:
+                image_3d = image_3d[:, :, :, 2]
+            elif image_3d.shape[-1] == 2:
+                image_3d = image_3d[:, :, :, 0]
+            
+        image_3d, data_seg_3d = remove_negative_samples(image_3d, data_seg_3d)
+        
+        max_slices = 16
+        if image_3d.shape[-1] > max_slices:
+            start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+            image_3d = image_3d[:, :, start_slice:start_slice+max_slices]
+            data_seg_3d = data_seg_3d[:, :, start_slice:start_slice+max_slices]
+
+        image_3d = self.normalization_safe(image_3d)
+        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+
+        image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.img_size, self.img_size), mode='trilinear', align_corners=False)
+        data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.img_size, self.img_size), mode='nearest')
+        image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
+        data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
+
+        return image_3d, data_seg_3d
     
 
 
