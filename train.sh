@@ -1,27 +1,16 @@
 #!/bin/bash
 
 CUDA_VISIBLE_DEVICES=1 python train_3d.py \
-    -sam_ckpt /data/code/DQN-MedSAM2/checkpoints/sam2_hiera_tiny.pt \
-    -checkpoint_path /data/code/DQN-MedSAM2/output/sarcoma+mvalues+no_invalid+freeze+double_dqn \
-    -dataset sarcoma \
-    -exp_name sarcoma+mvalues+no_invalid+freeze+double_dqn \
-    -data_path /data/datasets \
-    -lr 4e-4 \
+    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+    -rl_config rl_modules/config/c51_q_agent.yaml \
+    -checkpoint_path ./output/sarcoma+mvalues+no_invalid+freeze+obj_ptr+c51 \
+    -dataset msd \
+    -task Task02 \
+    -exp_name msd_task02+mvalues+no_invalid+freeze+obj_ptr+c51 \
+    -data_path /data/datasets/Combined_Dataset/MSD \
+    -lr 5e-4 \
     -val_freq 5 \
-    -ep 30 \
+    -ep 50 \
+    -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -wandb_enabled
-
-# CUDA_VISIBLE_DEVICES=1 python train_3d.py \
-#     -sam_ckpt /data/code/DQN-MedSAM2/checkpoints/sam2_hiera_tiny.pt \
-#     -checkpoint_path /data/code/DQN-MedSAM2/output/msd-task02-mvalues-more_pen \
-#     -dataset msd \
-#     -exp_name msd-task02-mvalues-more_pen \
-#     -task Task02 \
-#     -data_path /data/datasets/Combined_Dataset/MSD \
-#     -lr 4e-4 \
-#     -val_freq 5 \
-#     -ep 50 \
-#     -lazy_penalty -2 \
-#     -invalid_penalty -10 \
-#     -wandb_enabled

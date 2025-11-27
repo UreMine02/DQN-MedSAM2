@@ -1,6 +1,7 @@
-CUDA_VISIBLE_DEVICES=0 python eval_3d.py \
-    -pretrain /data/code/DQN-MedSAM2/output/msd-task02-mvalues/mvalues-1gpu/2025-11-15-11-30-29/epoch_29.pth \
-    -dataset msd \
-    -exp_name msd-task02 \
-    -data_path /data/datasets/Combined_Dataset/MSD \
-    -task Task02
+CUDA_VISIBLE_DEVICES=1 python eval_3d.py \
+    -pretrain /data/code/DQN-MedSAM2/output/sarcoma+mvalues+no_invalid+freeze+obj_ptr+double_dqn+qr/2025-11-20-10-18-20/epoch_15.pth \
+    -rl_config /data/code/DQN-MedSAM2/sam2_train/qr_agent.yaml \
+    -dataset sarcoma \
+    -exp_name sarcoma \
+    -data_path /data/datasets/ \
+    -vis

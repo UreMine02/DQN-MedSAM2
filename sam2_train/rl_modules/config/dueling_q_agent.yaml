@@ -1,0 +1,13 @@
+# @package _global_
+
+# Model
+lr: 1e-4
+gamma: 0.99
+beta: 0.9
+buffer_size: 500
+batch_size: 64
+variant: dueling
+q_net:
+  n_query: 16
+  image_dim: 256
+  memory_dim: 64

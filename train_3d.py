@@ -22,7 +22,7 @@ import pytz
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
 import numpy as np
 
 def setup(rank, world_size):
@@ -56,15 +56,15 @@ def train(rank=0, world_size=0):
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
-        if "q_agent" in weights.keys():
-            net.q_agent.q_net.load_state_dict(weights["q_agent"])
+        if "agent" in weights.keys():
+            net.agent.load_state_dict(weights["agent"])
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])
-        net.module.q_agent.q_net = DDP(net.module.q_agent.q_net, device_ids=[rank])
+        net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False)
-    # scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, eta_min=5e-5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -95,7 +95,8 @@ def train(rank=0, world_size=0):
             'train/focal loss': focal_loss, 
             'train/mae_loss': mae_loss, 
             'train/bce_loss': bce_loss, 
-            "train/agent_loss": agent_loss
+            "train/agent_loss": agent_loss,
+            "train/lr": scheduler.get_last_lr()[0],
         }
         
         if args.wandb_enabled and loss is not None:
@@ -103,19 +104,20 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
+        scheduler.step()
 
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:
                 torch.save({
                     'model': net.module.state_dict(),
-                    'q_agent': net.module.q_agent.q_net.module.state_dict(),
+                    'agent': net.module.agent.q_net.module.state_dict(), #TODO: fix
                 },
                 os.path.join(checkpoint_path, f"epoch_{epoch}.pth")
             )
             elif not args.distributed:
                 torch.save({
                     'model': net.state_dict(),
-                    'q_agent': net.q_agent.q_net.state_dict(),
+                    'agent': net.agent.state_dict(),
                 },
                 os.path.join(checkpoint_path, f"epoch_{epoch}.pth"))
 

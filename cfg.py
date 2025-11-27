@@ -6,7 +6,7 @@ def parse_args():
     parser.add_argument('-net', type=str, default='sam2', help='net type')
     parser.add_argument('-encoder', type=str, default='vit_b', help='encoder type')
     parser.add_argument('-exp_name', default='samba_train_test', type=str, help='experiment name')
-    parser.add_argument('-vis', type=bool, default=True, help='Generate visualisation during validation')
+    parser.add_argument('-vis', action="store_true", help='Generate visualisation during validation')
     parser.add_argument('-train_vis', type=bool, default=False, help='Generate visualisation during training')
     parser.add_argument('-prompt', type=str, default='bbox', help='type of prompt, bbox or click')
     parser.add_argument('-prompt_freq', type=int, default=2, help='frequency of giving prompt in 3D images')
@@ -37,6 +37,8 @@ def parse_args():
     parser.add_argument('-ep', type=int, default=50, help='number of training epoch')
     parser.add_argument('-lazy_penalty', type=float, default=-1, help='number of training epoch')
     parser.add_argument('-invalid_penalty', type=float, default=-5, help='number of training epoch')
+    parser.add_argument('-q_updates_per_step', type=int, default=1, help='number of agent updates per training step')
+    parser.add_argument('-rl_config', type=str, default='normal_agent.yaml', help='number of agent updates per training step')
 
     opt = parser.parse_args()
 

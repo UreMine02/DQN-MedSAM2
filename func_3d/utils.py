@@ -20,6 +20,9 @@ from sklearn.cluster import KMeans
 from collections import defaultdict
 
 import cfg
+from omegaconf import OmegaConf
+from hydra import compose
+from hydra.utils import instantiate
 
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
@@ -36,15 +39,20 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         model_cfg = args.sam_config
 
         net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
+        
+        cfg = compose(config_name=args.rl_config)
+        print(cfg)
+        OmegaConf.resolve(cfg)
+        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
 
     if use_gpu:
         net = net.to(device=gpu_device)
-        q_agent = getattr(net, "q_agent", None)
-        if q_agent is not None:
-            q_agent.to(device=gpu_device)
+        agent = getattr(net, "agent", None)
+        if agent is not None:
+            agent.to(device=gpu_device)
 
     return net
 
@@ -207,7 +215,7 @@ def eval_seg(pred, mask):
     pred = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
     dice = dice_score(pred, mask)
     iou = iou_score(pred, mask)
-    return dice, iou
+    return dice, iou, pred
     
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)

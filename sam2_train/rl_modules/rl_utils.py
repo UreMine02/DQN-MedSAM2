@@ -2,11 +2,14 @@
 Q-learning utilities cho SAM2 memory management.
 """
 
+import random
 import torch
+import numpy as np
 from monai.losses import DiceLoss, FocalLoss
-from sam2_train.q_learning_agent import RLStates
+from sam2_train.rl_modules.rl_components import RLStates
 
 EPS = 1e-6
+
 
 def prepare_rl_state(
     current_vision_feats,
@@ -121,3 +124,42 @@ def compute_loss(
     loss = dice_loss_fn(video_res_masks, gt_masks) + 20 * focal_loss_fn(video_res_masks, gt_masks)
     
     return loss
+
+
+def map_action(action, output_dict, storage_key):
+    """
+    Map an integer action to a drop_key (frame index) for the given storage_key.
+    Returns None if no drop should happen (or no candidate to drop).
+    Safety: never index into empty lists and prefer per-entry iou if available.
+    """
+    # get current keys in memory (ordered)
+    mem_dict = output_dict.get(storage_key, {})
+    sorted_keys = sorted(mem_dict.keys())
+    if len(sorted_keys) == 0:
+        return None
+
+    # actions:
+    # 0: skip
+    # 1: add (if full, fallback to drop oldest)
+    # 2: add_drop_oldest
+    # 3: add_drop_lowest_iou
+    # 4: add_drop_random
+
+    # drop oldest (for action 1 or 2)
+    if action == 2:
+        return sorted_keys[0]
+
+    # drop lowest IoU (action == 3)
+    if action == 3:
+        # try to collect IoU per stored entry (prefer entry['iou'] or entry['object_score_logits'])
+        iou_list = [mem_dict[k]["ious"].item() for k in sorted_keys]
+        min_idx = np.argmin(iou_list)
+        return sorted_keys[min_idx]
+
+    # drop random (action == 4)
+    if action == 4:
+        return random.choice(sorted_keys)
+
+    # action == 1
+    return None
+

@@ -13,9 +13,7 @@ from torch.utils.checkpoint import checkpoint
 
 from sam2_train.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, load_video_frames_from_data
-from sam2_train.q_learning_agent import DeepQAgent, ACTION_SPACE
-from sam2_train.q_learning_utils import prepare_rl_state, compute_loss
-from monai.losses import FocalLoss, DiceLoss
+from sam2_train.rl_modules.rl_utils import prepare_rl_state, compute_loss
 
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
@@ -23,7 +21,7 @@ class SAM2VideoPredictor(SAM2Base):
     def __init__(
         self,
         fill_hole_area=0,
-        # whether to apply non-overlapping constraints on the output object masks
+        # whpether to apply non-overlapping constraints on the output object masks
         non_overlap_masks=False,
         # whether to clear non-conditioning memory of the surrounding frames (which may contain outdated information) after adding correction clicks;
         # note that this would only apply to *single-object tracking* unless `clear_non_cond_mem_for_multi_obj` is also set to True)
@@ -37,12 +35,6 @@ class SAM2VideoPredictor(SAM2Base):
         self.non_overlap_masks = non_overlap_masks
         self.clear_non_cond_mem_around_input = clear_non_cond_mem_around_input
         self.clear_non_cond_mem_for_multi_obj = clear_non_cond_mem_for_multi_obj
-        self.q_agent = DeepQAgent(
-            action_dim=len(ACTION_SPACE),
-            num_maskmem=self.num_maskmem-1,
-            lr=1e-4, gamma=0.99, beta=0.9,
-            batch_size=64
-        )
 
     @torch.inference_mode()
     def init_state(
@@ -1177,6 +1169,9 @@ class SAM2VideoPredictor(SAM2Base):
 
         inference_state["support_set_stage"] = False
         processing_order = range(num_frames)
+        
+        if train_agent:
+            self.agent.init_new_trajectory()
 
         for frame_idx in processing_order:
             # We skip those frames already in consolidated outputs (these are frames
@@ -1212,8 +1207,17 @@ class SAM2VideoPredictor(SAM2Base):
                 inference_state, pred_masks
             )
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks
+        
+        if train_agent:
+            storage_device = inference_state["device"]
+            pred_masks_gpu = output_dict["await_outputs"][frame_idx]["pred_masks"]
+            pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
+            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+            gt_masks = gt_masks.to(torch.float32) 
             
-        self.q_agent.clear_await()
+            loss_after = compute_loss(pred_masks, gt_masks, inference_state)
+            
+            self.agent.clear_await(loss_after.detach().cpu())
     
     
     def _add_output_per_object(
@@ -1534,13 +1538,13 @@ class SAM2VideoPredictor(SAM2Base):
         valid_actions = [0] if bank_full else [0, 1]
         valid_actions.extend(list(action_frame_map.keys()))
         with torch.no_grad():
-            action = self.q_agent.select_action(
+            action_out = self.agent.select_action(
                 state,
                 valid_actions=torch.tensor(valid_actions),
-                bank_size=bank_size,
                 training=train_agent
             ) # ask agent
-            
+        
+        action = action_out["action"]
         state.offload_to_cpu()
 
         reward = 0
@@ -1588,12 +1592,12 @@ class SAM2VideoPredictor(SAM2Base):
             replay_instance_info = {
                 "frame_idx": frame_idx,
                 "state": state,
-                "action": action,
                 "loss_before": loss_before.detach().cpu(),
-                "reward": reward
+                "reward": reward,
             }
+            replay_instance_info.update(action_out)
             
-            self.q_agent.init_new_replay_instance(**replay_instance_info)
+            self.agent.init_new_replay_instance(**replay_instance_info)
 
     # loss_after + next_state
     def agent_update_second_stage(
@@ -1621,4 +1625,4 @@ class SAM2VideoPredictor(SAM2Base):
             offload_to_cpu=True
         )
         
-        self.q_agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
+        self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)

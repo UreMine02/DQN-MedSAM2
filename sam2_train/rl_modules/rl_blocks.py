@@ -5,10 +5,19 @@ from torch import nn
 from einops import rearrange
 from collections import OrderedDict
 
+class BatchNorm1d(nn.BatchNorm1d):
+    def forward(self, x: torch.Tensor):
+        '''Custom BatchNorm1d for [B,L,D] input'''
+        if x.dim() == 3:
+            x = x.permute(0, 2, 1)
+            x = super().forward(x)
+            x = x.permute(0, 2, 1)
+            return x
+        return super().forward(x)
+
 class QuickGELU(nn.Module):
     def forward(self, x: torch.Tensor):
         return x * torch.sigmoid(1.702 * x)
-
 
 class CrossAttention(nn.Module):
     def __init__(self, query_dim, context_dim=None, heads=8, dim_head=64, dropout=0.):
@@ -64,11 +73,10 @@ class QFormerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(query_dim)
         self.norm3 = nn.LayerNorm(query_dim)
 
-    def forward(self, x, context=None):
-        x = self.norm1(x)
-        x = self.attn1(x) + x
-        x = self.norm2(x)
-        x = self.attn2(x, context=context) + x
+    def forward(self, x, context):
+        assert context is not None
+        x = self.attn1(self.norm1(x)) + x
+        x = self.attn2(self.norm2(x), context=context) + x
         x = self.mlp(self.norm3(x)) + x
         return x
     
@@ -116,4 +124,15 @@ class BasicTransformerBlock(nn.Module):
         x = self.attn(x, x, x, need_weights=False)[0] + x
         x = self.mlp(self.norm2(x)) + x
         return x
-    
+
+class BidirectionalQFormer(nn.Module):
+    def __init__(self, query_dim, context_dim, n_heads, d_heads, dropout=0.):
+        super().__init__()
+        self.q_former_1 = QFormerBlock(query_dim, context_dim, n_heads, d_heads, dropout=dropout)
+        self.q_former_2 = QFormerBlock(query_dim, context_dim, n_heads, d_heads, dropout=dropout)
+        
+    def forward(self, x, y):
+        x = self.q_former_1(x, y)
+        y = self.q_former_2(y, x)
+        return x, y
+        

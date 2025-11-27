@@ -94,7 +94,7 @@ class Sarcoma(Dataset):
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": name
+            "name": name, "case": image_path.split("/")[5]
         }
         
         return output_dict

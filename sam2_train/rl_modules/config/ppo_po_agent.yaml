@@ -1,0 +1,15 @@
+agent:
+  _target_: sam2_train.rl_modules.policy_optimization.ppo_agent.PPOAgent
+  num_maskmem: 6
+  policy_lr: 1e-3
+  value_lr: 1e-3
+  gamma: 0.99
+  buffer_size: 500
+  batch_size: 64
+  entropy_weight: 0.1
+  epsilon: 0.5
+  sam2_dim:
+    n_query: 16
+    image_dim: 256
+    memory_dim: 64
+    obj_ptr_dim: 256
