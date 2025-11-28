@@ -1,5 +1,5 @@
 import random
-import scipy
+from scipy.linalg import circulant
 from collections import deque
 
 import torch
@@ -19,16 +19,17 @@ from sam2_train.rl_modules.rl_blocks import (
 from sam2_train.rl_modules.rl_base_agent import BaseAgent
 
 
-def compute_gae(values: list, next_value: list, rewards: list, dones: list, gamma: float, tau: float):
+def compute_gae(values: torch.Tensor, next_value: torch.Tensor, rewards: torch.Tensor, dones: torch.Tensor, gamma: float, tau: float):
     """Compute gae."""
     L = values.shape[0]
     device = values.device
-    delta = rewards + gamma * next_value - values
+    delta = rewards + gamma * (1 - dones) * next_value - values
+    
     coef = torch.triu(torch.full((L, L), gamma * tau, device=device))
-    l = torch.Tensor(scipy.linalg.circulant(torch.arange(L))).T.to(device=device)
+    l = torch.Tensor(circulant(torch.arange(L))).T.to(device=device, non_blocking=True)
     coef = coef ** l
     
-    return coef @ delta
+    return coef @ delta + values
 
 class POReplayInstance(RLReplayInstance):
     def __init__(
@@ -135,9 +136,9 @@ class BasePolicyNetwork(nn.Module):
             [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(2)]
         )
         self.action_proj = nn.Sequential(
-            BatchNorm1d(self.hidden_dim),
-            nn.Linear(self.hidden_dim, 1),
+            nn.LayerNorm(self.hidden_dim),
             nn.Dropout(0.2),
+            nn.Linear(self.hidden_dim, 1),
         )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
@@ -169,9 +170,9 @@ class BaseValueNetwork(nn.Module):
             [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(2)]
         )
         self.value_proj = nn.Sequential(
-            BatchNorm1d(self.hidden_dim),
-            nn.Linear(self.hidden_dim, 1),
+            nn.LayerNorm(self.hidden_dim),
             nn.Dropout(0.2),
+            nn.Linear(self.hidden_dim, 1),
         )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
@@ -190,7 +191,7 @@ class BasePOAgent(BaseAgent):
     def __init__(
         self,
         num_maskmem, 
-        policy_lr=1e-4, 
+        policy_lr=1e-4,
         value_lr=1e-3,
         gamma=0.99, 
         beta=0.9995,
@@ -206,8 +207,11 @@ class BasePOAgent(BaseAgent):
         self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim)
 
-        self.policy_optimizer = optim.Adam(self.policy_net.parameters(), lr=policy_lr)
-        self.value_optimizer = optim.Adam(self.value_net.parameters(), lr=value_lr)
+        self.optimizer = optim.AdamW(
+            list(self.policy_net.parameters()) + \
+            list(self.value_net.parameters()) + \
+            list(self.feat_summarizer.parameters()),
+            lr=policy_lr)
         
         self.tau = tau
         self.entropy_weight= entropy_weight
@@ -263,6 +267,10 @@ class BasePOAgent(BaseAgent):
         if len(self.replay_buffer) < self.batch_size:
             return None
         
+        self.feat_summarizer.train()
+        self.policy_net.train()
+        self.value_net.train()
+        
         total_policy_loss, total_value_loss = 0, 0
         for _ in range(num_update):
             batch = random.sample(self.replay_buffer, self.batch_size)
@@ -271,7 +279,10 @@ class BasePOAgent(BaseAgent):
             
             total_policy_loss += policy_loss
             total_value_loss += value_loss
-            
+        
+        self.feat_summarizer.eval()
+        self.policy_net.eval()
+        self.value_net.eval()
         return (total_policy_loss + total_value_loss) / num_update
         
     def train_step(self, batch):
@@ -281,16 +292,17 @@ class BasePOAgent(BaseAgent):
         dones = []
         returns = []
         old_log_probs = []
-        advantage = []
+        advantages = []
         for trajectory in batch:
             log_probs, action, reward, done, curr_state, next_state = trajectory.get_transitions(self.device)
 
-            curr_feat = self.feat_summarizer(*curr_state)
-            curr_value = self.value_net(*curr_feat)
-            next_feat = self.feat_summarizer(*next_state)
-            next_value = self.value_net(*next_feat)
-            
-            return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
+            with torch.no_grad():
+                curr_feat = self.feat_summarizer(*curr_state)
+                curr_value = self.value_net(*curr_feat)
+                next_feat = self.feat_summarizer(*next_state)
+                next_value = self.value_net(*next_feat)
+                
+                return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
             
             curr_states.append(curr_state)
             old_log_probs.append(log_probs)
@@ -298,7 +310,7 @@ class BasePOAgent(BaseAgent):
             rewards.append(reward)
             dones.append(done)
             returns.append(return_)
-            advantage.append(return_ - curr_value)
+            advantages.append(return_ - curr_value)
 
         (
             image_feat,
@@ -319,7 +331,7 @@ class BasePOAgent(BaseAgent):
         rewards = torch.cat(rewards).to(device=self.device, non_blocking=True)
         dones = torch.cat(dones).to(device=self.device, non_blocking=True)
         returns = torch.cat(returns).to(device=self.device, non_blocking=True)
-        advantage = torch.cat(advantage).to(device=self.device, non_blocking=True)
+        advantages = torch.cat(advantages).to(device=self.device, non_blocking=True)
         
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -327,22 +339,28 @@ class BasePOAgent(BaseAgent):
             action_probs = self.policy_net(*curr_feats).gather(1, actions)
             log_probs = torch.log(action_probs)
             
-            policy_loss = self.compute_policy_loss(log_probs, advantage, old_log_probs)
+            policy_loss = self.compute_policy_loss(log_probs, advantages, old_log_probs)
             policy_loss += -log_probs * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
             
             pred_value = self.value_net(*curr_feats)
             value_loss = F.smooth_l1_loss(pred_value, returns)
 
-            # update policy
-            self.policy_optimizer.zero_grad()
-            policy_loss.backward(retain_graph=True)
-            self.policy_optimizer.step()
+            total_loss = policy_loss + value_loss
+            
+            self.optimizer.zero_grad()
+            total_loss.backward()
+            self.optimizer.step()
+            
+            # # update policy
+            # self.policy_optimizer.zero_grad()
+            # policy_loss.backward(retain_graph=True)
+            # self.policy_optimizer.step()
 
-            # update value
-            self.value_optimizer.zero_grad()
-            value_loss.backward()
-            self.value_optimizer.step()
+            # # update value
+            # self.value_optimizer.zero_grad()
+            # value_loss.backward()
+            # self.value_optimizer.step()
             
         return value_loss.item(), policy_loss.item()
     

@@ -34,18 +34,12 @@ class BaseQNetwork(nn.Module):
         num_head = self.hidden_dim // 64
         memory_num_head = memory_dim // 64
         
-        self.image_spatial_summary = SpatialSummarizer(n_query, self.hidden_dim, image_dim, num_head, 64, n_layers=2)
-        self.memory_spatial_summary = SpatialSummarizer(n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=2)
+        self.image_spatial_summary = SpatialSummarizer(n_query, self.hidden_dim, image_dim, num_head, 64, n_layers=2, dropout=0.2)
+        self.memory_spatial_summary = SpatialSummarizer(n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=2, dropout=0.2)
         self.action_decoder = nn.ModuleList(
-            [QFormerBlock(self.hidden_dim, self.hidden_dim, num_head, 64) for _ in range(2)]
+            [QFormerBlock(self.hidden_dim, self.hidden_dim, num_head, 64, dropout=0.2) for _ in range(2)]
         )
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
-        
-        self.proj_out = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim, 1),
-        )
 
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):        
         B, T, C, H, W = bank_feat.shape

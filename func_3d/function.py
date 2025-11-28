@@ -6,12 +6,14 @@ import os
 import matplotlib.pyplot as plt
 import time
 import psutil
+import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchshow as ts
 from einops import rearrange
 from tqdm import tqdm
+from tabulate import tabulate
 import numpy as np
 
 import cfg
@@ -127,7 +129,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             obj_id=obj_id,
                             mask=mask.to(device=GPUdevice),
                         )
-                        #     )
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -151,7 +152,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                        _, iou_gt, _ = eval_seg(pred, mask)
+                        (
+                            iou_gt, 
+                            _,
+                            _,
+                            _,
+                            _,
+                            _,
+                            _,
+                            _,
+                            _
+                        ) = eval_seg(pred, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
@@ -216,7 +227,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], agent_loss / agent_step
 
-def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank=None):
+def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
     if args.distributed:
         net = net.module
         GPUdevice = torch.device('cuda', rank)
@@ -226,15 +237,25 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
     # eval mode
     net.eval()
     n_val = len(val_loader)
-
+    
+    metrics = {
+        "iou": [],
+        "dice": [],
+        "recall": [],
+        "precision": [],
+        "accuracy": [],
+        "f1": [],
+        "giou": [],
+        "fb_iou": [],
+        "hausdorf_dist": [],
+    }
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
-    dice_score_per_class = {}
+    score_per_class = {}
 
     lossfunc = paper_loss
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
         for packs in val_loader:
-            torch.cuda.empty_cache()
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -255,8 +276,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
-                if name not in dice_score_per_class.keys():
-                    dice_score_per_class[name] = {"dice_score":0, "num_step": 0} 
+                if name not in score_per_class.keys():
+                    score_per_class[name] = copy.deepcopy(metrics)
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -328,12 +349,29 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
                     mask = video_segments[frame_idx][obj_id]["image_label"]
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                        dice_score, iou_score, pred_mask = eval_seg(pred, mask)
-                        update_score(class_score, dice_score, iou_score)
+                        (
+                            iou,
+                            dice,
+                            recall,
+                            precision,
+                            accuracy,
+                            f1,
+                            giou,
+                            fb_iou,
+                            hd
+                        ) = eval_seg(pred, mask)
+                        update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        dice_score_per_class[name]["dice_score"] += dice_score
-                        dice_score_per_class[name]["num_step"] += 1
+                        score_per_class[name]["iou"].append(iou.item())
+                        score_per_class[name]["dice"].append(dice.item())
+                        score_per_class[name]["recall"].append(recall.item())
+                        score_per_class[name]["precision"].append(precision.item())
+                        score_per_class[name]["accuracy"].append(accuracy.item())
+                        score_per_class[name]["f1"].append(f1.item())
+                        score_per_class[name]["giou"].append(giou.item())
+                        score_per_class[name]["fb_iou"].append(fb_iou.item())
+                        score_per_class[name]["hausdorf_dist"].append(hd)
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
@@ -367,16 +405,18 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, clean_dir=True, rank
         
     average_score(total_score)
 
-    dice_score_per_class = {f"{class_}":dice_score_output["dice_score"]/dice_score_output["num_step"] for class_, dice_score_output in dice_score_per_class.items()}
+    score_per_class["Avg"] = copy.deepcopy(metrics)
+    for name, metrics_dict in score_per_class.items():
+        if name == "Avg":
+            continue
+        mean_metrics = {k: np.mean(v) for k, v in metrics_dict.items()}
+        score_per_class[name] = mean_metrics
+        for metric in score_per_class["Avg"].keys():
+            score_per_class["Avg"][metric].append(score_per_class[name][metric])
+            
+    score_per_class["Avg"] = {k: np.mean(v) for k, v in score_per_class["Avg"].items()}
 
-    if args.wandb_enabled:
-        for class_, dice_score in dice_score_per_class.items():
-            wandb.log({f"test/Class {class_}": dice_score}, step=epoch)
-
-    dice_score_string = ""
-    for class_, dice_score in dice_score_per_class.items():
-        dice_score_string += f"Class: {class_} Dice Score: {dice_score}\n" 
-
-    print(dice_score_string)
+    print("Metrics:")
+    print(tabulate([score_per_class["Avg"].values()], headers=score_per_class["Avg"].keys(), floatfmt=".4f"))
 
     return total_score["iou_score"], total_score["dice_score"]

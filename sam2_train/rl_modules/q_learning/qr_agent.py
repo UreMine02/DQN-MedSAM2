@@ -19,10 +19,12 @@ class QRQNetwork(BaseQNetwork):
         
         self.logit_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
+            nn.Dropout(0.2),
             nn.Linear(self.hidden_dim, N),
         )
         self.scale_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
+            nn.Dropout(0.2),
             nn.Linear(self.hidden_dim, 2),
         )
 
@@ -64,7 +66,7 @@ class QRQAgent(BaseQAgent):
         self.q_net = QRQNetwork(num_maskmem, N=N, **sam2_dim)
         self.target_net = QRQNetwork(num_maskmem, N=N, **sam2_dim)
         self.target_net.load_state_dict(self.q_net.state_dict())
-        self.optimizer = optim.Adam(self.q_net.parameters(), lr=lr)
+        self.optimizer = optim.AdamW(self.q_net.parameters(), lr=lr)
         
         self.N = N
     

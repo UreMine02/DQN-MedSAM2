@@ -64,7 +64,7 @@ def train(rank=0, world_size=0):
         net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False)
-    scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=10, eta_min=5e-5)
+    # scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.ep, eta_min=5e-5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -96,7 +96,7 @@ def train(rank=0, world_size=0):
             'train/mae_loss': mae_loss, 
             'train/bce_loss': bce_loss, 
             "train/agent_loss": agent_loss,
-            "train/lr": scheduler.get_last_lr()[0],
+            # "train/lr": scheduler.get_last_lr()[0],
         }
         
         if args.wandb_enabled and loss is not None:
@@ -104,7 +104,7 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-        scheduler.step()
+        # scheduler.step()
 
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:

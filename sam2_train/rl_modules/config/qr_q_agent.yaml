@@ -1,14 +1,14 @@
 agent:
-  _target_: sam2_train.rl_modules.q_learning.q_agent.DeepQAgent
+  _target_: sam2_train.rl_modules.q_learning.qr_agent.QRQNetwork
   num_maskmem: 6
-  lr: 5e-4
+  lr: 1e-4
   gamma: 0.99
   beta: 0.9
   buffer_size: 500
   batch_size: 64
-  variant: qr
-  N: 150
+  N: 100
   sam2_dim:
     n_query: 16
     image_dim: 256
     memory_dim: 64
+    obj_ptr_dim: 256
