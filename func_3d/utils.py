@@ -16,10 +16,9 @@ import torch
 import torch.nn as nn
 from torch.nn import L1Loss, BCEWithLogitsLoss
 from torch.autograd import Function
-from torchvision.ops import masks_to_boxes, generalized_box_iou_loss
-from torchmetrics.segmentation import HausdorffDistance
 
 from monai.losses import DiceLoss, FocalLoss
+from monai.metrics import compute_hausdorff_distance
 from sklearn.cluster import KMeans
 
 import cfg
@@ -214,39 +213,6 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
     return support_imgs_tensor[sampled_indices], support_masks_tensor[sampled_indices]
 
-def compute_giou(pred: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-    """
-    Computes the Generalized Intersection over Union (gIoU) between predicted and ground truth masks.
-
-    Args:
-        pred (torch.Tensor): Predicted masks, shape (B, H, W).
-        mask (torch.Tensor): Ground truth masks, shape (B, H, W). Values should be binary (0 or 1).
-
-    Returns:
-        torch.Tensor: gIoU for each element in the batch, shape (B,)
-    """
-    # Convert masks to bounding boxes
-    # masks_to_boxes expects masks in (B, H, W) and returns (B, 4) with (x1, y1, x2, y2)
-    pred_idx = pred.sum(dim=(1, 2)) != 0
-    target_idx = mask.sum(dim=(1, 2)) != 0
-    pred_boxes = masks_to_boxes(pred[pred_idx])  # Shape: (B, 4)
-    target_boxes = masks_to_boxes(mask[target_idx])  # Shape: (B, 4)
-
-    padded_pred_boxes = torch.zeros((pred.shape[0], 4), device=pred.device)
-    padded_pred_boxes[pred_idx] = pred_boxes
-    pred_boxes = padded_pred_boxes
-    padded_target_boxes = torch.zeros((mask.shape[0], 4), device=pred.device)
-    padded_target_boxes[target_idx] = target_boxes
-    target_boxes = padded_target_boxes
-
-    # Compute gIoU loss (which is 1 - gIoU)
-    giou_loss = generalized_box_iou_loss(pred_boxes, target_boxes)  # Shape: (B,)
-
-    # Convert loss to gIoU
-    giou = 1 - giou_loss  # Shape: (B,)
-
-    return giou
-
 def score_cal(seg_map, prd_map):
     '''
     labels B * 1
@@ -260,79 +226,47 @@ def score_cal(seg_map, prd_map):
         prd_map = prd_map.unsqueeze(0)
         
     total_num = seg_map.shape[0]
-    # hausdorff_distance = HausdorffDistance(distance_metric="euclidean", num_classes=1)
-    # hd_score = hausdorff_distance(prd_map, seg_map)
-    hd_score = 0
-
-    giou_score = compute_giou(prd_map, seg_map)
-
+    
     seg_map = seg_map.reshape(total_num, -1)
     prd_map = prd_map.reshape(total_num, -1)
     dot_product = (seg_map * prd_map)
+    b_seg_map = 1 - seg_map
+    b_prd_map = 1 - prd_map
+    b_dot_product = (b_seg_map * b_prd_map)
 
     sum_dot = torch.sum(dot_product, dim=-1)
     sum_seg = torch.sum(seg_map, dim=-1)
     sum_prd = torch.sum(prd_map, dim=-1)
-
-    # Calculate Recall and Precision
-    recall = sum_dot / sum_seg
-    precision = sum_dot / sum_prd
-    accuracy = torch.sum(seg_map == prd_map, dim=-1) / dot_product.shape[-1]
-
-    iou_score = sum_dot/((sum_seg + sum_prd)-sum_dot)
-    dice_score = 2.*sum_dot / (sum_seg+sum_prd)
-    f1_score = 2*(recall*precision) / (recall + precision)
-    
-    b_seg_map = 1 - seg_map
-    b_prd_map = 1 - prd_map
-    b_dot_product = (b_seg_map * b_prd_map)
     b_sum_dot = torch.sum(b_dot_product, dim=-1)
     b_sum_seg = torch.sum(b_seg_map, dim=-1)
     b_sum_prd = torch.sum(b_prd_map, dim=-1)
-    b_iou_score = b_sum_dot/((b_sum_seg + b_sum_prd)-b_sum_dot)
-    fb_iou_score = (iou_score + b_iou_score)/2
 
-    return (iou_score, dice_score, recall, precision, accuracy, f1_score, giou_score, fb_iou_score, hd_score)
+    iou_score = sum_dot/((sum_seg + sum_prd)-sum_dot)
+    dice_score = 2.*sum_dot / (sum_seg+sum_prd)
+    
+    b_iou_score = b_sum_dot/((b_sum_seg + b_sum_prd)-b_sum_dot)
+    fb_iou_score = (iou_score + b_iou_score) / 2
+    
+    hd_score = compute_hausdorff_distance(prd_map.unsqueeze(1), seg_map.unsqueeze(1)).squeeze()
+
+    return (iou_score, dice_score, fb_iou_score, hd_score)
 
 def eval_seg(pred, mask):
     """
     Args:
-        pred: [D,H,W]
-        mask: [D,H,W]
+        pred: [D, H, W]
+        mask: [D, H, W]
     """
-    pred = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
-    (
-        iou_score, 
-        dice_score, 
-        recall, 
-        precision, 
-        accuracy, 
-        f1_score, 
-        giou_score,
-        fb_iou_score,
-        hd_score
-    ) = score_cal(mask, pred)
+    pred = (torch.sigmoid(pred) > 0.5).float()
+    (iou, dice, fb_iou, hd) = score_cal(mask, pred)
     
-    iou_score[iou_score.isnan()] = 0. 
-    dice_score[dice_score.isnan()] = 0. 
-    recall[recall.isnan()] = 0. 
-    precision[precision.isnan()] = 0. 
-    accuracy[accuracy.isnan()] = 0. 
-    f1_score[f1_score.isnan()] = 0. 
-    giou_score[giou_score.isnan()] = 0. 
-    fb_iou_score[fb_iou_score.isnan()] = 0.
-    return (
-        iou_score, 
-        dice_score, 
-        recall, 
-        precision, 
-        accuracy, 
-        f1_score, 
-        giou_score,
-        fb_iou_score,
-        hd_score
-    )
+    iou[iou.isnan()] = 0. 
+    dice[dice.isnan()] = 0.
+    fb_iou[fb_iou.isnan()] = 0.
+    hd[torch.logical_or(hd.isnan(), hd.isinf())] = 0.
     
+    return (iou, dice, fb_iou, hd,)
+
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)
     mask = mask.reshape(-1)

@@ -1586,7 +1586,7 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
         # if not train_agent:
-        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} reward {reward}")
+        # print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} reward {reward}")
         
         if train_agent:
             replay_instance_info = {
