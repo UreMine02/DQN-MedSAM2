@@ -3,4 +3,4 @@ CUDA_VISIBLE_DEVICES=0 python eval_3d.py \
     -rl_config rl_modules/config/a2c_po_agent.yaml \
     -dataset sarcoma \
     -exp_name sarcoma \
-    -data_path /data/datasets/Sarcoma
+    -data_path /data/datasets

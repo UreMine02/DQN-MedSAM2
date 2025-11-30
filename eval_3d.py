@@ -55,6 +55,9 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys():
             net.agent.load_state_dict(weights["agent"])
             print("Loaded DQN weights")
+        if "q_agent" in weights.keys():
+            net.agent.load_state_dict(weights["q_agent"])
+            print("Loaded DQN weights")
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])

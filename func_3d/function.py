@@ -152,17 +152,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                        (
-                            iou_gt, 
-                            _,
-                            _,
-                            _,
-                            _,
-                            _,
-                            _,
-                            _,
-                            _
-                        ) = eval_seg(pred, mask)
+                        iou_gt= iou_score(pred, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
@@ -241,11 +231,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     metrics = {
         "iou": [],
         "dice": [],
-        "recall": [],
-        "precision": [],
-        "accuracy": [],
-        "f1": [],
-        "giou": [],
         "fb_iou": [],
         "hausdorf_dist": [],
     }
@@ -352,11 +337,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         (
                             iou,
                             dice,
-                            recall,
-                            precision,
-                            accuracy,
-                            f1,
-                            giou,
                             fb_iou,
                             hd
                         ) = eval_seg(pred, mask)
@@ -365,13 +345,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                         score_per_class[name]["iou"].append(iou.item())
                         score_per_class[name]["dice"].append(dice.item())
-                        score_per_class[name]["recall"].append(recall.item())
-                        score_per_class[name]["precision"].append(precision.item())
-                        score_per_class[name]["accuracy"].append(accuracy.item())
-                        score_per_class[name]["f1"].append(f1.item())
-                        score_per_class[name]["giou"].append(giou.item())
                         score_per_class[name]["fb_iou"].append(fb_iou.item())
-                        score_per_class[name]["hausdorf_dist"].append(hd)
+                        score_per_class[name]["hausdorf_dist"].append(hd.item())
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
