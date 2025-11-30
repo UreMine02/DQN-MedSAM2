@@ -14,7 +14,8 @@ from sam2_train.rl_modules.rl_blocks import (
     SpatialSummarizer,
     BatchNorm1d,
     BidirectionalQFormer,
-    BasicTransformerBlock
+    BasicTransformerBlock,
+    QuickGELU
 )
 from sam2_train.rl_modules.rl_base_agent import BaseAgent
 
@@ -138,7 +139,10 @@ class BasePolicyNetwork(nn.Module):
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim, 1),
+            nn.Linear(self.hidden_dim, self.hidden_dim * 4),
+            QuickGELU(),
+            nn.Dropout(0.2),
+            nn.Linear(self.hidden_dim * 4, 1)
         )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
@@ -172,7 +176,10 @@ class BaseValueNetwork(nn.Module):
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim, 1),
+            nn.Linear(self.hidden_dim, self.hidden_dim * 4),
+            QuickGELU(),
+            nn.Dropout(0.2),
+            nn.Linear(self.hidden_dim * 4, 1)
         )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):

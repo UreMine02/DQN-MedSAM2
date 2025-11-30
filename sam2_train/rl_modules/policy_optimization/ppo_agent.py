@@ -1,16 +1,6 @@
 # Deep Q-Learning Agent 
 import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
 
-import random
-import copy
-import numpy as np
-from collections import deque
-from typing import Optional
-
-from sam2_train.rl_modules.rl_components import RLStates, RLReplayInstance
 from sam2_train.rl_modules.policy_optimization.base_po_agent import BasePOAgent
 
 
@@ -21,7 +11,8 @@ class PPOAgent(BasePOAgent):
         policy_lr=0.0001, 
         value_lr=0.001, 
         gamma=0.99, 
-        beta=0.9995, 
+        beta=0.9995,
+        tau=0.9,
         buffer_size=500, 
         batch_size=64, 
         device="cpu", 
@@ -30,16 +21,17 @@ class PPOAgent(BasePOAgent):
         sam2_dim={}
     ):
         super().__init__(
-            num_maskmem, 
-            policy_lr, 
-            value_lr, 
-            gamma, 
-            beta, 
-            buffer_size, 
-            batch_size, 
-            device,
-            entropy_weight,
-            sam2_dim
+            num_maskmem=num_maskmem, 
+            policy_lr=policy_lr, 
+            value_lr=value_lr, 
+            gamma=gamma, 
+            beta=beta,
+            tau=tau,
+            buffer_size=buffer_size, 
+            batch_size=batch_size, 
+            device=device,
+            entropy_weight=entropy_weight,
+            sam2_dim=sam2_dim
         )
         self.epsilon = epsilon
     

@@ -1535,7 +1535,7 @@ class SAM2VideoPredictor(SAM2Base):
         
         bank_size = len(output_dict["non_cond_frame_outputs"])
         bank_full = (bank_size >= self.num_maskmem - 1)
-        valid_actions = [0] if bank_full else [0, 1]
+        valid_actions = [1] if bank_full else [0, 1]
         valid_actions.extend(list(action_frame_map.keys()))
         with torch.no_grad():
             action_out = self.agent.select_action(
@@ -1551,34 +1551,24 @@ class SAM2VideoPredictor(SAM2Base):
         drop_frame = None
         storage_key = "non_cond_frame_outputs"
         if action == 0:
-            if not bank_full:
-                reward = inference_state["rl_config"]["lazy_penalty"]
-            else:
-                reward = 0
-        elif action == 1:
+            # Add
             if bank_full:
                 raise ValueError(
                     f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-                # penalty for adding to full bank without dropping
-                reward = inference_state["rl_config"]["invalid_penalty"]
             else:
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        elif action == 1:
+            # Skip (equivalent to adding then drop the same frame)
+            if not bank_full:
+                reward = inference_state["rl_config"]["lazy_penalty"]
+            else:
+                reward = 0 
         else:
-            # drop_frame = map_action(action, output_dict, storage_key)
-            # # safety: ensure drop_key exists in dict
-            # if drop_frame is not None:
-            #     # pop but keep a copy for logging/rollback if needed
-            #     output_dict[storage_key].pop(drop_frame)
-            #     output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            # else:
-            #     # penalty for droppingw from empty bank
-            #     reward = -10
-            
+            # Add the new frame and skip a specific frame
             if action not in action_frame_map.keys():
                 # penalty for dropping blank
                 raise ValueError(
                     f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-                reward = inference_state["rl_config"]["invalid_penalty"]
             else:
                 # drop_frame = list(output_dict[storage_key].keys())[drop_key]
                 drop_frame = action_frame_map[action]

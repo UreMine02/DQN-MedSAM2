@@ -416,7 +416,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             
     score_per_class["Avg"] = {k: np.mean(v) for k, v in score_per_class["Avg"].items()}
 
-    print("Metrics:")
-    print(tabulate([score_per_class["Avg"].values()], headers=score_per_class["Avg"].keys(), floatfmt=".4f"))
+    for name, metrics_dict in score_per_class.items():
+        print(f"{name}:")
+        print(tabulate([metrics_dict.values()], headers=metrics_dict.keys(), floatfmt=".4f"))
 
     return total_score["iou_score"], total_score["dice_score"]
