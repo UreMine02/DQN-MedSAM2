@@ -1,4 +1,5 @@
 import random
+import numpy as np
 from scipy.linalg import circulant
 from collections import deque
 
@@ -19,12 +20,11 @@ from sam2_train.rl_modules.rl_blocks import (
 )
 from sam2_train.rl_modules.rl_base_agent import BaseAgent
 
-
 def compute_gae(values: torch.Tensor, next_value: torch.Tensor, rewards: torch.Tensor, dones: torch.Tensor, gamma: float, tau: float):
     """Compute gae."""
     L = values.shape[0]
     device = values.device
-    delta = rewards + gamma * (1 - dones) * next_value - values
+    delta = rewards + gamma * (1 - dones) * next_value - values # [L,1]
     
     coef = torch.triu(torch.full((L, L), gamma * tau, device=device))
     l = torch.Tensor(circulant(torch.arange(L))).T.to(device=device, non_blocking=True)
@@ -43,14 +43,36 @@ class POReplayInstance(RLReplayInstance):
         loss_after=None, 
         reward=None, 
         eps=1e-8,
-        log_probs=None
+        log_probs=None,
+        advantage=None,
+        return_=None
     ):
         super().__init__(frame_idx, state, action, next_state, loss_before, loss_after, reward, eps)
         self.log_probs = log_probs
+        self.advantage = advantage
+        self.return_ = return_
         
     def get(self):
         # Call tuple to create a copy
         return tuple((self.state, self.log_probs, self.action, self.reward, self.next_state, self.done))
+    
+    def get_updated(self):
+        # Call tuple to create a copy
+        return tuple((
+            self.state,
+            self.log_probs,
+            self.action,
+            self.reward,
+            self.next_state,
+            self.done,
+            self.return_,
+            self.advantage
+        ))
+    
+    def set_return_advantage(self, return_, advantage):
+        self.return_ = return_
+        self.advantage = advantage
+        
 
 class Trajectory:
     def __init__(self):
@@ -60,7 +82,8 @@ class Trajectory:
         self.transitions.append(transition)
         
     def get_transitions(self, device="cpu"):
-        states, log_probs, actions, rewards, next_states, dones = zip(*self.transitions)
+        transitions = [trans.get() for trans in self.transitions]
+        states, log_probs, actions, rewards, next_states, dones = zip(*transitions)
         
         image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
         memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
@@ -94,8 +117,10 @@ class BaseFeatureSummarizer(nn.Module):
         self.hidden_dim = n_query * memory_dim + obj_ptr_dim
         memory_num_head = memory_dim // 64
         
-        self.image_spatial_summary = SpatialSummarizer(n_query, self.hidden_dim, image_dim, self.hidden_dim // 64, 64, n_layers=2)
-        self.memory_spatial_summary = SpatialSummarizer(n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=2)
+        self.image_spatial_summary = SpatialSummarizer(
+            n_query, self.hidden_dim, image_dim, self.hidden_dim // 64, 64, n_layers=4)
+        self.memory_spatial_summary = SpatialSummarizer(
+            n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=4)
         
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
         B, T, C, H, W = bank_feat.shape
@@ -134,7 +159,7 @@ class BasePolicyNetwork(nn.Module):
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         
         self.action_decoder = nn.ModuleList(
-            [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(2)]
+            [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(4)]
         )
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
@@ -145,7 +170,7 @@ class BasePolicyNetwork(nn.Module):
             nn.Linear(self.hidden_dim * 4, 1)
         )
 
-    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
+    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
         B = image_spatial_query.shape[0]
         non_drop_embed = self.non_drop_embed.expand(B, 1, self.hidden_dim)
         
@@ -155,8 +180,14 @@ class BasePolicyNetwork(nn.Module):
         for layer in self.action_decoder:
             action_query = layer(action_query, action_context)
             
-        actions_probs = self.action_proj(action_query)
-        actions_probs = torch.softmax(actions_probs, dim=1)
+        actions_logits = self.action_proj(action_query)
+        
+        actions_probs = torch.softmax(actions_logits, dim=1)
+        
+        # if not training:
+        #     print(actions_logits.squeeze())
+        #     print(actions_probs.squeeze())
+            
         return actions_probs.squeeze(-1)
     
 class BaseValueNetwork(nn.Module):
@@ -171,7 +202,7 @@ class BaseValueNetwork(nn.Module):
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         
         self.value_decoder = nn.ModuleList(
-            [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(2)]
+            [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(4)]
         )
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
@@ -181,6 +212,10 @@ class BaseValueNetwork(nn.Module):
             nn.Dropout(0.2),
             nn.Linear(self.hidden_dim * 4, 1)
         )
+        # self.value_proj = nn.Sequential(
+        #     nn.LayerNorm(self.hidden_dim),
+        #     nn.Linear(self.hidden_dim, 1)
+        # )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
         B = image_spatial_query.shape[0]
@@ -214,20 +249,48 @@ class BasePOAgent(BaseAgent):
         self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim)
 
-        self.optimizer = optim.AdamW(
+        self.policy_optimizer = optim.AdamW(
             list(self.policy_net.parameters()) + \
-            list(self.value_net.parameters()) + \
             list(self.feat_summarizer.parameters()),
-            lr=policy_lr)
+            lr=policy_lr
+        )
+        self.value_optimizer = optim.AdamW(
+            list(self.value_net.parameters()),
+            lr=value_lr
+        )
+        
+        # self.optimizer = optim.AdamW(
+        #     list(self.feat_summarizer.parameters()) + \
+        #     list(self.policy_net.parameters()) + \
+        #     list(self.value_net.parameters()),
+        #     lr=policy_lr
+        # )
         
         self.tau = tau
         self.entropy_weight= entropy_weight
+        
+        self.priority_weight = deque(maxlen=buffer_size)
     
     def init_new_trajectory(self):
         self.await_trajectory = Trajectory()
         
     def final_trajectory(self):
-        self.replay_buffer.append(self.await_trajectory)
+        log_probs, action, reward, done, curr_state, next_state = self.await_trajectory.get_transitions(self.device)
+
+        with torch.no_grad():
+            curr_feat = self.feat_summarizer(*curr_state)
+            curr_value = self.value_net(*curr_feat)
+            next_feat = self.feat_summarizer(*next_state)
+            next_value = self.value_net(*next_feat)
+            
+            return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
+            return_ = return_.squeeze(-1)
+            advantage = return_ - curr_value.squeeze(-1)
+            
+        for i, ins in enumerate(self.await_trajectory.transitions):
+            ins.set_return_advantage(return_[i].cpu(), advantage[i].cpu())
+            self.replay_buffer.append(ins.get_updated())
+            
         self.await_trajectory = None
     
     def init_new_replay_instance(self, **instance_info):
@@ -235,14 +298,15 @@ class BasePOAgent(BaseAgent):
         
     def update_await_replay_instance(self, loss_after, next_state):
         self.await_replay_instance.update(loss_after, next_state)
-        self.await_trajectory.add_transition(self.await_replay_instance.get())
+        self.await_trajectory.add_transition(self.await_replay_instance)
         self.await_replay_instance = None
         
     def clear_await(self, loss_after):
-        self.await_replay_instance.set_done(loss_after)
-        self.await_trajectory.add_transition(self.await_replay_instance.get())
-        self.await_replay_instance = None
-        self.final_trajectory()
+        if self.await_replay_instance:
+            self.await_replay_instance.set_done(loss_after)
+            self.await_trajectory.add_transition(self.await_replay_instance)
+            self.await_replay_instance = None
+            self.final_trajectory()
         
     def select_action(self, state: RLStates, valid_actions, training=False):
         image_feat = state.next_image_feat
@@ -252,7 +316,7 @@ class BasePOAgent(BaseAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"]
         
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state).cpu()
+        action_probs = self.policy_net(*state, training=False).cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
@@ -261,7 +325,6 @@ class BasePOAgent(BaseAgent):
             action_idx = torch.multinomial(valid_probs, 1)
         else:
             action_idx = torch.argmax(valid_probs)
-
         return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
     
     def to(self, device):
@@ -271,18 +334,20 @@ class BasePOAgent(BaseAgent):
         self.value_net.to(device=device, non_blocking=True)
 
     def update(self, num_update):
-        if len(self.replay_buffer) < self.batch_size:
+        if len(self.replay_buffer) < self.batch_size or num_update <= 0:
             return None
         
+        print(f"Update agent for {num_update} steps")
         self.feat_summarizer.train()
         self.policy_net.train()
         self.value_net.train()
         
         total_policy_loss, total_value_loss = 0, 0
-        for _ in range(num_update):
-            batch = random.sample(self.replay_buffer, self.batch_size)
+        for i in range(num_update):
+            batch = random.sample(self.replay_buffer, k=self.batch_size)
 
-            policy_loss, value_loss = self.train_step(batch)
+            update_value = i % 2
+            value_loss, policy_loss = self.train_step(batch, update_value=update_value)
             
             total_policy_loss += policy_loss
             total_value_loss += value_loss
@@ -290,89 +355,74 @@ class BasePOAgent(BaseAgent):
         self.feat_summarizer.eval()
         self.policy_net.eval()
         self.value_net.eval()
-        return (total_policy_loss + total_value_loss) / num_update
+        return {"actor_loss": total_policy_loss / num_update, "critic_loss": total_value_loss / num_update}
         
-    def train_step(self, batch):
-        curr_states = []
-        actions = []
-        rewards = []
-        dones = []
-        returns = []
-        old_log_probs = []
-        advantages = []
-        for trajectory in batch:
-            log_probs, action, reward, done, curr_state, next_state = trajectory.get_transitions(self.device)
-
-            with torch.no_grad():
-                curr_feat = self.feat_summarizer(*curr_state)
-                curr_value = self.value_net(*curr_feat)
-                next_feat = self.feat_summarizer(*next_state)
-                next_value = self.value_net(*next_feat)
-                
-                return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
-            
-            curr_states.append(curr_state)
-            old_log_probs.append(log_probs)
-            actions.append(action)
-            rewards.append(reward)
-            dones.append(done)
-            returns.append(return_)
-            advantages.append(return_ - curr_value)
-
-        (
-            image_feat,
-            memory_feat,
-            memory_ptr,
-            bank_feat,
-            bank_ptr,
-        ) = zip(*curr_states)
+    def train_step(self, batch, update_value=True):
+        device = self.device
         
-        image_feat = torch.cat(image_feat).to(device=self.device, non_blocking=True)
-        memory_feat = torch.cat(memory_feat).to(device=self.device, non_blocking=True)
-        memory_ptr = torch.cat(memory_ptr).to(device=self.device, non_blocking=True)
-        bank_feat = torch.cat(bank_feat).to(device=self.device, non_blocking=True)
-        bank_ptr = torch.cat(bank_ptr).to(device=self.device, non_blocking=True)
+        states, old_log_probs, actions, rewards, next_states, dones, returns, advantages = zip(*batch)
         
-        old_log_probs = torch.cat(old_log_probs).to(device=self.device, non_blocking=True)
-        actions = torch.cat(actions).to(device=self.device, non_blocking=True)
-        rewards = torch.cat(rewards).to(device=self.device, non_blocking=True)
-        dones = torch.cat(dones).to(device=self.device, non_blocking=True)
-        returns = torch.cat(returns).to(device=self.device, non_blocking=True)
-        advantages = torch.cat(advantages).to(device=self.device, non_blocking=True)
+        image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
+        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
+        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
+        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).to(device=device, non_blocking=True)
+        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
+        
+        actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
+        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, non_blocking=True)
+        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, non_blocking=True)
+        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, non_blocking=True)
+        returns = torch.FloatTensor(returns).unsqueeze(1).to(device=device, non_blocking=True)
+        advantages = torch.FloatTensor(advantages).unsqueeze(1).to(device=device, non_blocking=True)
+        
+        adv_mean = advantages.mean(dim=0, keepdim=True)
+        adv_std = advantages.std(dim=0, keepdim=True)
+        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        
+        # print("advantages", advantages.mean())
         
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
             
-            action_probs = self.policy_net(*curr_feats).gather(1, actions)
-            log_probs = torch.log(action_probs)
+            policy_probs = self.policy_net(*curr_feats)
+            action_probs = policy_probs.gather(1, actions)
+            log_probs = torch.log(policy_probs)
+            log_action_probs = torch.log(action_probs)
             
-            policy_loss = self.compute_policy_loss(log_probs, advantages, old_log_probs)
-            policy_loss += -log_probs * self.entropy_weight # entropy regularization
+            policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
+            minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
+            policy_loss += minus_entropy * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
             
-            pred_value = self.value_net(*curr_feats)
-            value_loss = F.smooth_l1_loss(pred_value, returns)
-
-            total_loss = policy_loss + value_loss
+            self.policy_optimizer.zero_grad()
+            policy_loss.backward()
+            self.policy_optimizer.step()
             
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            self.optimizer.step()
+            if update_value:
+                with torch.no_grad():
+                    curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+                
+                pred_value = self.value_net(*curr_feats)
+                value_loss = F.smooth_l1_loss(pred_value, returns)
+                
+                self.value_optimizer.zero_grad()
+                value_loss.backward()
+                self.value_optimizer.step()
+            else:
+                value_loss = torch.Tensor([0])
             
-            # # update policy
-            # self.policy_optimizer.zero_grad()
-            # policy_loss.backward(retain_graph=True)
-            # self.policy_optimizer.step()
-
-            # # update value
-            # self.value_optimizer.zero_grad()
-            # value_loss.backward()
-            # self.value_optimizer.step()
+            # total_loss = policy_loss + 0.1 * value_loss
+            
+            # self.optimizer.zero_grad()
+            # total_loss.backward()
+            # self.optimizer.step()
+            
+            # print("loss", policy_loss, value_loss, minus_entropy.mean())
             
         return value_loss.item(), policy_loss.item()
     
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
-        return - (advantage * log_prob)
+        return -(advantage * log_prob)
             
     def state_dict(self):
         if isinstance(self.feat_summarizer, DDP):

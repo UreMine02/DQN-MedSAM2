@@ -22,8 +22,11 @@ import pytz
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR, CosineAnnealingWarmRestarts
+from torch.optim.lr_scheduler import StepLR, SequentialLR, ConstantLR
 import numpy as np
+
+import warnings
+warnings.filterwarnings("ignore")
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -34,7 +37,6 @@ def cleanup():
     dist.destroy_process_group()
 
 def train(rank=0, world_size=0):
-
     args = cfg.parse_args()
 
     if args.distributed:
@@ -63,8 +65,12 @@ def train(rank=0, world_size=0):
         net = DDP(net, device_ids=[rank])
         net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
-    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False)
-    # scheduler = CosineAnnealingWarmRestarts(optimizer, T_0=args.ep, eta_min=5e-5)
+    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
+    # scheduler = SequentialLR(
+    #     optimizer,
+    #     [StepLR(optimizer, step_size=10, gamma=0.5), ConstantLR(optimizer, factor=0.25, total_iters=args.ep-30)],
+    #     [30]
+    # )
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -85,6 +91,7 @@ def train(rank=0, world_size=0):
         print(f"checkpoint saved in {checkpoint_path}")
 
     '''begain training'''
+    best_dice = 0.0
     for epoch in range(args.ep):
         net.train()
         time_start = time.time()
@@ -95,7 +102,8 @@ def train(rank=0, world_size=0):
             'train/focal loss': focal_loss, 
             'train/mae_loss': mae_loss, 
             'train/bce_loss': bce_loss, 
-            "train/agent_loss": agent_loss,
+            "train/actor_loss": agent_loss["actor_loss"],
+            "train/critic_loss": agent_loss["critic_loss"],
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
@@ -105,26 +113,12 @@ def train(rank=0, world_size=0):
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
         # scheduler.step()
-
-        if args.save_ckpt:
-            if args.distributed and dist.get_rank() == 0:
-                torch.save({
-                    'model': net.module.state_dict(),
-                    'agent': net.module.agent.q_net.module.state_dict(), #TODO: fix
-                },
-                os.path.join(checkpoint_path, f"epoch_{epoch}.pth")
-            )
-            elif not args.distributed:
-                torch.save({
-                    'model': net.state_dict(),
-                    'agent': net.agent.state_dict(),
-                },
-                os.path.join(checkpoint_path, f"epoch_{epoch}.pth"))
-
+        
         if args.distributed:
             torch.distributed.barrier()
         
         net.eval()
+        new_best = False
         if epoch % args.val_freq == 0 or epoch == args.ep-1:
             
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
@@ -135,9 +129,44 @@ def train(rank=0, world_size=0):
                 print(f"val/IOU: {iou}, val/dice : {dice}")
             else:
                 print(f"val/IOU: {iou}, val/dice : {dice}")
+                
+            if dice > best_dice:
+                best_dice = dice
+                new_best = True
             
             if args.wandb_enabled:
                 wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
+
+        if args.save_ckpt:
+            if args.distributed and dist.get_rank() == 0:
+                torch.save({
+                    'model': net.module.state_dict(),
+                    'agent': net.module.agent.q_net.module.state_dict(),
+                },
+                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                
+                if new_best:
+                    print(f"Achieve best Dice: {dice} > {best_dice}")
+                    torch.save({
+                        'model': net.module.state_dict(),
+                        'agent': net.module.agent.q_net.module.state_dict(),
+                    },
+                    os.path.join(checkpoint_path, f"best.pth"))
+                    
+            elif not args.distributed:
+                torch.save({
+                    'model': net.state_dict(),
+                    'agent': net.agent.state_dict(),
+                },
+                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                
+                if new_best:
+                    print(f"Achieve best Dice: {dice} > {best_dice}")
+                    torch.save({
+                        'model': net.state_dict(),
+                        'agent': net.agent.state_dict(),
+                    },
+                    os.path.join(checkpoint_path, f"best.pth"))
             
     if args.distributed:
         cleanup()         
@@ -151,6 +180,7 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     args = cfg.parse_args()
+    
     if args.distributed:
         world_size = torch.cuda.device_count()
         mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)

@@ -2,16 +2,11 @@
     Yunli Qi
 """
 
-import os
-import matplotlib.pyplot as plt
-import time
-import psutil
 import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchshow as ts
-from einops import rearrange
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -20,10 +15,6 @@ import cfg
 from conf import settings
 from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple
 import wandb
-import matplotlib.pyplot as plt
-from torchvision.utils import save_image
-
-import tracemalloc
 
 args = cfg.parse_args()
 
@@ -40,7 +31,6 @@ epoch_loss_values = []
 metric_values = []
 
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
-    tracemalloc.start()
     if args.distributed:
         net = net.module
         GPUdevice = torch.device('cuda', rank)
@@ -52,12 +42,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     net.train()
     if agent is not None:
         agent.set_epoch(epoch, distributed=args.distributed)
+            
     for name, param in net.named_parameters():
         if "image_encoder" in name:
             param.requires_grad_(False)
         if "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        if "sam_mask_decoder" in name:
             param.requires_grad_(False)
         
     video_length = args.video_length
@@ -68,9 +57,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     # Record total loss thoroughout the entire epoch
     total_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
     target_class = 4
-    agent_loss = 0
+    agent_loss = {"actor_loss": 0, "critic_loss": 0}
     agent_step = 0
-    with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img') as pbar:
+    with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
         for packs in train_loader:            
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -88,7 +77,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     continue
                 # torch.cuda.empty_cache()
                 if obj_id not in dice_loss_per_class.keys():
-                    dice_loss_per_class[name] = {"dice_loss":0, "num_step": 0} 
+                    dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0} 
                 imgs_tensor = pack['image']
                 # print('imgs_tensor',imgs_tensor.shape)
                 masks_tensor = pack['label']
@@ -107,17 +96,16 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
                 )
                 
-                if args.wandb_enabled:
-                    support_pair = []
-                    for frame_idx in range(support_imgs_tensor.shape[0]):
-                        support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
-                        # print(support_imgs_tensor[frame_idx].shape)
-                        # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
-                        # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
-                        support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
-                        support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
-
                 # if args.wandb_enabled:
+                #     support_pair = []
+                #     for frame_idx in range(support_imgs_tensor.shape[0]):
+                #         support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
+                #         # print(support_imgs_tensor[frame_idx].shape)
+                #         # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
+                #         # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
+                #         support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
+                #         support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
+
                 #     wandb.log({"train/support set": support_pair})
                 
                 with torch.cuda.amp.autocast():
@@ -152,14 +140,14 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                        iou_gt= iou_score(pred, mask)
+                        iou_gt = iou_score(pred, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss)
 
-                        dice_loss_per_class[name]["dice_loss"] += dice_loss.item()
-                        dice_loss_per_class[name]["num_step"] += 1
+                        dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
+                        dice_loss_per_class[obj_id]["num_step"] += 1
                     
                     # Average loss of this class
                     average_loss(class_loss)
@@ -169,17 +157,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss.backward()
                     optimizer.step()
 
-                    # try:
-                        # lấy agent từ model (nếu có attach)
                     if args.distributed:
                         torch.distributed.barrier()
                         
                     if agent is not None:
-                        q_updates_per_step = getattr(args, "q_updates_per_step", 1)
-                        print(f"Updating agents {q_updates_per_step} times")
+                        q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
-                            agent_loss += agent_step_loss
+                            agent_loss["actor_loss"] += agent_step_loss["actor_loss"]
+                            agent_loss["critic_loss"] += agent_step_loss["critic_loss"]
                             agent_step += 1
                                 
                     # Add the loss of the class to the instance
@@ -211,11 +197,18 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
     
+    if agent_step > 0:
+        avg_agent_loss = {}
+        avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
+        avg_agent_loss["critic_loss"] = agent_loss["critic_loss"] / agent_step
+    else:
+        avg_agent_loss = None
+        
     if args.wandb_enabled:
         for class_, dice_loss in dice_loss_per_class.items():
             wandb.log({f"train/Class {class_} loss": dice_loss}, step=epoch)
 
-    return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], agent_loss / agent_step
+    return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
     if args.distributed:
@@ -261,8 +254,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
-                if name not in score_per_class.keys():
-                    score_per_class[name] = copy.deepcopy(metrics)
+                if obj_id not in score_per_class.keys():
+                    score_per_class[obj_id] = copy.deepcopy(metrics)
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -343,10 +336,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        score_per_class[name]["iou"].append(iou.item())
-                        score_per_class[name]["dice"].append(dice.item())
-                        score_per_class[name]["fb_iou"].append(fb_iou.item())
-                        score_per_class[name]["hausdorf_dist"].append(hd.item())
+                        score_per_class[obj_id]["iou"].append(iou.item())
+                        score_per_class[obj_id]["dice"].append(dice.item())
+                        score_per_class[obj_id]["fb_iou"].append(fb_iou.item())
+                        score_per_class[obj_id]["hausdorf_dist"].append(hd.item())
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
@@ -395,4 +388,4 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         print(f"{name}:")
         print(tabulate([metrics_dict.values()], headers=metrics_dict.keys(), floatfmt=".4f"))
 
-    return total_score["iou_score"], total_score["dice_score"]
+    return score_per_class["Avg"]['iou'], score_per_class["Avg"]['dice']

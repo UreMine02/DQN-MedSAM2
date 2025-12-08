@@ -227,6 +227,8 @@ def score_cal(seg_map, prd_map):
         
     total_num = seg_map.shape[0]
     
+    hd_score = compute_hausdorff_distance(prd_map.unsqueeze(1), seg_map.unsqueeze(1)).squeeze()
+    
     seg_map = seg_map.reshape(total_num, -1)
     prd_map = prd_map.reshape(total_num, -1)
     dot_product = (seg_map * prd_map)
@@ -246,8 +248,6 @@ def score_cal(seg_map, prd_map):
     
     b_iou_score = b_sum_dot/((b_sum_seg + b_sum_prd)-b_sum_dot)
     fb_iou_score = (iou_score + b_iou_score) / 2
-    
-    hd_score = compute_hausdorff_distance(prd_map.unsqueeze(1), seg_map.unsqueeze(1)).squeeze()
 
     return (iou_score, dice_score, fb_iou_score, hd_score)
 
@@ -258,14 +258,14 @@ def eval_seg(pred, mask):
         mask: [D, H, W]
     """
     pred = (torch.sigmoid(pred) > 0.5).float()
-    (iou, dice, fb_iou, hd) = score_cal(mask, pred)
+    iou, dice, fb_iou, hd = score_cal(mask, pred)
     
     iou[iou.isnan()] = 0. 
     dice[dice.isnan()] = 0.
     fb_iou[fb_iou.isnan()] = 0.
     hd[torch.logical_or(hd.isnan(), hd.isinf())] = 0.
     
-    return (iou, dice, fb_iou, hd,)
+    return iou, dice, fb_iou, hd
 
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)

@@ -1180,6 +1180,7 @@ class SAM2VideoPredictor(SAM2Base):
             # number of clicks on each object might be different.
             
             storage_key = "await_outputs"
+            # storage_key = "non_cond_frame_outputs"
             current_out, pred_masks = self._run_single_frame_inference(
                 inference_state=inference_state,
                 output_dict=output_dict,
@@ -1553,22 +1554,19 @@ class SAM2VideoPredictor(SAM2Base):
         if action == 0:
             # Add
             if bank_full:
-                raise ValueError(
-                    f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
+                reward = inference_state["rl_config"]["invalid_penalty"]
             else:
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
-            if not bank_full:
-                reward = inference_state["rl_config"]["lazy_penalty"]
-            else:
-                reward = 0 
+            reward = 0.0
         else:
             # Add the new frame and skip a specific frame
             if action not in action_frame_map.keys():
                 # penalty for dropping blank
-                raise ValueError(
-                    f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
+                reward = inference_state["rl_config"]["invalid_penalty"]
+                # raise ValueError(
+                    # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
             else:
                 # drop_frame = list(output_dict[storage_key].keys())[drop_key]
                 drop_frame = action_frame_map[action]
@@ -1576,7 +1574,7 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
         # if not train_agent:
-        # print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} reward {reward}")
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
         
         if train_agent:
             replay_instance_info = {

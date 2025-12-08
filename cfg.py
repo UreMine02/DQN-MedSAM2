@@ -1,6 +1,5 @@
 import argparse
 
-
 def parse_args():    
     parser = argparse.ArgumentParser()
     parser.add_argument('-net', type=str, default='sam2', help='net type')

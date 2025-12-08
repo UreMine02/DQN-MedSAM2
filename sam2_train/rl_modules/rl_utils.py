@@ -121,7 +121,7 @@ def compute_loss(
             align_corners=False,
         ).squeeze()
         
-    loss = dice_loss_fn(video_res_masks, gt_masks) + 20 * focal_loss_fn(video_res_masks, gt_masks)
+    loss = dice_loss_fn(video_res_masks, gt_masks)
     
     return loss
 
