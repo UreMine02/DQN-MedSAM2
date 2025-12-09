@@ -125,23 +125,25 @@ class GRPOAgent(BasePOAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"]
         
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=False).cpu()
+        action_probs = self.policy_net(*state, training=False).cpu().squeeze(0)
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
-        valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
+        valid_probs = action_probs.gather(0, valid_actions)
         
         if training:
-            action_idx = torch.multinomial(valid_probs, min(len(valid_actions), num_samples))
+            main_action_idx = torch.multinomial(valid_probs, 1)
+            action_idx = torch.multinomial(action_probs.squeeze(), min(len(valid_actions), num_samples))
             
             return {
-                "action": [valid_actions[idx].item() for idx in action_idx],
-                "log_probs": [torch.log(valid_probs[idx]) for idx in action_idx]
+                "main_action": valid_actions[main_action_idx].item(),
+                "action": action_idx.tolist(),
+                "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
             action_idx = torch.argmax(valid_probs)
             
             return {
-                "action": [valid_actions[action_idx].item()],
+                "main_action": valid_actions[action_idx].item(),
             }
         
     def update(self, num_update):

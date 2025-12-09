@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP=msd_task02+grpo+entropy1e-3+num_support3
+EXP=msd_task02+grpo+entropy1e-2+num_support3+invalid_penalty0.01+lazy_penalty0.01
 
 CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \
@@ -14,8 +14,8 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -val_freq 1 \
     -ep 300 \
     -q_updates_per_step 2 \
-    -lazy_penalty 0 \
-    -invalid_penalty 0 \
+    -lazy_penalty -0.01 \
+    -invalid_penalty -0.01 \
     -num_support 3 \
     -wandb_enabled
 

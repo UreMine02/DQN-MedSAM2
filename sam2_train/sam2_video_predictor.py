@@ -1527,6 +1527,7 @@ class SAM2VideoPredictor(SAM2Base):
         bank_full = (bank_size >= self.num_maskmem - 1)
         valid_actions = [1] if bank_full else [0, 1]
         valid_actions.extend(list(action_frame_map.keys()))
+        # valid_actions = list(range(8))
         with torch.no_grad():
             action_out = self.agent.select_action(
                 state,
@@ -1535,12 +1536,12 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent,
             ) # ask agent
         
-        actions = action_out["action"]
         state.offload_to_cpu()
         
         if train_agent:
             self.agent.init_new_group()
-
+            
+            actions = action_out["action"]
             log_probs = action_out["log_probs"]
             for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
                 reward = 0
@@ -1551,33 +1552,43 @@ class SAM2VideoPredictor(SAM2Base):
 
                 drop_frame = None
                 storage_key = "non_cond_frame_outputs"
+                valid = True
                 if action == 0:
                     # Add
-                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                    if bank_full:
+                        reward= inference_state['rl_config']['invalid_penalty']
+                        valid = False
+                    else:
+                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
-                    reward = 0.0
+                    reward = inference_state['rl_config']['lazy_penalty']
                 else:
                     # Add the new frame and skip a specific frame
-                    drop_frame = action_frame_map[action]
-                    temp_output_dict[storage_key].pop(drop_frame)    
-                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                    if action not in action_frame_map.keys():
+                        reward= inference_state['rl_config']['invalid_penalty']
+                        valid = False
+                    else:
+                        drop_frame = action_frame_map[action]
+                        temp_output_dict[storage_key].pop(drop_frame)    
+                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 
-                with torch.no_grad():
-                    output_before = self.track_step(
-                        frame_idx=frame_idx,
-                        current_vision_feats=current_vision_feats,
-                        current_vision_pos_embeds=current_vision_pos_embeds,
-                        output_dict=temp_output_dict,
-                        **kwargs
-                    )
+                if valid:
+                    with torch.no_grad():
+                        output_before = self.track_step(
+                            frame_idx=frame_idx,
+                            current_vision_feats=current_vision_feats,
+                            current_vision_pos_embeds=current_vision_pos_embeds,
+                            output_dict=temp_output_dict,
+                            **kwargs
+                        )
 
-                pred_masks = output_before["pred_masks"]
-                pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+                    pred_masks = output_before["pred_masks"]
+                    pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+                        
+                    loss_after = compute_loss(pred_masks, gt_masks, inference_state)
                     
-                loss_after = compute_loss(pred_masks, gt_masks, inference_state)
-                
-                reward += loss_after.detach().cpu() - loss_before.detach().cpu()
+                    reward += loss_after.detach().cpu() - loss_before.detach().cpu()
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
@@ -1593,7 +1604,7 @@ class SAM2VideoPredictor(SAM2Base):
             
         drop_frame = None
         reward = 0.0
-        action = actions[0]
+        action = action_out['main_action']
         if action == 0:
             # Add
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
