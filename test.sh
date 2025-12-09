@@ -17,9 +17,9 @@ export CUDA_VISIBLE_DEVICES=1
 # done
 
 python eval_3d.py \
-    -pretrain output/msd_task02+ppo+normalized0.9_gae0.99+entropy1e-3+num_support3/2025-12-08-11-06-07/best.pth \
+    -pretrain output/msd_task02+ppo+normalized0.5_gae0.99+entropy1e-3+num_support3/2025-12-09-14-48-31/epoch_150_dice0.8531.pth \
     -rl_config rl_modules/config/ppo_po_agent.yaml \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/MSD \
-    -num_support 3
+    -num_support 1
