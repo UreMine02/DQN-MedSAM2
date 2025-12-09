@@ -181,7 +181,7 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(action_query, action_context)
             
         actions_logits = self.action_proj(action_query)
-        actions_logits = actions_logits.clamp(min=-20, max=20)
+        # actions_logits = actions_logits.clamp(min=-20, max=20)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
         if not training:

@@ -1,5 +1,7 @@
 # Deep Q-Learning Agent 
 import random
+import numpy as np
+from collections import deque
 
 import torch
 from torch import optim
@@ -50,7 +52,7 @@ class GRPOGroup:
         # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = 0.2 * (group_rewards - group_mean) / (group_std + 1e-8)
+        group_rewards = 0.02 * (group_rewards - group_mean) / (group_std + 1e-8)
         # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
@@ -101,6 +103,7 @@ class GRPOAgent(BasePOAgent):
         )
         
         self.await_group = None
+        self.priority = deque(maxlen=buffer_size)
     
     def to(self, device):
         self.device = device
@@ -115,7 +118,13 @@ class GRPOAgent(BasePOAgent):
         
     def final_group(self):
         self.await_group.finalize()
-        self.replay_buffer.extend(self.await_group.get_instances())
+        new_normalized_instances = self.await_group.get_instances()
+        self.replay_buffer.extend(new_normalized_instances)
+        for ins in new_normalized_instances:
+            if ins[2] == 0:
+                self.priority.append(0.25)
+            else:
+                self.priority.append(1.0)
         
     def select_action(self, state, valid_actions, num_samples=1, training=False):
         image_feat = state.next_image_feat
@@ -157,9 +166,14 @@ class GRPOAgent(BasePOAgent):
         total_policy_loss = 0
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
+            p = np.asanyarray(self.priority)
+            p = p / p.sum()
+            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            batch = []
+            for idx in batch_idx:
+                batch.append(self.replay_buffer[idx])
 
-            update_value = i % 2
-            policy_loss = self.train_step(batch, update_value=update_value)
+            policy_loss = self.train_step(batch)
             
             total_policy_loss += policy_loss
         
