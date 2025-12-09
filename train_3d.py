@@ -66,7 +66,7 @@ def train(rank=0, world_size=0):
         net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
-    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=10)
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=20)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 

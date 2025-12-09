@@ -17,7 +17,7 @@ CUDA_VISIBLE_DEVICES=1 python train_3d.py \
     -lazy_penalty 0 \
     -invalid_penalty 0 \
     -num_support 3 \
-    # -wandb_enabled
+    -wandb_enabled
 
 # CUDA_VISIBLE_DEVICES=0 python train_3d.py \
 #     -exp_name sarcoma+ppo+normalized_gae0.99+entropy1e-1+num_support3 \

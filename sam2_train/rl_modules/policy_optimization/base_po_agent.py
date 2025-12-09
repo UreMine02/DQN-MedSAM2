@@ -181,12 +181,12 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(action_query, action_context)
             
         actions_logits = self.action_proj(action_query)
-        actions_logits = actions_logits.clamp(min=-10, max=10)
+        actions_logits = actions_logits.clamp(min=-20, max=20)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
+        if not training:
+            print(actions_logits.squeeze())
+            print(actions_probs.squeeze())
             
         return actions_probs.squeeze(-1)
     
@@ -368,7 +368,7 @@ class BasePOAgent(BaseAgent):
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        advantages = 0.7 * (advantages - adv_mean) / adv_std
         
         # print("advantages", advantages.mean())
         
