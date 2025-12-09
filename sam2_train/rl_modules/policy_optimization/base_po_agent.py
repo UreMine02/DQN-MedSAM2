@@ -181,7 +181,7 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(action_query, action_context)
             
         actions_logits = self.action_proj(action_query)
-        
+        actions_logits = actions_logits.clamp(min=-10, max=10)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
         # if not training:
@@ -259,17 +259,8 @@ class BasePOAgent(BaseAgent):
             lr=value_lr
         )
         
-        # self.optimizer = optim.AdamW(
-        #     list(self.feat_summarizer.parameters()) + \
-        #     list(self.policy_net.parameters()) + \
-        #     list(self.value_net.parameters()),
-        #     lr=policy_lr
-        # )
-        
         self.tau = tau
         self.entropy_weight= entropy_weight
-        
-        self.priority_weight = deque(maxlen=buffer_size)
     
     def init_new_trajectory(self):
         self.await_trajectory = Trajectory()

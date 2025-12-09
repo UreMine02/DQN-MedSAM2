@@ -1600,7 +1600,7 @@ class SAM2VideoPredictor(SAM2Base):
         pred_masks_gpu = output_dict["await_outputs"][frame_idx-1]["pred_masks"]
         pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
         gt_masks = inference_state["gt_masks"][frame_idx-1].to(device=storage_device, non_blocking=True)
-        gt_masks = gt_masks.to(torch.float32) 
+        gt_masks = gt_masks.to(torch.float32)
         
         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
         

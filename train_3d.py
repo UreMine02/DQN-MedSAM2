@@ -22,7 +22,7 @@ import pytz
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import StepLR, SequentialLR, ConstantLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
 
 import warnings
@@ -66,11 +66,7 @@ def train(rank=0, world_size=0):
         net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
-    # scheduler = SequentialLR(
-    #     optimizer,
-    #     [StepLR(optimizer, step_size=10, gamma=0.5), ConstantLR(optimizer, factor=0.25, total_iters=args.ep-30)],
-    #     [30]
-    # )
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=10)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -104,7 +100,7 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss, 
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            # "train/lr": scheduler.get_last_lr()[0],
+            "train/lr": scheduler.get_last_lr()[0],
         }
         
         if args.wandb_enabled and loss is not None:
@@ -112,7 +108,6 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-        # scheduler.step()
         
         if args.distributed:
             torch.distributed.barrier()
@@ -136,7 +131,9 @@ def train(rank=0, world_size=0):
             
             if args.wandb_enabled:
                 wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-
+        
+        scheduler.step(dice)
+        
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:
                 torch.save({
