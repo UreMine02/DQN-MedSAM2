@@ -1,6 +1,9 @@
 # Deep Q-Learning Agent 
+import random
+
 import torch
 from torch import optim
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
@@ -44,9 +47,11 @@ class GRPOGroup:
         
     def finalize(self):
         group_rewards = torch.Tensor([ins.reward for ins in self.group])
+        # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = (group_rewards - group_mean) / group_std
+        group_rewards = (group_rewards - group_mean) / (group_std + 1e-8)
+        # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]
@@ -97,6 +102,11 @@ class GRPOAgent(BasePOAgent):
         
         self.await_group = None
     
+    def to(self, device):
+        self.device = device
+        self.feat_summarizer.to(device=device, non_blocking=True)
+        self.policy_net.to(device=device, non_blocking=True)
+    
     def init_new_group(self):
         self.await_group = GRPOGroup()
     
@@ -122,36 +132,61 @@ class GRPOAgent(BasePOAgent):
         
         if training:
             action_idx = torch.multinomial(valid_probs, min(len(valid_actions), num_samples))
+            
+            return {
+                "action": [valid_actions[idx].item() for idx in action_idx],
+                "log_probs": [torch.log(valid_probs[idx]) for idx in action_idx]
+            }
         else:
             action_idx = torch.argmax(valid_probs)
             
-        return {
-            "action": [valid_actions[idx].item() for idx in action_idx],
-            "log_probs": [torch.log(valid_probs[idx]) for idx in action_idx]
-        }
+            return {
+                "action": [valid_actions[action_idx].item()],
+            }
+        
+    def update(self, num_update):
+        if len(self.replay_buffer) < self.batch_size or num_update <= 0:
+            return None
+        
+        print(f"Update agent for {num_update} steps")
+        self.feat_summarizer.train()
+        self.policy_net.train()
+        
+        total_policy_loss = 0
+        for i in range(num_update):
+            batch = random.sample(self.replay_buffer, k=self.batch_size)
+
+            update_value = i % 2
+            policy_loss = self.train_step(batch, update_value=update_value)
+            
+            total_policy_loss += policy_loss
+        
+        self.feat_summarizer.eval()
+        self.policy_net.eval()
+        return {"actor_loss": total_policy_loss / num_update}
     
     def train_step(self, batch, update_value=True):
         device = self.device
         
-        states, old_log_probs, actions, rewards, next_states, dones, returns, advantages = zip(*batch)
+        states, old_log_probs, actions, rewards,  dones = zip(*batch)
         
-        image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
+        image_feat = torch.cat([state.next_image_feat for state in states])
+        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states])
+        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states])
+        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states])
+        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states])
+        
+        image_feat = image_feat.to(device=device, dtype=torch.float16, non_blocking=True)
+        memory_feat = memory_feat.to(device=device, dtype=torch.float16, non_blocking=True)
+        memory_ptr = memory_ptr.to(device=device, dtype=torch.float16, non_blocking=True)
+        bank_feat = bank_feat.to(device=device, dtype=torch.float16, non_blocking=True)
+        bank_ptr = bank_ptr.to(device=device, dtype=torch.float16, non_blocking=True)
         
         actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, non_blocking=True)
-        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, non_blocking=True)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, non_blocking=True)
-        
-        adv_mean = advantages.mean(dim=0, keepdim=True)
-        adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.7 * (advantages - adv_mean) / adv_std
-        
-        # print("advantages", advantages.mean())
-        
+        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
+        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
+        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
+
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
             
@@ -160,7 +195,7 @@ class GRPOAgent(BasePOAgent):
             log_probs = torch.log(policy_probs)
             log_action_probs = torch.log(action_probs)
             
-            policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
+            policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
@@ -185,4 +220,14 @@ class GRPOAgent(BasePOAgent):
         clipped_surr_loss = torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon) * advantage
         policy_loss = -torch.min(surr_loss, clipped_surr_loss)
         return policy_loss
-        
+    
+    def state_dict(self):
+        if isinstance(self.feat_summarizer, DDP):
+            return {
+                "feat_summarizer": self.feat_summarizer.module.state_dict(),
+                "policy_net": self.policy_net.module.state_dict(),
+            }
+        return {
+            "feat_summarizer": self.feat_summarizer.state_dict(),
+            "policy_net": self.policy_net.state_dict(),
+        }

@@ -1522,7 +1522,7 @@ class SAM2VideoPredictor(SAM2Base):
             offload_to_cpu=False,
             training=train_agent
         )
-        
+
         bank_size = len(output_dict["non_cond_frame_outputs"])
         bank_full = (bank_size >= self.num_maskmem - 1)
         valid_actions = [1] if bank_full else [0, 1]
@@ -1531,34 +1531,38 @@ class SAM2VideoPredictor(SAM2Base):
             action_out = self.agent.select_action(
                 state,
                 valid_actions=torch.tensor(valid_actions),
-                training=train_agent
+                num_samples=6,
+                training=train_agent,
             ) # ask agent
         
         actions = action_out["action"]
-        log_probs = action_out["log_probs"]
         state.offload_to_cpu()
         
         if train_agent:
             self.agent.init_new_group()
 
-        for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
-            reward = 0
-            temp_output_dict = copy.deepcopy(output_dict)
-            drop_frame = None
-            storage_key = "non_cond_frame_outputs"
-            if action == 0:
-                # Add
-                temp_output_dict[storage_key][frame_idx-1] = temp_output_dict["await_outputs"][frame_idx-1]
-            elif action == 1:
-                # Skip (equivalent to adding then drop the same frame)
-                reward = 0.0
-            else:
-                # Add the new frame and skip a specific frame
-                drop_frame = action_frame_map[action]
-                temp_output_dict[storage_key].pop(drop_frame)    
-                temp_output_dict[storage_key][frame_idx-1] = temp_output_dict["await_outputs"][frame_idx-1]
-            
-            if train_agent:
+            log_probs = action_out["log_probs"]
+            for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
+                reward = 0
+                temp_output_dict = {
+                    "cond_frame_outputs": output_dict["cond_frame_outputs"].copy(),
+                    "non_cond_frame_outputs": output_dict["non_cond_frame_outputs"].copy()
+                }
+
+                drop_frame = None
+                storage_key = "non_cond_frame_outputs"
+                if action == 0:
+                    # Add
+                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                elif action == 1:
+                    # Skip (equivalent to adding then drop the same frame)
+                    reward = 0.0
+                else:
+                    # Add the new frame and skip a specific frame
+                    drop_frame = action_frame_map[action]
+                    temp_output_dict[storage_key].pop(drop_frame)    
+                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                
                 with torch.no_grad():
                     output_before = self.track_step(
                         frame_idx=frame_idx,
@@ -1574,7 +1578,7 @@ class SAM2VideoPredictor(SAM2Base):
                 loss_after = compute_loss(pred_masks, gt_masks, inference_state)
                 
                 reward += loss_after.detach().cpu() - loss_before.detach().cpu()
-                
+
                 replay_instance_info = {
                     "frame_idx": frame_idx,
                     "state": state,
@@ -1585,10 +1589,11 @@ class SAM2VideoPredictor(SAM2Base):
                 
                 self.agent.add_new_instance_to_group(**replay_instance_info)
                 
-        if train_agent:
             self.agent.final_group()
             
         drop_frame = None
+        reward = 0.0
+        action = actions[0]
         if action == 0:
             # Add
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
@@ -1601,4 +1606,4 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"].pop(drop_frame)    
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
             
-        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")

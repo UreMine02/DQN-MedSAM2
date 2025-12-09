@@ -165,7 +165,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             agent_loss["actor_loss"] += agent_step_loss["actor_loss"]
-                            agent_loss["critic_loss"] += agent_step_loss["critic_loss"]
                             agent_step += 1
                                 
                     # Add the loss of the class to the instance
@@ -200,7 +199,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if agent_step > 0:
         avg_agent_loss = {}
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
-        avg_agent_loss["critic_loss"] = agent_loss["critic_loss"] / agent_step
     else:
         avg_agent_loss = None
         
