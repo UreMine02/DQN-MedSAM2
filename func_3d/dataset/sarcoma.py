@@ -48,7 +48,8 @@ class Sarcoma(Dataset):
         self.test_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.test_split]
         
         self.image_size = args.image_size
-        self.max_slices = 16
+        self.video_length = args.video_length
+        self.num_support = args.num_support
         
     def __len__(self):
         if self.subset == "train":
@@ -83,18 +84,18 @@ class Sarcoma(Dataset):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            max_slices=self.max_slices if self.subset == "train" else -1
+            max_slices=self.video_length if self.subset == "train" else -1
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            max_slices=self.max_slices
+            max_slices=self.num_support
         )
         
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": name
+            "name": name, "case": image_path.split("/")[5]
         }
         
         return output_dict

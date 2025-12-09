@@ -165,25 +165,25 @@ class MemoryEncoder(nn.Module):
         # sigmoid, so that less domain shift from gt masks which are bool
         if not skip_mask_sigmoid:
             masks = F.sigmoid(masks)
-        # masks = checkpoint(self.mask_downsampler, masks, use_reentrant=False)
-        masks = self.mask_downsampler(masks)
+        masks = checkpoint(self.mask_downsampler, masks, use_reentrant=False)
+        # masks = self.mask_downsampler(masks)
 
         ## Fuse pix_feats and downsampled masks
         # in case the visual features are on CPU, cast them to CUDA
         pix_feat = pix_feat.to(masks.device)
-        # x = checkpoint(self.pix_feat_proj, pix_feat, use_reentrant=False)
-        # x = x + masks
-        # x = checkpoint(self.fuser, x, use_reentrant=False)
-        # x = checkpoint(self.out_proj, x, use_reentrant=False)
-
-        # pos = checkpoint(self.position_encoding, x, use_reentrant=False).to(x.dtype)
-        
-        x = self.pix_feat_proj(pix_feat)
+        x = checkpoint(self.pix_feat_proj, pix_feat, use_reentrant=False)
         x = x + masks
-        x = self.fuser(x)
-        x = self.out_proj(x)
+        x = checkpoint(self.fuser, x, use_reentrant=False)
+        x = checkpoint(self.out_proj, x, use_reentrant=False)
 
-        pos = self.position_encoding(x).to(x.dtype)
+        pos = checkpoint(self.position_encoding, x, use_reentrant=False).to(x.dtype)
+        
+        # x = self.pix_feat_proj(pix_feat)
+        # x = x + masks
+        # x = self.fuser(x)
+        # x = self.out_proj(x)
+
+        # pos = self.position_encoding(x).to(x.dtype)
 
         return {"vision_features": x, "vision_pos_enc": [pos]}
 

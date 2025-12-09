@@ -39,7 +39,6 @@ class MSD(Dataset):
         self.train_last_idx = {}
         self.test_volume_list = []
         self.test_last_idx = {}
-        self.max_slices = 16
         
         for task_path in self.task_list:
             task = task_path.split("/")[-1]
@@ -55,6 +54,8 @@ class MSD(Dataset):
             self.test_last_idx[task] = len(self.test_volume_list)
         
         self.image_size = args.image_size
+        self.num_support = args.num_support
+        self.max_slices = args.video_length
         
     def __len__(self):
         if self.subset == "train":
@@ -98,7 +99,7 @@ class MSD(Dataset):
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            max_slices=self.max_slices
+            max_slices=self.num_support
         )
         
         output_dict ={

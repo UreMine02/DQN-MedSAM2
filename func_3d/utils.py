@@ -7,19 +7,24 @@ import os
 import random
 import sys
 import time
-from datetime import datetime
-
 import dateutil.tz
 import numpy as np
-import torch
-from torch.autograd import Function
-import torch.nn as nn
-from monai.losses import DiceLoss, FocalLoss
-from torch.nn import L1Loss, BCEWithLogitsLoss
-from sklearn.cluster import KMeans
+from datetime import datetime
 from collections import defaultdict
 
+import torch
+import torch.nn as nn
+from torch.nn import L1Loss, BCEWithLogitsLoss
+from torch.autograd import Function
+
+from monai.losses import DiceLoss, FocalLoss
+from monai.metrics import compute_hausdorff_distance
+from sklearn.cluster import KMeans
+
 import cfg
+from omegaconf import OmegaConf
+from hydra import compose
+from hydra.utils import instantiate
 
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
@@ -36,15 +41,20 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         model_cfg = args.sam_config
 
         net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
+        
+        cfg = compose(config_name=args.rl_config)
+        print(cfg)
+        OmegaConf.resolve(cfg)
+        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
 
     if use_gpu:
         net = net.to(device=gpu_device)
-        q_agent = getattr(net, "q_agent", None)
-        if q_agent is not None:
-            q_agent.to(device=gpu_device)
+        agent = getattr(net, "agent", None)
+        if agent is not None:
+            agent.to(device=gpu_device)
 
     return net
 
@@ -203,12 +213,60 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
     return support_imgs_tensor[sampled_indices], support_masks_tensor[sampled_indices]
 
-def eval_seg(pred, mask):
-    pred = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
-    dice = dice_score(pred, mask)
-    iou = iou_score(pred, mask)
-    return dice, iou
+def score_cal(seg_map, prd_map):
+    '''
+    labels B * 1
+    seg_map B * H * W
+    prd_map B * H * W
+    '''
+    assert seg_map.ndim == prd_map.ndim
+    assert seg_map.ndim >= 2
+    if seg_map.ndim == 2:
+        seg_map = seg_map.unsqueeze(0)
+        prd_map = prd_map.unsqueeze(0)
+        
+    total_num = seg_map.shape[0]
     
+    hd_score = compute_hausdorff_distance(prd_map.unsqueeze(1), seg_map.unsqueeze(1)).squeeze()
+    
+    seg_map = seg_map.reshape(total_num, -1)
+    prd_map = prd_map.reshape(total_num, -1)
+    dot_product = (seg_map * prd_map)
+    b_seg_map = 1 - seg_map
+    b_prd_map = 1 - prd_map
+    b_dot_product = (b_seg_map * b_prd_map)
+
+    sum_dot = torch.sum(dot_product, dim=-1)
+    sum_seg = torch.sum(seg_map, dim=-1)
+    sum_prd = torch.sum(prd_map, dim=-1)
+    b_sum_dot = torch.sum(b_dot_product, dim=-1)
+    b_sum_seg = torch.sum(b_seg_map, dim=-1)
+    b_sum_prd = torch.sum(b_prd_map, dim=-1)
+
+    iou_score = sum_dot/((sum_seg + sum_prd)-sum_dot)
+    dice_score = 2.*sum_dot / (sum_seg+sum_prd)
+    
+    b_iou_score = b_sum_dot/((b_sum_seg + b_sum_prd)-b_sum_dot)
+    fb_iou_score = (iou_score + b_iou_score) / 2
+
+    return (iou_score, dice_score, fb_iou_score, hd_score)
+
+def eval_seg(pred, mask):
+    """
+    Args:
+        pred: [D, H, W]
+        mask: [D, H, W]
+    """
+    pred = (torch.sigmoid(pred) > 0.5).float()
+    iou, dice, fb_iou, hd = score_cal(mask, pred)
+    
+    iou[iou.isnan()] = 0. 
+    dice[dice.isnan()] = 0.
+    fb_iou[fb_iou.isnan()] = 0.
+    hd[torch.logical_or(hd.isnan(), hd.isinf())] = 0.
+    
+    return iou, dice, fb_iou, hd
+
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)
     mask = mask.reshape(-1)

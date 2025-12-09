@@ -1,0 +1,15 @@
+agent:
+  _target_: sam2_train.rl_modules.policy_optimization.a2c_agent.A2CAgent
+  num_maskmem: 6
+  policy_lr: 1e-5
+  value_lr: 1e-4
+  gamma: 0.99
+  buffer_size: 500
+  batch_size: 128
+  entropy_weight: 1e-3
+  tau: 1.0
+  sam2_dim:
+    n_query: 16
+    image_dim: 256
+    memory_dim: 64
+    obj_ptr_dim: 256

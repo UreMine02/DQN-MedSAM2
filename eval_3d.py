@@ -43,7 +43,7 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', args.gpu_device)
 
     if args.wandb_enabled:
-        wandb.init(project="Staged_MedSAM2", name=args.exp_name)
+        wandb.init(project="rl-sam2-eval", name=args.exp_name)
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -51,16 +51,17 @@ def train(rank=0, world_size=0):
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
-        net.load_state_dict(weights["model"], strict=False)
+        net.load_state_dict(weights["model"])
+        if "agent" in weights.keys():
+            net.agent.load_state_dict(weights["agent"])
+            print("Loaded Agent weights")
         if "q_agent" in weights.keys():
-            net.q_agent.q_net.load_state_dict(weights["q_agent"])
+            net.agent.load_state_dict(weights["q_agent"])
             print("Loaded DQN weights")
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])
     
-    optimizer = optim.Adam(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
-
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:

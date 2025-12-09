@@ -1,27 +1,38 @@
 #!/bin/bash
 
+EXP=msd_task02+ppo+normalized0.5_gae0.99+entropy1e-3+num_support3
+
 CUDA_VISIBLE_DEVICES=1 python train_3d.py \
-    -sam_ckpt /data/code/DQN-MedSAM2/checkpoints/sam2_hiera_tiny.pt \
-    -checkpoint_path /data/code/DQN-MedSAM2/output/sarcoma+mvalues+no_invalid+freeze+double_dqn \
-    -dataset sarcoma \
-    -exp_name sarcoma+mvalues+no_invalid+freeze+double_dqn \
-    -data_path /data/datasets \
-    -lr 4e-4 \
-    -val_freq 5 \
-    -ep 30 \
-    -lazy_penalty -0.1 \
+    -exp_name $EXP \
+    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
+    -checkpoint_path ./output/$EXP \
+    -dataset msd \
+    -task Task02 \
+    -data_path /data/datasets/MSD \
+    -lr 1e-4 \
+    -val_freq 1 \
+    -ep 500 \
+    -q_updates_per_step 2 \
+    -lazy_penalty 0 \
+    -invalid_penalty 0 \
+    -num_support 3 \
     -wandb_enabled
 
-# CUDA_VISIBLE_DEVICES=1 python train_3d.py \
-#     -sam_ckpt /data/code/DQN-MedSAM2/checkpoints/sam2_hiera_tiny.pt \
-#     -checkpoint_path /data/code/DQN-MedSAM2/output/msd-task02-mvalues-more_pen \
-#     -dataset msd \
-#     -exp_name msd-task02-mvalues-more_pen \
-#     -task Task02 \
-#     -data_path /data/datasets/Combined_Dataset/MSD \
-#     -lr 4e-4 \
-#     -val_freq 5 \
-#     -ep 50 \
-#     -lazy_penalty -2 \
-#     -invalid_penalty -10 \
+# CUDA_VISIBLE_DEVICES=0 python train_3d.py \
+#     -exp_name sarcoma+ppo+normalized_gae0.99+entropy1e-1+num_support3 \
+#     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+#     -rl_config rl_modules/config/ppo_po_agent.yaml \
+#     -checkpoint_path ./output/sarcoma+ppo+normalized_gae0.99+entropy1e-1+num_support3 \
+#     -dataset sarcoma \
+#     -task Sarcoma \
+#     -data_path /data/datasets/Sarcoma \
+#     -lr 1e-4 \
+#     -val_freq 1 \
+#     -ep 300 \
+#     -q_updates_per_step 2 \
+#     -lazy_penalty 0 \
+#     -invalid_penalty 0.0 \
+#     -num_support 3 \
 #     -wandb_enabled
+

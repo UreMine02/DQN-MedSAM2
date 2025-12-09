@@ -8,49 +8,8 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.data import Subset
 
 
-
-
-
 def get_dataloader(args, rank=None, world_size=None):
-    # transform_train = transforms.Compose([
-    #     transforms.Resize((args.image_size,args.image_size)),
-    #     transforms.ToTensor(),
-    # ])
-
-    # transform_train_seg = transforms.Compose([
-    #     transforms.Resize((args.out_size,args.out_size)),
-    #     transforms.ToTensor(),
-    # ])
-
-    # transform_test = transforms.Compose([
-    #     transforms.Resize((args.image_size, args.image_size)),
-    #     transforms.ToTensor(),
-    # ])
-
-    # transform_test_seg = transforms.Compose([
-    #     transforms.Resize((args.out_size,args.out_size)),
-    #     transforms.ToTensor(),
-    # ])
-    
-    if args.dataset == 'btcv': #png
-        '''btcv data'''
-        btcv_train_dataset = BTCV(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
-        # btcv_train_dataset = Subset(btcv_train_dataset, [0,1])
-        print(len(btcv_train_dataset)) 
-
-        btcv_test_dataset = BTCV(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
-        
-        if args.distributed:
-            train_sampler = DistributedSampler(btcv_train_dataset, num_replicas=world_size, rank=rank)
-            test_sampler = DistributedSampler(btcv_test_dataset, num_replicas=world_size, rank=rank)
-
-            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=test_sampler)
-        else:
-            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=True, num_workers=0, pin_memory=True)
-            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True)
-        '''end'''
-    elif args.dataset == 'combined': #nii
+    if args.dataset == 'combined': #nii
         combined_train_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
         combined_test_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
         
@@ -99,6 +58,21 @@ def get_dataloader(args, rank=None, world_size=None):
         else:
             nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=2, pin_memory=True)
             nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
+        '''end'''
+    elif args.dataset == 'btcv': #png
+        '''btcv data'''
+        btcv_train_dataset = BTCV(args, subset='train')
+        btcv_test_dataset = BTCV(args, subset='test')
+        
+        if args.distributed:
+            train_sampler = DistributedSampler(btcv_train_dataset, num_replicas=world_size, rank=rank)
+            test_sampler = DistributedSampler(btcv_test_dataset, num_replicas=world_size, rank=rank)
+
+            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=train_sampler)
+            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=test_sampler)
+        else:
+            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=True, num_workers=2, pin_memory=True)
+            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
         '''end'''
     else:
         raise ValueError(f"the dataset {args.dataset} is not supported now!!!")
