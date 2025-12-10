@@ -1340,15 +1340,15 @@ class SAM2VideoPredictor(SAM2Base):
         # QAgent
         if agent_act and frame_idx > 0:
             # Finalize replay buffer instance from previous frame
-            # if frame_idx > 1 and train_agent:
-            #     self.agent_update_second_stage(
-            #         inference_state=inference_state,
-            #         output_dict=output_dict,
-            #         frame_idx=frame_idx,
-            #         storage_device=storage_device,
-            #         current_vision_feats=current_vision_feats,
-            #         current_vision_pos_embeds=current_vision_pos_embeds,
-            #     )
+            if frame_idx > 1 and train_agent:
+                self.agent_update_second_stage(
+                    inference_state=inference_state,
+                    output_dict=output_dict,
+                    frame_idx=frame_idx,
+                    storage_device=storage_device,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                )
             
             # Initiate replay buffer instance for current frame
             track_step_kwargs = {
@@ -1505,24 +1505,24 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent=False,
         **kwargs
     ):
-        # # compute loss before
-        # loss_before = None
-        # if train_agent:
-        #     with torch.no_grad():
-        #         output_before = self.track_step(
-        #             frame_idx=frame_idx,
-        #             current_vision_feats=current_vision_feats,
-        #             current_vision_pos_embeds=current_vision_pos_embeds,
-        #             output_dict=output_dict,
-        #             **kwargs
-        #         )
+        # compute loss before
+        loss_before = None
+        if train_agent:
+            with torch.no_grad():
+                output_before = self.track_step(
+                    frame_idx=frame_idx,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    **kwargs
+                )
 
-        #     pred_masks = output_before["pred_masks"]
-        #     pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-        #     gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-        #     gt_masks = gt_masks.to(torch.float32) 
+            pred_masks = output_before["pred_masks"]
+            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+            gt_masks = gt_masks.to(torch.float32) 
                 
-        #     loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+            loss_before = compute_loss(pred_masks, gt_masks, inference_state)
         
         state, action_frame_map = prepare_rl_state(
             current_vision_feats,
@@ -1534,58 +1534,58 @@ class SAM2VideoPredictor(SAM2Base):
             training=train_agent
         )
         
-        # bank_size = len(output_dict["non_cond_frame_outputs"])
-        # bank_full = (bank_size >= self.num_maskmem - 1)
-        # valid_actions = [1] if bank_full else [0, 1]
-        # valid_actions.extend(list(action_frame_map.keys()))
-        # with torch.no_grad():
-        #     action_out = self.agent.select_action(
-        #         state,
-        #         valid_actions=torch.tensor(valid_actions),
-        #         training=train_agent
-        #     ) # ask agent
+        bank_size = len(output_dict["non_cond_frame_outputs"])
+        bank_full = (bank_size >= self.num_maskmem - 1)
+        valid_actions = [1] if bank_full else [0, 1]
+        valid_actions.extend(list(action_frame_map.keys()))
+        with torch.no_grad():
+            action_out = self.agent.select_action(
+                state,
+                valid_actions=torch.tensor(valid_actions),
+                training=train_agent
+            ) # ask agent
         
-        # action = action_out["action"]
-        # state.offload_to_cpu()
+        action = action_out["action"]
+        state.offload_to_cpu()
 
         reward = 0
-        # drop_frame = None
-        # storage_key = "non_cond_frame_outputs"
-        # if action == 0:
-        #     # Add
-        #     if bank_full:
-        #         reward = inference_state["rl_config"]["invalid_penalty"]
-        #     else:
-        #         output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-        # elif action == 1:
-        #     # Skip (equivalent to adding then drop the same frame)
-        #     reward = 0.0
-        # else:
-        #     # Add the new frame and skip a specific frame
-        #     if action not in action_frame_map.keys():
-        #         # penalty for dropping blank
-        #         reward = inference_state["rl_config"]["invalid_penalty"]
-        #         # raise ValueError(
-        #             # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-        #     else:
-        #         # drop_frame = list(output_dict[storage_key].keys())[drop_key]
-        #         drop_frame = action_frame_map[action]
-        #         output_dict[storage_key].pop(drop_frame)    
-        #         output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        drop_frame = None
+        storage_key = "non_cond_frame_outputs"
+        if action == 0:
+            # Add
+            if bank_full:
+                reward = inference_state["rl_config"]["invalid_penalty"]
+            else:
+                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        elif action == 1:
+            # Skip (equivalent to adding then drop the same frame)
+            reward = 0.0
+        else:
+            # Add the new frame and skip a specific frame
+            if action not in action_frame_map.keys():
+                # penalty for dropping blank
+                reward = inference_state["rl_config"]["invalid_penalty"]
+                # raise ValueError(
+                    # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
+            else:
+                # drop_frame = list(output_dict[storage_key].keys())[drop_key]
+                drop_frame = action_frame_map[action]
+                output_dict[storage_key].pop(drop_frame)    
+                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        # if not train_agent:
-        #     print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        if not train_agent:
+            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
         
-        # if train_agent:
-        #     replay_instance_info = {
-        #         "frame_idx": frame_idx,
-        #         "state": state,
-        #         "loss_before": loss_before.detach().cpu(),
-        #         "reward": reward,
-        #     }
-        #     replay_instance_info.update(action_out)
+        if train_agent:
+            replay_instance_info = {
+                "frame_idx": frame_idx,
+                "state": state,
+                "loss_before": loss_before.detach().cpu(),
+                "reward": reward,
+            }
+            replay_instance_info.update(action_out)
             
-        #     self.agent.init_new_replay_instance(**replay_instance_info)
+            self.agent.init_new_replay_instance(**replay_instance_info)
 
     # loss_after + next_state
     def agent_update_second_stage(

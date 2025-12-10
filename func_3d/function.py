@@ -44,13 +44,13 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         agent.set_epoch(epoch, distributed=args.distributed)
             
     for name, param in net.named_parameters():
-        param.requires_grad_(False)
-        # if "image_encoder" in name:
-        #     param.requires_grad_(False)
-        # if "sam_prompt_encoder" in name:
-        #     param.requires_grad_(False)
+        # param.requires_grad_(False)
+        if "image_encoder" in name:
+            param.requires_grad_(False)
+        if "sam_prompt_encoder" in name:
+            param.requires_grad_(False)
     
-    net.agent.freeze()
+    # net.agent.freeze()
     
     video_length = args.video_length
     dice_loss_per_class = {}
@@ -156,9 +156,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"]
 
-                    # optimizer.zero_grad()
-                    # avg_loss.backward()
-                    # optimizer.step()
+                    optimizer.zero_grad()
+                    avg_loss.backward()
+                    optimizer.step()
 
                     if args.distributed:
                         torch.distributed.barrier()
@@ -231,7 +231,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         "iou": [],
         "dice": [],
         "fb_iou": [],
-        "hausdorf_dist": [],
     }
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
@@ -337,7 +336,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             iou,
                             dice,
                             fb_iou,
-                            hd
                         ) = eval_seg(pred, mask)
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
@@ -345,7 +343,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_per_class[obj_id]["iou"].append(iou.item())
                         score_per_class[obj_id]["dice"].append(dice.item())
                         score_per_class[obj_id]["fb_iou"].append(fb_iou.item())
-                        score_per_class[obj_id]["hausdorf_dist"].append(hd.item())
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)

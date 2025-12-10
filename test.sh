@@ -17,7 +17,7 @@ export CUDA_VISIBLE_DEVICES=1
 # done
 
 python eval_3d.py \
-    -pretrain output/test/2025-12-10-11-43-43/epoch_0_dice0.6265.pth \
+    -pretrain output/test/2025-12-10-17-12-22/epoch_0_dice0.6363.pth \
     -rl_config rl_modules/config/ppo_po_agent.yaml \
     -dataset msd \
     -task Task02 \
