@@ -20,11 +20,11 @@ def prepare_rl_state(
     offload_to_cpu=True,
     training=False
 ):
-    next_image_feat = current_vision_feats[-1] + current_vision_pos_embeds[-1]
-    next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64)
+    next_image_feat = current_vision_feats[-1].clone().detach() + current_vision_pos_embeds[-1].clone().detach()
+    next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64).clone().detach()
     curr_memory_feat = output_dict["await_outputs"][frame_idx-1]
-    curr_memory_feat = curr_memory_feat["maskmem_features"] + curr_memory_feat["maskmem_pos_enc"][0]
-    curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"]
+    curr_memory_feat = curr_memory_feat["maskmem_features"].clone().detach() + curr_memory_feat["maskmem_pos_enc"][0].clone().detach()
+    curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"].clone().detach()
     
     # Add non_cond memory
     cond_bank_list = list(output_dict["cond_frame_outputs"].values())
@@ -35,11 +35,11 @@ def prepare_rl_state(
     prev_memory_bank = []
     prev_obj_ptr = []
     for feat in non_cond_bank_list:
-        mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        obj_ptr = feat["obj_ptr"]
+        mem_feat = feat["maskmem_features"].clone().detach() + feat["maskmem_pos_enc"][0].clone().detach()
+        obj_ptr = feat["obj_ptr"].clone().detach()
         if offload_to_cpu:
-            mem_feat = mem_feat.detach().cpu()
-            obj_ptr = obj_ptr.detach().cpu()
+            mem_feat = mem_feat.cpu()
+            obj_ptr = obj_ptr.cpu()
         prev_memory_bank.append(mem_feat)
         prev_obj_ptr.append(obj_ptr)
     
@@ -50,11 +50,11 @@ def prepare_rl_state(
 
     # Add cond memory
     for feat in cond_bank_list:
-        mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        obj_ptr = feat["obj_ptr"]
+        mem_feat = feat["maskmem_features"].clone().detach() + feat["maskmem_pos_enc"][0].clone().detach()
+        obj_ptr = feat["obj_ptr"].clone().detach()
         if offload_to_cpu:
-            mem_feat = mem_feat.detach().cpu()
-            obj_ptr = obj_ptr.detach().cpu()
+            mem_feat = mem_feat.cpu()
+            obj_ptr = obj_ptr.cpu()
         prev_memory_bank.append(mem_feat)
         prev_obj_ptr.append(obj_ptr)
         
@@ -63,10 +63,12 @@ def prepare_rl_state(
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
     
-    prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
-    prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
+    prev_memory_bank = torch.stack(prev_memory_bank, dim=1).clone().detach()
+    prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1).clone().detach()
     
+    #TODO: Finding out why this part affecting testing
     if training:
+        print("Permute")
         randperm = torch.randperm(num_maskmem)
         prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
         prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
@@ -91,14 +93,14 @@ def prepare_rl_state(
     
     state = RLStates(**rl_state)
     list_frame = list(output_dict["non_cond_frame_outputs"].keys())
-    if training:
-        avail_index = torch.argsort(randperm)[:len(non_cond_bank_list)].tolist()
-        empty_index = torch.argsort(randperm)[len(non_cond_bank_list):].tolist()
-        action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
-    else:
-        action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
-        empty_index = [i for i in range(num_maskmem) if i not in action_frame_map.keys()]
-        
+    # if training:
+    #     avail_index = torch.argsort(randperm)[:len(non_cond_bank_list)].tolist()
+    #     empty_index = torch.argsort(randperm)[len(non_cond_bank_list):].tolist()
+    #     action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
+    # else:
+    #     action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
+    #     empty_index = [i for i in range(num_maskmem) if i not in action_frame_map.keys()]
+    action_frame_map = None
     return state, action_frame_map
 
 def compute_loss(

@@ -3,3 +3,14 @@ Dueling DQN
 
 Policy Gradient
 Actor-Critic
+
+tensor([[[0.5486, 0.8167, 0.0024,  ..., 0.2112, 0.4738, 0.1312]]],
+       device='cuda:0', requires_grad=True)
+
+tensor([[[0.5486, 0.8167, 0.0024,  ..., 0.2112, 0.4738, 0.1312]]],
+       device='cuda:0', requires_grad=True)
+
+/data/datasets/MSD/Task02_Heart/imagesTs/la_030.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz
+/data/datasets/MSD/Task02_Heart/imagesTs/la_007.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_007.nii.gz
+/data/datasets/MSD/Task02_Heart/imagesTs/la_011.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_011.nii.gz
+/data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz

@@ -55,7 +55,7 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys():
             net.agent.load_state_dict(weights["agent"])
             print("Loaded Agent weights")
-        if "q_agent" in weights.keys():
+        elif "q_agent" in weights.keys():
             net.agent.load_state_dict(weights["q_agent"])
             print("Loaded DQN weights")
     
@@ -73,6 +73,7 @@ def train(rank=0, world_size=0):
     
     net.eval()
 
+    print("sam_mask_decoder.conv_s0.weight", net.sam_mask_decoder.conv_s0.weight)
     iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
           
     if args.distributed:

@@ -63,6 +63,7 @@ class MSD(Dataset):
         return len(self.test_volume_list)
     
     def __getitem__(self, index):
+        # last_idx = self.train_last_idx if self.subset == "train" else self.test_last_idx
         last_idx = self.train_last_idx if self.subset == "train" else self.test_last_idx
         volume_list = self.train_volume_list if self.subset == "train" else self.test_volume_list
 
@@ -83,13 +84,17 @@ class MSD(Dataset):
                     i != index and volume_list[i] not in SUPPORT_EXCLUDE]
             )
         else:
-            support_index = random.choice([i for i in range(support_start_idx, support_end_idx) if volume_list[i] not in SUPPORT_EXCLUDE])
+            support_index = random.choice([i for i in range(support_start_idx, support_end_idx) if \
+                volume_list not in SUPPORT_EXCLUDE])
 
         image_path = volume_list[index]
         label_path = volume_list[index].replace("image", "label")
 
         support_image_path = volume_list[support_index]
         support_label_path = volume_list[support_index].replace("image", "label")
+        
+        if self.subset != 'train':
+            print(image_path, support_image_path)
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,

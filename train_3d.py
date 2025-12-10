@@ -63,7 +63,7 @@ def train(rank=0, world_size=0):
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])
-        net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
+        net.module.agent.net = DDP(net.module.agent.net, device_ids=[rank])
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, patience=20)
@@ -115,7 +115,7 @@ def train(rank=0, world_size=0):
         net.eval()
         new_best = False
         if epoch % args.val_freq == 0 or epoch == args.ep-1:
-            
+            print("sam_mask_decoder.conv_s0.weight", net.sam_mask_decoder.conv_s0.weight)
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
 
             if args.distributed:

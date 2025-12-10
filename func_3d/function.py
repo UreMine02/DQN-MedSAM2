@@ -44,11 +44,14 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         agent.set_epoch(epoch, distributed=args.distributed)
             
     for name, param in net.named_parameters():
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        if "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        
+        param.requires_grad_(False)
+        # if "image_encoder" in name:
+        #     param.requires_grad_(False)
+        # if "sam_prompt_encoder" in name:
+        #     param.requires_grad_(False)
+    
+    net.agent.freeze()
+    
     video_length = args.video_length
     dice_loss_per_class = {}
 
@@ -153,9 +156,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"]
 
-                    optimizer.zero_grad()
-                    avg_loss.backward()
-                    optimizer.step()
+                    # optimizer.zero_grad()
+                    # avg_loss.backward()
+                    # optimizer.step()
 
                     if args.distributed:
                         torch.distributed.barrier()
@@ -202,7 +205,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
         avg_agent_loss["critic_loss"] = agent_loss["critic_loss"] / agent_step
     else:
-        avg_agent_loss = None
+        avg_agent_loss = {
+            "actor_loss": 0,
+            "critic_loss": 0,
+        }
         
     if args.wandb_enabled:
         for class_, dice_loss in dice_loss_per_class.items():

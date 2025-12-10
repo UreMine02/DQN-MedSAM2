@@ -261,6 +261,15 @@ class BasePOAgent(BaseAgent):
         
         self.tau = tau
         self.entropy_weight= entropy_weight
+        
+    def freeze(self):
+        print("FREEZE AGENT")
+        for param in self.feat_summarizer.parameters():
+            param.requires_grad_(False)
+        for param in self.policy_net.parameters():
+            param.requires_grad_(False)
+        for param in self.value_net.parameters():
+            param.requires_grad_(False)
     
     def init_new_trajectory(self):
         self.await_trajectory = Trajectory()
@@ -300,6 +309,10 @@ class BasePOAgent(BaseAgent):
             self.final_trajectory()
         
     def select_action(self, state: RLStates, valid_actions, training=False):
+        self.feat_summarizer.eval()
+        self.policy_net.eval()
+        self.value_net.eval()
+        
         image_feat = state.next_image_feat
         memory_feat = state.curr_memory_feat["mem_feat"]
         memory_ptr = state.curr_memory_feat["obj_ptr"]
@@ -307,7 +320,7 @@ class BasePOAgent(BaseAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"]
         
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=False).cpu()
+        action_probs = self.policy_net(*state, training=training).cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
@@ -316,6 +329,7 @@ class BasePOAgent(BaseAgent):
             action_idx = torch.multinomial(valid_probs, 1)
         else:
             action_idx = torch.argmax(valid_probs)
+            
         return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
     
     def to(self, device):
@@ -342,10 +356,7 @@ class BasePOAgent(BaseAgent):
             
             total_policy_loss += policy_loss
             total_value_loss += value_loss
-        
-        self.feat_summarizer.eval()
-        self.policy_net.eval()
-        self.value_net.eval()
+            
         return {"actor_loss": total_policy_loss / num_update, "critic_loss": total_value_loss / num_update}
         
     def train_step(self, batch, update_value=True):
