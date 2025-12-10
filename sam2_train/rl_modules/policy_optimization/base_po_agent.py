@@ -326,7 +326,9 @@ class BasePOAgent(BaseAgent):
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
         
         if training:
-            action_idx = torch.multinomial(valid_probs, 1)
+            valid_probs_a = valid_probs.numpy()
+            valid_probs_a = valid_probs_a / valid_probs_a.sum()
+            action_idx = np.random.choice(len(valid_actions), size=1, replace=False, p=valid_probs_a)
         else:
             action_idx = torch.argmax(valid_probs)
             
@@ -379,9 +381,7 @@ class BasePOAgent(BaseAgent):
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.7 * (advantages - adv_mean) / adv_std
-        
-        # print("advantages", advantages.mean())
+        advantages = 0.5 * (advantages - adv_mean) / adv_std
         
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)

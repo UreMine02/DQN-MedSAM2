@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=1 python train_3d.py \
 
 # CUDA_VISIBLE_DEVICES=1 python train_3d.py \
 #     -exp_name $EXP \
-#     -pretrain output/test/2025-12-10-11-43-43/epoch_0_dice0.6265.pth \
+#     -pretrain output/test/2025-12-10-17-12-22/epoch_0_dice0.6363.pth \
 #     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
 #     -rl_config rl_modules/config/ppo_po_agent.yaml \
 #     -checkpoint_path ./output/$EXP \
