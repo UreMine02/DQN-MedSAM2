@@ -52,7 +52,7 @@ class GRPOGroup:
         # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = 0.02 * (group_rewards - group_mean) / (group_std + 1e-8)
+        group_rewards = 0.1 * (group_rewards - group_mean) / (group_std + 1e-8)
         # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
@@ -99,7 +99,8 @@ class GRPOAgent(BasePOAgent):
         self.policy_optimizer = optim.AdamW(
             list(self.policy_net.parameters()) + \
             list(self.feat_summarizer.parameters()),
-            lr=policy_lr
+            lr=policy_lr,
+            weight_decay=0.05
         )
         
         self.await_group = None
