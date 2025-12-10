@@ -181,7 +181,6 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(action_query, action_context)
             
         actions_logits = self.action_proj(action_query)
-        actions_logits = actions_logits.clamp(min=-20, max=20)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
         if not training:
@@ -252,18 +251,21 @@ class BasePOAgent(BaseAgent):
         self.policy_optimizer = optim.AdamW(
             list(self.policy_net.parameters()) + \
             list(self.feat_summarizer.parameters()),
-            lr=policy_lr
+            lr=policy_lr,
+            weight_decay=0.05,
+            fused=True
         )
         self.value_optimizer = optim.AdamW(
             list(self.value_net.parameters()),
-            lr=value_lr
+            lr=value_lr,
+            weight_decay=0.05,
+            fused=True
         )
         
         self.tau = tau
         self.entropy_weight= entropy_weight
         
     def freeze(self):
-        print("FREEZE AGENT")
         for param in self.feat_summarizer.parameters():
             param.requires_grad_(False)
         for param in self.policy_net.parameters():
@@ -381,7 +383,7 @@ class BasePOAgent(BaseAgent):
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        advantages = 0.2 * (advantages - adv_mean) / adv_std
         
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)

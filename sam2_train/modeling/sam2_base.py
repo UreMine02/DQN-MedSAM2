@@ -601,7 +601,7 @@ class SAM2Base(torch.nn.Module):
             t_pos_and_prevs.extend(
                 [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
             )
-            print(list(output_dict["cond_frame_outputs"].keys()), list(output_dict["non_cond_frame_outputs"].keys()))
+            # print(list(output_dict["cond_frame_outputs"].keys()), list(output_dict["non_cond_frame_outputs"].keys()))
 
             for t_pos, prev in t_pos_and_prevs:
                 if prev is None:

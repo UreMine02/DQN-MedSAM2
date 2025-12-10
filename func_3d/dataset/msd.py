@@ -93,9 +93,6 @@ class MSD(Dataset):
         support_image_path = volume_list[support_index]
         support_label_path = volume_list[support_index].replace("image", "label")
         
-        if self.subset != 'train':
-            print(image_path, support_image_path)
-        
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,

@@ -81,13 +81,13 @@ class QFormerBlock(nn.Module):
         return x
     
 class SpatialSummarizer(nn.Module):
-    def __init__(self, n_query, query_dim, spatial_dim, n_heads, d_heads, n_layers=2, down_scale=2, dropout=0.):
+    def __init__(self, n_query, query_dim, spatial_dim, n_heads, d_heads, n_layers=2, down_scale=1, dropout=0.):
         super().__init__()
         self.down_scale = down_scale
         self.n_query = n_query
         self.query_dim = query_dim
         
-        self.conv_in = nn.Conv2d(spatial_dim, spatial_dim, kernel_size=down_scale, stride=down_scale)
+        # self.conv_in = nn.Conv2d(spatial_dim, spatial_dim, kernel_size=down_scale, stride=down_scale)
         self.qformer = nn.ModuleList(
             [QFormerBlock(query_dim, spatial_dim, n_heads, d_heads, dropout=dropout) for _ in range(n_layers)]
         )
@@ -99,7 +99,7 @@ class SpatialSummarizer(nn.Module):
         
         spatial_query = self.spatial_query.expand(B, self.n_query, self.query_dim)
         
-        x = self.conv_in(x)
+        # x = self.conv_in(x)
         x = x.reshape(B, C, (H // self.down_scale) * (W // self.down_scale)).permute(0, 2, 1) # [B,L,D]
         
         for layer in self.qformer:
