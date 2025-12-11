@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP=msd_task02+ppo+normalized0.5_gae0.99+entropy1e-3+num_support3
+EXP=msd_task02+ppo+normalized0.5_gae0.99+entropy1e-3+num_support3+clip_grad0.1
 
 CUDA_VISIBLE_DEVICES=1 python train_3d.py \
     -exp_name $EXP \
@@ -10,9 +10,9 @@ CUDA_VISIBLE_DEVICES=1 python train_3d.py \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
-    -ep 500 \
+    -ep 300 \
     -q_updates_per_step 2 \
     -lazy_penalty 0 \
     -invalid_penalty 0 \

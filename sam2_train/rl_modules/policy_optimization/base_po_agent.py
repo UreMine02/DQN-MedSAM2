@@ -382,7 +382,7 @@ class BasePOAgent(BaseAgent):
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.2 * (advantages - adv_mean) / adv_std
+        advantages = 0.5 * (advantages - adv_mean) / adv_std
         
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -399,6 +399,10 @@ class BasePOAgent(BaseAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
+            nn.utils.clip_grad_norm_(
+                list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
+                max_norm=0.1
+            )
             self.policy_optimizer.step()
             
             if update_value:
@@ -410,6 +414,7 @@ class BasePOAgent(BaseAgent):
                 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
+                nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.1)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
