@@ -118,9 +118,9 @@ class BaseFeatureSummarizer(nn.Module):
         memory_num_head = memory_dim // 64
         
         self.image_spatial_summary = SpatialSummarizer(
-            n_query, self.hidden_dim, image_dim, self.hidden_dim // 64, 64, n_layers=2)
+            n_query, self.hidden_dim, image_dim, self.hidden_dim // 64, 64, n_layers=4)
         self.memory_spatial_summary = SpatialSummarizer(
-            n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=2)
+            n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=4)
         
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
         B, T, C, H, W = bank_feat.shape
