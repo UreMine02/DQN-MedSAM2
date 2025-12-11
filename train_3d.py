@@ -125,6 +125,7 @@ def train(rank=0, world_size=0):
                 print(f"val/IOU: {iou}, val/dice : {dice}")
                 
             if dice > best_dice:
+                print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
             
@@ -142,7 +143,6 @@ def train(rank=0, world_size=0):
                 os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    print(f"Achieve best Dice: {dice} > {best_dice}")
                     torch.save({
                         'model': net.module.state_dict(),
                         'agent': net.module.agent.q_net.module.state_dict(),
@@ -157,7 +157,6 @@ def train(rank=0, world_size=0):
                 os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    print(f"Achieve best Dice: {dice} > {best_dice}")
                     torch.save({
                         'model': net.state_dict(),
                         'agent': net.agent.state_dict(),
