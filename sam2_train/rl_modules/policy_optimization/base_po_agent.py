@@ -313,7 +313,9 @@ class BasePOAgent(BaseAgent):
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
         
         if training:
-            action_idx = torch.multinomial(valid_probs, 1)
+            valid_probs_a = valid_probs.numpy()
+            valid_probs_a = valid_probs_a / valid_probs_a.sum()
+            action_idx = np.random.choice(len(valid_actions), size=1, replace=False, p=valid_probs_a)
         else:
             action_idx = torch.argmax(valid_probs)
         return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
