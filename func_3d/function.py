@@ -155,6 +155,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     optimizer.zero_grad()
                     avg_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                     optimizer.step()
 
                     if args.distributed:

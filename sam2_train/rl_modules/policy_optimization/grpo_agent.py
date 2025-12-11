@@ -219,15 +219,12 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                list(self.policy_net.parameters()) + \
+                list(self.feat_summarizer.parameters()),
+                max_norm=0.2
+            )
             self.policy_optimizer.step()
-            
-            # total_loss = policy_loss + 0.1 * value_loss
-            
-            # self.optimizer.zero_grad()
-            # total_loss.backward()
-            # self.optimizer.step()
-            
-            # print("loss", policy_loss, value_loss, minus_entropy.mean())
             
         return policy_loss.item()
     
@@ -248,3 +245,7 @@ class GRPOAgent(BasePOAgent):
             "feat_summarizer": self.feat_summarizer.state_dict(),
             "policy_net": self.policy_net.state_dict(),
         }
+        
+    def load_state_dict(self, state_dict):
+        self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
+        self.policy_net.load_state_dict(state_dict["policy_net"])

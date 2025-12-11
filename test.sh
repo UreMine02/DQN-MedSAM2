@@ -1,4 +1,4 @@
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 # for shot in 1 5;
 # do
@@ -17,8 +17,8 @@ export CUDA_VISIBLE_DEVICES=1
 # done
 
 python eval_3d.py \
-    -pretrain output/msd_task02+ppo+normalized0.9_gae0.99+entropy1e-3+num_support3/2025-12-08-11-06-07/best.pth \
-    -rl_config rl_modules/config/ppo_po_agent.yaml \
+    -pretrain output/msd_task02+grpo+entropy1e-2+num_support3+invalid_penalty0.01+lazy_penalty0.01/2025-12-11-09-14-51/epoch_132_dice0.8556.pth \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/MSD \
