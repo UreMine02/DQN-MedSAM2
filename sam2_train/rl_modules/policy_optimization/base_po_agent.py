@@ -159,7 +159,7 @@ class BasePolicyNetwork(nn.Module):
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         
         self.action_decoder = nn.ModuleList(
-            [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(2)]
+            [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(4)]
         )
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
@@ -200,7 +200,7 @@ class BaseValueNetwork(nn.Module):
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         
         self.value_decoder = nn.ModuleList(
-            [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(2)]
+            [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(4)]
         )
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
