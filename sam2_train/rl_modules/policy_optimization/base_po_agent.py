@@ -183,8 +183,8 @@ class BasePolicyNetwork(nn.Module):
         actions_logits = self.action_proj(action_query)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
-        if not training:
-            print(actions_probs.squeeze())
+        # if not training:
+        #     print(actions_probs.squeeze())
             
         return actions_probs.squeeze(-1)
     
@@ -401,7 +401,7 @@ class BasePOAgent(BaseAgent):
             policy_loss.backward()
             nn.utils.clip_grad_norm_(
                 list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.1
+                max_norm=0.2
             )
             self.policy_optimizer.step()
             
@@ -414,7 +414,7 @@ class BasePOAgent(BaseAgent):
                 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-                nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.1)
+                nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.2)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])

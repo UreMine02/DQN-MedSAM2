@@ -140,7 +140,7 @@ def train(rank=0, world_size=0):
                     'model': net.module.state_dict(),
                     'agent': net.module.agent.q_net.module.state_dict(),
                 },
-                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                os.path.join(checkpoint_path, f"epoch{epoch}.pth"))
                 
                 if new_best:
                     torch.save({
@@ -154,7 +154,7 @@ def train(rank=0, world_size=0):
                     'model': net.state_dict(),
                     'agent': net.agent.state_dict(),
                 },
-                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                os.path.join(checkpoint_path, f"epoch{epoch}.pth"))
                 
                 if new_best:
                     torch.save({
