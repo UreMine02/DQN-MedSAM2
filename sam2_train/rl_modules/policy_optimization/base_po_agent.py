@@ -399,10 +399,10 @@ class BasePOAgent(BaseAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            nn.utils.clip_grad_norm_(
-                list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.2
-            )
+            # nn.utils.clip_grad_norm_(
+            #     list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
+            #     max_norm=0.2
+            # )
             self.policy_optimizer.step()
             
             if update_value:
@@ -414,7 +414,7 @@ class BasePOAgent(BaseAgent):
                 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-                nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.2)
+                # nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.2)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])

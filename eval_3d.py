@@ -71,9 +71,10 @@ def train(rank=0, world_size=0):
 
     nice_train_loader, nice_test_loader = get_dataloader(args)
     
+    # randperm = torch.randperm(6)
+    
     net.eval()
 
-    print("sam_mask_decoder.conv_s0.weight", net.sam_mask_decoder.conv_s0.weight)
     iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
           
     if args.distributed:
