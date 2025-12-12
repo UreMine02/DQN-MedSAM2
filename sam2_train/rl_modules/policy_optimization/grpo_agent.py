@@ -222,7 +222,7 @@ class GRPOAgent(BasePOAgent):
             torch.nn.utils.clip_grad_norm_(
                 list(self.policy_net.parameters()) + \
                 list(self.feat_summarizer.parameters()),
-                max_norm=0.1
+                max_norm=0.5
             )
             self.policy_optimizer.step()
             
