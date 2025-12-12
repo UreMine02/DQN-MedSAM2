@@ -100,7 +100,7 @@ class GRPOAgent(BasePOAgent):
             list(self.policy_net.parameters()) + \
             list(self.feat_summarizer.parameters()),
             lr=policy_lr,
-            weight_decay=0.05
+            weight_decay=0.01
         )
         
         self.await_group = None
@@ -222,7 +222,7 @@ class GRPOAgent(BasePOAgent):
             torch.nn.utils.clip_grad_norm_(
                 list(self.policy_net.parameters()) + \
                 list(self.feat_summarizer.parameters()),
-                max_norm=0.2
+                max_norm=0.1
             )
             self.policy_optimizer.step()
             
