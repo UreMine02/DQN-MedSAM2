@@ -27,7 +27,7 @@ import numpy as np
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12348'
+    os.environ['MASTER_PORT'] = '12345'
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 def cleanup():
@@ -62,8 +62,9 @@ def train(rank=0, world_size=0):
             
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        print("Wrap net for distributed training")
         net.module.agent.to_distributed(rank=rank)
-        print("Distributed Training")
+        print("Wrap agent for distributed training")
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
