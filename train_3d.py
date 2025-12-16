@@ -25,9 +25,6 @@ import torch.multiprocessing as mp
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import numpy as np
 
-import warnings
-warnings.filterwarnings("ignore")
-
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12348'
@@ -51,8 +48,10 @@ def train(rank=0, world_size=0):
             name=args.exp_name              # Experiment name from args
         )
 
-    net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
+    net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
+    if getattr(net, "agent", None) is not None:
+        net.agent.to_dtype(torch.bfloat16) 
     
     if args.pretrain:
         print(args.pretrain)
@@ -60,10 +59,11 @@ def train(rank=0, world_size=0):
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys():
             net.agent.load_state_dict(weights["agent"])
-    
+            
     if args.distributed:
-        net = DDP(net, device_ids=[rank])
-        net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
+        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        net.module.agent.to_distributed(rank=rank)
+        print("Distributed Training")
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
@@ -75,7 +75,7 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader = get_dataloader(args)
+    nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
 
     '''checkpoint path and tensorboard'''
     #create checkpoint folder to save model

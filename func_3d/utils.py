@@ -51,10 +51,12 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         sys.exit()
 
     if use_gpu:
-        net = net.to(device=gpu_device)
+        print("Move net to GPU")
+        net = net.to(device=gpu_device, non_blocking=True)
         agent = getattr(net, "agent", None)
         if agent is not None:
-            agent.to(device=gpu_device)
+            print("Move agent to GPU")
+            agent.to(device=gpu_device, non_blocking=True)
 
     return net
 

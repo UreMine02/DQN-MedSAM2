@@ -106,10 +106,15 @@ class GRPOAgent(BasePOAgent):
         self.await_group = None
         self.priority = deque(maxlen=buffer_size)
     
-    def to(self, device):
+    def to(self, device, non_blocking=True):
         self.device = device
-        self.feat_summarizer.to(device=device, non_blocking=True)
-        self.policy_net.to(device=device, non_blocking=True)
+        self.feat_summarizer.to(device=device, non_blocking=non_blocking)
+        self.policy_net.to(device=device, non_blocking=non_blocking)
+        
+    def to_dtype(self, dtype):
+        self.dtype = dtype
+        self.feat_summarizer.to(dtype=dtype)
+        self.policy_net.to(dtype=dtype)
     
     def init_new_group(self):
         self.await_group = GRPOGroup()
@@ -193,16 +198,16 @@ class GRPOAgent(BasePOAgent):
         bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states])
         bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states])
         
-        image_feat = image_feat.to(device=device, dtype=torch.float16, non_blocking=True)
-        memory_feat = memory_feat.to(device=device, dtype=torch.float16, non_blocking=True)
-        memory_ptr = memory_ptr.to(device=device, dtype=torch.float16, non_blocking=True)
-        bank_feat = bank_feat.to(device=device, dtype=torch.float16, non_blocking=True)
-        bank_ptr = bank_ptr.to(device=device, dtype=torch.float16, non_blocking=True)
+        image_feat = image_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        memory_feat = memory_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        memory_ptr = memory_ptr.to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        bank_feat = bank_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        bank_ptr = bank_ptr.to(device=device, dtype=torch.bfloat16, non_blocking=True)
         
         actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
-        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float16, non_blocking=True)
+        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
 
         with torch.enable_grad():
             curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -249,3 +254,7 @@ class GRPOAgent(BasePOAgent):
     def load_state_dict(self, state_dict):
         self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
         self.policy_net.load_state_dict(state_dict["policy_net"])
+        
+    def to_distributed(self, rank):
+        self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank])
+        self.policy_net = DDP(self.policy_net, device_ids=[rank])

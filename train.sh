@@ -2,7 +2,7 @@
 
 EXP=msd_task03+grpo+entropy1e-1+num_support3+clip_grad0.1
 
-CUDA_VISIBLE_DEVICES=0 python train_3d.py \
+python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
@@ -17,6 +17,7 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 3 \
+    -distributed \
     -wandb_enabled
 
 # CUDA_VISIBLE_DEVICES=0 python train_3d.py \

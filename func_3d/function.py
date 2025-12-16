@@ -60,12 +60,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     agent_loss = {"actor_loss": 0, "critic_loss": 0}
     agent_step = 0
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
-        for packs in train_loader:            
-            whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            name = packs["name"][0]
+        for packs in train_loader:
+            whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+            whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+            whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+            whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+            task = packs["task"][0]
             
             obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
             instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0} 
@@ -85,10 +85,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 support_imgs_tensor = pack["support_image"]
                 support_masks_tensor = pack["support_label"]
                 if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
-                    print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
+                    print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue  # Skip empty tensors
                 if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                    print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
+                    print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue
                 
                 train_state = net.train_init_state(
@@ -229,7 +229,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
 
-    lossfunc = paper_loss
+    # lossfunc = paper_loss
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
         for packs in val_loader:
@@ -237,7 +237,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            name = packs["name"][0]
+            task = packs["task"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
             # print(f"  Query Total Slices: {whole_masks_tensor.shape[0]}, Classes: {torch.unique(whole_masks_tensor)}")
@@ -254,7 +254,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
                 if obj_id not in score_per_class.keys():
-                    score_per_class[obj_id] = copy.deepcopy(metrics)
+                    score_per_class[f"{task}_{obj_id}"] = copy.deepcopy(metrics)
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -266,11 +266,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 support_masks_tensor = pack["support_label"]
                 # support_bbox_dict = pack["support_bbox"]
                 if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
-                    print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
+                    print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue  # Skip empty tensors
 
                 if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                    print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {name}. Skipping...")
+                    print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue
         
                 train_state = net.val_init_state(
@@ -335,10 +335,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        score_per_class[obj_id]["iou"].append(iou.item())
-                        score_per_class[obj_id]["dice"].append(dice.item())
-                        score_per_class[obj_id]["fb_iou"].append(fb_iou.item())
-                        score_per_class[obj_id]["hausdorf_dist"].append(hd.item())
+                        score_per_class[f"{task}_{obj_id}"]["iou"].append(iou.item())
+                        score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.item())
+                        score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.item())
+                        score_per_class[f"{task}_{obj_id}"]["hausdorf_dist"].append(hd.item())
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
@@ -346,7 +346,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
-                        save_prefix = f"{save_dir}/vis/{packs['case']}_{name}_idx{frame_idx}_"
+                        save_prefix = f"{save_dir}/vis/{packs['case']}_{task}_idx{frame_idx}_"
                         ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
                         ts.overlay(
                             [save_prefix + "image.png", pred_mask], [1, 0.4],
@@ -365,7 +365,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 instance_score["num_step"] += 1
 
             average_score(instance_score)
-            print(f"Name: {name} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
+            print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
             total_score["num_step"] += 1
             pbar.update()

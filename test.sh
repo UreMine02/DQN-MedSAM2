@@ -17,9 +17,9 @@ export CUDA_VISIBLE_DEVICES=0
 # done
 
 python eval_3d.py \
-    -pretrain output/msd_task02+grpo+stored/grpo_dice0.8589/best.pth \
+    -pretrain output/msd_task03+grpo+entropy1e-1+num_support3+clip_grad0.1/2025-12-15-08-27-31/best.pth \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -dataset msd \
-    -task Task02 \
+    -task Task03 \
     -data_path /data/datasets/MSD \
-    -num_support 5
+    -num_support 1

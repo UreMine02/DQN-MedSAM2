@@ -4,6 +4,7 @@ import time
 import random
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn.functional as F
@@ -15,7 +16,7 @@ SUPPORT_EXCLUDE = [
     "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_089.nii.gz",
     "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_095.nii.gz",
     "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_134.nii.gz",
-] # These volumes don't have enough slices to be support (their num slices < args.support_size)
+] # These volumes don't have enough slices to be support (their num of positive slices < args.support_size)
 
 def normalization(image):
     image_min = np.min(image)
@@ -31,86 +32,74 @@ def remove_negative_samples(image, mask):
 class MSD(Dataset):
     def __init__(self, args, mode="train"):
         assert mode in ["train", "test"], f"mode must be either 'train' or 'test', got {mode}"
-        
+        self.subset = "Tr" if mode == 'train' else 'Ts'
         self.root = args.data_path
         self.subset = mode
-        self.task_list = glob.glob(f"{args.data_path}/*")
-        self.train_volume_list = []
-        self.train_last_idx = {}
-        self.test_volume_list = []
-        self.test_last_idx = {}
+        # self.task_list = glob.glob(f"{args.data_path}/*")
+        # self.train_volume_list = []
+        # self.test_volume_list = []
+        df = []
         
-        for task_path in self.task_list:
-            task = task_path.split("/")[-1]
-            if not task.startswith(args.task):
+        csv_root = "/data/code/DQN-MedSAM2/data/MSD"
+        for csv_path in os.listdir(csv_root):
+            if not csv_path.startswith(args.task):
                 continue
-            train_volumes_in_task = glob.glob(f"{task_path}/imagesTr/*")
-            test_volumes_in_task = glob.glob(f"{task_path}/imagesTs/*")
-                
-            self.train_volume_list.extend(train_volumes_in_task)
-            self.train_last_idx[task] = len(self.train_volume_list)
             
-            self.test_volume_list.extend(test_volumes_in_task)
-            self.test_last_idx[task] = len(self.test_volume_list)
+            # if csv_path.endswith("Tr.csv"):
+            #     self.train_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+            # elif csv_path.endswith("Ts.csv"):
+            #     self.test_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+            df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+                
+        # self.train_volume_list = pd.concat(self.train_volume_list)
+        # self.test_volume_list = pd.concat(self.test_volume_list)
+        
+        df = pd.concat(df)
+        self.gt_path = np.asarray(df["gt_path"])
+        self.task = np.asarray(df["task"])
+        self.obj_id = np.asarray(df["obj_id"])
         
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
         
     def __len__(self):
-        if self.subset == "train":
-            return len(self.train_volume_list)
-        return len(self.test_volume_list)
+        return len(self.gt_path)
     
     def __getitem__(self, index):
-        last_idx = self.train_last_idx if self.subset == "train" else self.test_last_idx
-        volume_list = self.train_volume_list if self.subset == "train" else self.test_volume_list
+        task = self.task[index]
+        obj_id = self.obj_id[index]
+        support_list = np.argwhere(np.logical_and(self.task == self.task[index], self.obj_id == self.obj_id[index]))
+        support_index = np.random.choice(support_list, size=1)
 
-        name = ""
-        support_start_idx = 0
-        support_end_idx = 0
-        for task, last in last_idx.items():
-            name = task
-            support_start_idx = support_end_idx
-            support_end_idx = last
-            
-            if last >= index:
-                break
-            
-        if self.subset == "train":
-            support_index = random.choice(
-                [i for i in range(support_start_idx, support_end_idx) if \
-                    i != index and volume_list[i] not in SUPPORT_EXCLUDE]
-            )
-        else:
-            support_index = random.choice([i for i in range(support_start_idx, support_end_idx) if volume_list[i] not in SUPPORT_EXCLUDE])
+        image_path = self.gt_path[index].replace("label", "image")
+        label_path = self.gt_path[index]
 
-        image_path = volume_list[index]
-        label_path = volume_list[index].replace("image", "label")
-
-        support_image_path = volume_list[support_index]
-        support_label_path = volume_list[support_index].replace("image", "label")
+        support_image_path = self.gt_path[support_index].replace("label", "image")
+        support_label_path = self.gt_path[support_index]
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
+            obj_id = obj_id,
             max_slices=self.max_slices if self.subset == "train" else -1
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
+            obj_id = obj_id,
             max_slices=self.num_support
         )
         
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": name
+            "name": task, "obj_id": obj_id
         }
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, max_slices=16):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=16):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -124,6 +113,7 @@ class MSD(Dataset):
                 
         image_3d = np.asanyarray(image_3d)
         data_seg_3d = np.asanyarray(data_seg_3d)
+        data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
