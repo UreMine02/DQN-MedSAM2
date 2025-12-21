@@ -4,7 +4,7 @@ import numpy as np
 from collections import deque
 
 import torch
-from torch import optim
+from torch import optim, nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
@@ -60,6 +60,12 @@ class GRPOGroup:
     
     def get_instances(self):
         return [ins.get() for ins in self.group]
+    
+class GRPOActorNet(nn.Module):
+    def __init__(self, feat_summarizer, policy_net):
+        super().__init__()
+        self.feat_summarizer = feat_summarizer
+        self.policy_net = policy_net
 
 class GRPOAgent(BasePOAgent):
     def __init__(
@@ -133,11 +139,11 @@ class GRPOAgent(BasePOAgent):
                 self.priority.append(1.0)
         
     def select_action(self, state, valid_actions, num_samples=1, training=False):
-        image_feat = state.next_image_feat
-        memory_feat = state.curr_memory_feat["mem_feat"]
-        memory_ptr = state.curr_memory_feat["obj_ptr"]
-        bank_feat = state.prev_memory_bank["mem_feat"]
-        bank_ptr = state.prev_memory_bank["obj_ptr"]
+        image_feat = state.next_image_feat.detach()
+        memory_feat = state.curr_memory_feat["mem_feat"].detach()
+        memory_ptr = state.curr_memory_feat["obj_ptr"].detach()
+        bank_feat = state.prev_memory_bank["mem_feat"].detach()
+        bank_ptr = state.prev_memory_bank["obj_ptr"].detach()
         
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
         action_probs = self.policy_net(*state, training=False).cpu().squeeze(0)
@@ -155,6 +161,7 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
+            print("Select max action")
             action_idx = torch.argmax(valid_probs)
             
             return {
@@ -192,11 +199,11 @@ class GRPOAgent(BasePOAgent):
         
         states, old_log_probs, actions, rewards,  dones = zip(*batch)
         
-        image_feat = torch.cat([state.next_image_feat for state in states])
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states])
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states])
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states])
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states])
+        image_feat = torch.cat([state.next_image_feat for state in states]).detach()
+        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
+        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
+        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
+        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
         
         image_feat = image_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
         memory_feat = memory_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)

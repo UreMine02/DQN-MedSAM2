@@ -1,6 +1,7 @@
 #!/bin/bash
 
-EXP=msd+grpo+entropy1e-1+num_support3+clip_grad0.1
+EXP=msd_task10+grpo+entropy1e-1+num_support3+clip_grad0.1
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -8,6 +9,7 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
+    -task Task10 \
     -data_path /data/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
@@ -16,8 +18,7 @@ python train_3d.py \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 3 \
-    -distributed \
-    # -wandb_enabled
+    -wandb_enabled
 
 # CUDA_VISIBLE_DEVICES=0 python train_3d.py \
 #     -exp_name sarcoma+ppo+normalized_gae0.99+entropy1e-1+num_support3 \

@@ -27,7 +27,7 @@ import numpy as np
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12345'
+    os.environ['MASTER_PORT'] = '12348'
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
 def cleanup():
@@ -61,7 +61,7 @@ def train(rank=0, world_size=0):
             net.agent.load_state_dict(weights["agent"])
             
     if args.distributed:
-        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        net = DDP(net, device_ids=[rank])
         print("Wrap net for distributed training")
         net.module.agent.to_distributed(rank=rank)
         print("Wrap agent for distributed training")

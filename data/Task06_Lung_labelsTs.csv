@@ -1,0 +1,14 @@
+,task,gt_path,obj_id
+0,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_061.nii.gz,1
+1,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_086.nii.gz,1
+2,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_003.nii.gz,1
+3,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_093.nii.gz,1
+4,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_080.nii.gz,1
+5,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_047.nii.gz,1
+6,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_020.nii.gz,1
+7,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_084.nii.gz,1
+8,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_044.nii.gz,1
+9,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_078.nii.gz,1
+10,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_057.nii.gz,1
+11,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_022.nii.gz,1
+12,Task06_Lung,/data/datasets/MSD/Task06_Lung/labelsTs/lung_034.nii.gz,1

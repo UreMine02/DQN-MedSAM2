@@ -44,6 +44,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         agent.set_epoch(epoch, distributed=args.distributed)
             
     for name, param in net.named_parameters():
+        # param.requires_grad_(False)
         if "image_encoder" in name:
             param.requires_grad_(False)
         if "sam_prompt_encoder" in name:
@@ -197,11 +198,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
     
+    
+    avg_agent_loss = {}
     if agent_step > 0:
-        avg_agent_loss = {}
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
     else:
-        avg_agent_loss = None
+        avg_agent_loss["actor_loss"] = 0
         
     if args.wandb_enabled:
         for class_, dice_loss in dice_loss_per_class.items():
