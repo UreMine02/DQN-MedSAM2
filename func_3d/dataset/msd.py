@@ -34,15 +34,15 @@ class MSD(Dataset):
         assert mode in ["train", "test"], f"mode must be either 'train' or 'test', got {mode}"
         self.subset = "Tr" if mode == 'train' else 'Ts'
         self.root = args.data_path
-        self.subset = mode
+        self.mode = mode
         # self.task_list = glob.glob(f"{args.data_path}/*")
         # self.train_volume_list = []
         # self.test_volume_list = []
         df = []
         
-        csv_root = "/data/code/DQN-MedSAM2/data/MSD"
+        csv_root = "./data/MSD"
         for csv_path in os.listdir(csv_root):
-            if not csv_path.startswith(args.task):
+            if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
             
             # if csv_path.endswith("Tr.csv"):
@@ -69,20 +69,21 @@ class MSD(Dataset):
     def __getitem__(self, index):
         task = self.task[index]
         obj_id = self.obj_id[index]
-        support_list = np.argwhere(np.logical_and(self.task == self.task[index], self.obj_id == self.obj_id[index]))
+        support_list = np.argwhere(np.logical_and(self.task == self.task[index], self.obj_id == self.obj_id[index])).squeeze()
         support_index = np.random.choice(support_list, size=1)
 
-        image_path = self.gt_path[index].replace("label", "image")
-        label_path = self.gt_path[index]
+        label_path = self.gt_path[index].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
+        image_path = label_path.replace("label", "image")      
 
-        support_image_path = self.gt_path[support_index].replace("label", "image")
-        support_label_path = self.gt_path[support_index]
+        
+        support_label_path = self.gt_path[support_index][0].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
+        support_image_path = support_label_path.replace("label", "image")
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
             obj_id = obj_id,
-            max_slices=self.max_slices if self.subset == "train" else -1
+            max_slices=self.max_slices if self.mode == "train" else -1
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
@@ -94,7 +95,7 @@ class MSD(Dataset):
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": task, "obj_id": obj_id
+            "task": task, "obj_id": obj_id
         }
         
         return output_dict

@@ -51,12 +51,10 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         sys.exit()
 
     if use_gpu:
-        print("Move net to GPU")
-        net = net.to(device=gpu_device, non_blocking=True)
+        net = net.to(device=gpu_device, non_blocking=False)
         agent = getattr(net, "agent", None)
         if agent is not None:
-            print("Move agent to GPU")
-            agent.to(device=gpu_device, non_blocking=True)
+            agent.to(device=gpu_device, non_blocking=False)
 
     return net
 
@@ -507,7 +505,7 @@ def average_score(score_dict):
 
 def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
     obj_mask = masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.any(obj_mask, axis=(1, 2))).flatten()
+    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
     if channels_with_true.numel() == 0:
         print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
         return None
@@ -555,7 +553,7 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
         class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
     obj_mask = support_masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.any(obj_mask, axis=(1, 2))).flatten()
+    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
     if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
         print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
         return None

@@ -22,4 +22,4 @@ python eval_3d.py \
     -dataset msd \
     -task Task03 \
     -data_path /data/datasets/MSD \
-    -num_support 1
+    -num_support 5
