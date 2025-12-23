@@ -35,31 +35,19 @@ class MSD(Dataset):
         self.subset = "Tr" if mode == 'train' else 'Ts'
         self.root = args.data_path
         self.mode = mode
-        # self.task_list = glob.glob(f"{args.data_path}/*")
-        # self.train_volume_list = []
-        # self.test_volume_list = []
         df = []
         
         csv_root = "/data/code/DQN-MedSAM2/data/MSD"
         for csv_path in os.listdir(csv_root):
             if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
-            print(csv_path)
-            # if csv_path.endswith("Tr.csv"):
-            #     self.train_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
-            # elif csv_path.endswith("Ts.csv"):
-            #     self.test_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+            
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
-                
-        # self.train_volume_list = pd.concat(self.train_volume_list)
-        # self.test_volume_list = pd.concat(self.test_volume_list)
         
         df = pd.concat(df)
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])
-        
-        print(mode, self.gt_path)
         
         self.image_size = args.image_size
         self.num_support = args.num_support
