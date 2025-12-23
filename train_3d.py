@@ -58,7 +58,7 @@ def train(rank=0, world_size=0):
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank)
         net.module.agent.to_distributed(rank=rank)
-        print("Distributed Training")
+        print("Wrap agent for distributed training")
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)

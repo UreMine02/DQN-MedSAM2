@@ -35,9 +35,6 @@ class MSD(Dataset):
         self.subset = "Tr" if mode == 'train' else 'Ts'
         self.root = args.data_path
         self.mode = mode
-        # self.task_list = glob.glob(f"{args.data_path}/*")
-        # self.train_volume_list = []
-        # self.test_volume_list = []
         df = []
         
         csv_root = "./data/MSD"
@@ -45,14 +42,7 @@ class MSD(Dataset):
             if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
             
-            # if csv_path.endswith("Tr.csv"):
-            #     self.train_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
-            # elif csv_path.endswith("Ts.csv"):
-            #     self.test_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
-                
-        # self.train_volume_list = pd.concat(self.train_volume_list)
-        # self.test_volume_list = pd.concat(self.test_volume_list)
         
         df = pd.concat(df)
         self.gt_path = np.asarray(df["gt_path"])
@@ -75,7 +65,6 @@ class MSD(Dataset):
         label_path = self.gt_path[index].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
         image_path = label_path.replace("label", "image")      
 
-        
         support_label_path = self.gt_path[support_index][0].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
         support_image_path = support_label_path.replace("label", "image")
         
@@ -92,7 +81,7 @@ class MSD(Dataset):
             max_slices=self.num_support
         )
         
-        output_dict ={
+        output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
             "task": task, "obj_id": obj_id

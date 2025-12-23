@@ -143,11 +143,11 @@ class GRPOAgent(BasePOAgent):
                 self.priority.append(1.0)
         
     def select_action(self, state, valid_actions, num_samples=1, training=False):
-        image_feat = state.next_image_feat.to(torch.float32)
-        memory_feat = state.curr_memory_feat["mem_feat"].to(torch.float32)
-        memory_ptr = state.curr_memory_feat["obj_ptr"].to(torch.float32)
-        bank_feat = state.prev_memory_bank["mem_feat"].to(torch.float32)
-        bank_ptr = state.prev_memory_bank["obj_ptr"].to(torch.float32)
+        image_feat = state.next_image_feat.detach().to(torch.float32)
+        memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
+        memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
+        bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
+        bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
         action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).detach().cpu().squeeze(0)
         

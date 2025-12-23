@@ -1,13 +1,13 @@
-,Unnamed: 0,task,gt_path,obj_id
-50,50,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_07.nii.gz,1
-51,51,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_07.nii.gz,2
-52,52,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_32.nii.gz,1
-53,53,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_14.nii.gz,1
-54,54,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_14.nii.gz,2
-55,55,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_18.nii.gz,1
-56,56,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_01.nii.gz,1
-57,57,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_01.nii.gz,2
-58,58,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_37.nii.gz,1
-59,59,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_37.nii.gz,2
-60,60,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_40.nii.gz,1
-61,61,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_40.nii.gz,2
+,task,gt_path,obj_id
+0,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_07.nii.gz,1
+1,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_07.nii.gz,2
+2,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_32.nii.gz,1
+3,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_14.nii.gz,1
+4,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_14.nii.gz,2
+5,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_18.nii.gz,1
+6,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_01.nii.gz,1
+7,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_01.nii.gz,2
+8,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_37.nii.gz,1
+9,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_37.nii.gz,2
+10,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_40.nii.gz,1
+11,Task05_Prostate,/data/datasets/MSD/Task05_Prostate/labelsTs/prostate_40.nii.gz,2
