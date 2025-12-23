@@ -161,7 +161,6 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
-            print("Select max action")
             action_idx = torch.argmax(valid_probs)
             
             return {

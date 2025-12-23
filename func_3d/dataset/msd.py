@@ -44,7 +44,7 @@ class MSD(Dataset):
         for csv_path in os.listdir(csv_root):
             if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
-            
+            print(csv_path)
             # if csv_path.endswith("Tr.csv"):
             #     self.train_volume_list.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
             # elif csv_path.endswith("Ts.csv"):
@@ -58,6 +58,8 @@ class MSD(Dataset):
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])
+        
+        print(mode, self.gt_path)
         
         self.image_size = args.image_size
         self.num_support = args.num_support
@@ -91,7 +93,7 @@ class MSD(Dataset):
             max_slices=self.num_support
         )
         
-        output_dict ={
+        output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
             "task": task, "obj_id": obj_id
