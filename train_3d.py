@@ -44,14 +44,17 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
+    
+
 
     if args.wandb_enabled:
         wandb.init(
             project="dqn-medsam2",
             name=args.exp_name              # Experiment name from args
         )
-
+    # print('GPU issssssssssssssssss: ', GPUdevice)
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
+    # net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = False)
     net.to(dtype=torch.bfloat16)
     
     if args.pretrain:
@@ -65,7 +68,15 @@ def train(rank=0, world_size=0):
         net = DDP(net, device_ids=[rank])
         net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
     
-    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
+
+    # print("=== CHECK MODEL PARAMS (device, dtype) ===")
+    # for name, param in net.named_parameters():
+    #     print(name, "| device:", param.device, "| dtype:", param.dtype)
+    # print("=== END CHECK ===")
+    # # =====================================
+
+
+    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=False)
     # scheduler = SequentialLR(
     #     optimizer,
     #     [StepLR(optimizer, step_size=10, gamma=0.5), ConstantLR(optimizer, factor=0.25, total_iters=args.ep-30)],

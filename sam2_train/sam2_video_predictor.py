@@ -325,6 +325,67 @@ class SAM2VideoPredictor(SAM2Base):
         """Get the total number of unique object ids received so far in this session."""
         return len(inference_state["obj_idx_to_id"])
 
+################################################################
+### Sam2-prompting modeling
+
+    def sample_points_from_gt(
+        self,
+        gt_mask,
+        num_fg=0,
+        num_bg=0,
+    ):
+        """
+        gt_mask: Tensor[H, W] (0/1)
+        return:
+            fg_points: Tensor[num_fg, 2]
+            bg_points: Tensor[num_bg, 2]
+        """
+        gt_mask = gt_mask.bool()
+
+        fg_coords = torch.nonzero(gt_mask)          # (y, x)
+        bg_coords = torch.nonzero(~gt_mask)
+
+        fg_idx = torch.randperm(len(fg_coords))[:num_fg]
+        bg_idx = torch.randperm(len(bg_coords))[:num_bg]
+
+        fg_points = fg_coords[fg_idx][:, [1, 0]]    # -> (x, y)
+        bg_points = bg_coords[bg_idx][:, [1, 0]]
+
+        return fg_points, bg_points
+
+    def build_point_inputs(
+        self,
+        fg_points,
+        bg_points,
+        video_H,
+        video_W,
+        image_size,
+        device,
+    ):
+        points = torch.cat([fg_points, bg_points], dim=0).float()
+        labels = torch.cat([
+            torch.ones(len(fg_points)),
+            torch.zeros(len(bg_points)),
+        ])
+
+        # normalize to [0,1]
+        points = points / torch.tensor(
+            [video_W, video_H], device=points.device, dtype=points.dtype,)
+
+        # scale to model space
+        points = points * image_size
+
+        # add batch dim
+        points = points.unsqueeze(0).to(device)
+        labels = labels.unsqueeze(0).to(device)
+
+        return {
+            "point_coords": points,
+            "point_labels": labels,
+        }
+############################################################
+
+
     @torch.inference_mode()
     def add_new_points(
         self,
@@ -1285,10 +1346,15 @@ class SAM2VideoPredictor(SAM2Base):
     def _get_image_feature(self, inference_state, frame_idx, batch_size):
         """Compute the image features on a given frame."""
 
-        if inference_state["support_set_stage"]:
-            image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
-        else:
-            image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+        # if inference_state["support_set_stage"]:
+        #     image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+        # else:
+        #     image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+        
+        # Conducting SAM2-RL without ICL
+        image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+
+
         backbone_out = self.forward_image(image) # dict_keys(['vision_features', 'vision_pos_enc', 'backbone_fpn'])
         # Cache the most recent frame's feature (for repeated interactions with
         # a frame; we can use an LRU cache for more frames in the future).
@@ -1337,6 +1403,22 @@ class SAM2VideoPredictor(SAM2Base):
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
         
         storage_device = inference_state["device"]
+
+        gt_mask = inference_state["gt_masks"][frame_idx]   # [H, W]
+
+        fg_pts, bg_pts = self.sample_points_from_gt(
+            gt_mask,
+            num_fg=0,
+            num_bg=0,
+        )
+        point_inputs = self.build_point_inputs(
+            fg_pts,
+            bg_pts,
+            video_H=inference_state["video_height"],
+            video_W=inference_state["video_width"],
+            image_size=self.image_size,
+            device=inference_state["device"],
+        )
         # QAgent
         if agent_act and frame_idx > 0:
             # Finalize replay buffer instance from previous frame
@@ -1348,19 +1430,21 @@ class SAM2VideoPredictor(SAM2Base):
                     storage_device=storage_device,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
+                    # point_inputs=point_inputs,
                 )
             
             # Initiate replay buffer instance for current frame
             track_step_kwargs = {
                 "is_init_cond_frame": is_init_cond_frame,
                 "feat_sizes": feat_sizes,
-                "point_inputs": point_inputs,
+                # "point_inputs": point_inputs,
                 "mask_inputs": mask_inputs,
                 "num_frames": inference_state["num_frames"],
                 "track_in_reverse": reverse,
                 "run_mem_encoder": run_mem_encoder,
                 "prev_sam_mask_logits": prev_sam_mask_logits,
             }
+            # print('point_inputs', point_inputs)
             self.agent_update_first_stage(
                 inference_state=inference_state,
                 storage_device=storage_device,
@@ -1369,11 +1453,12 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds=current_vision_pos_embeds,
                 output_dict=output_dict,
                 train_agent=train_agent,
+                point_inputs=point_inputs,
                 **track_step_kwargs
             )
 
         # point and mask should not appear as input simultaneously on the same frame
-        assert point_inputs is None or mask_inputs is None
+        # assert point_inputs is None or mask_inputs is None
         current_out = self.track_step(
             frame_idx=frame_idx,
             is_init_cond_frame=is_init_cond_frame,
@@ -1503,6 +1588,7 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent,
+        point_inputs,
         **kwargs
     ):
         # compute loss before
@@ -1513,6 +1599,7 @@ class SAM2VideoPredictor(SAM2Base):
                     frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
+                    point_inputs=point_inputs,
                     output_dict=output_dict,
                     **kwargs
                 )
