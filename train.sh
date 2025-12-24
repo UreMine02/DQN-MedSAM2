@@ -7,7 +7,7 @@ python train_3d.py \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
-    -dataset msd \
+    -dataset sarcoma \
     -task Task02 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
     -lr 1e-4 \
