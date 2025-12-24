@@ -3,7 +3,7 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-
+import copy
 import numpy as np
 from tqdm import tqdm
 from collections import OrderedDict
@@ -1338,18 +1338,7 @@ class SAM2VideoPredictor(SAM2Base):
         
         storage_device = inference_state["device"]
         # QAgent
-        if agent_act and frame_idx > 0:
-            # Finalize replay buffer instance from previous frame
-            if frame_idx > 1 and train_agent:
-                self.agent_update_second_stage(
-                    inference_state=inference_state,
-                    output_dict=output_dict,
-                    frame_idx=frame_idx,
-                    storage_device=storage_device,
-                    current_vision_feats=current_vision_feats,
-                    current_vision_pos_embeds=current_vision_pos_embeds,
-                )
-            
+        if agent_act and frame_idx > 0:            
             # Initiate replay buffer instance for current frame
             track_step_kwargs = {
                 "is_init_cond_frame": is_init_cond_frame,
@@ -1361,7 +1350,7 @@ class SAM2VideoPredictor(SAM2Base):
                 "run_mem_encoder": run_mem_encoder,
                 "prev_sam_mask_logits": prev_sam_mask_logits,
             }
-            self.agent_update_first_stage(
+            self.generate_rl_steps(
                 inference_state=inference_state,
                 storage_device=storage_device,
                 frame_idx=frame_idx,
@@ -1494,7 +1483,7 @@ class SAM2VideoPredictor(SAM2Base):
             for obj_output_dict in inference_state["output_dict_per_obj"].values():
                 obj_output_dict["non_cond_frame_outputs"].pop(t, None)
 
-    def agent_update_first_stage(
+    def generate_rl_steps(
         self,
         inference_state,
         storage_device,
@@ -1533,7 +1522,7 @@ class SAM2VideoPredictor(SAM2Base):
             offload_to_cpu=False,
             training=train_agent
         )
-        
+
         bank_size = len(output_dict["non_cond_frame_outputs"])
         bank_full = (bank_size >= self.num_maskmem - 1)
         valid_actions = [1] if bank_full else [0, 1]
@@ -1542,75 +1531,89 @@ class SAM2VideoPredictor(SAM2Base):
             action_out = self.agent.select_action(
                 state,
                 valid_actions=torch.tensor(valid_actions),
-                training=train_agent
+                num_samples=6,
+                training=train_agent,
             ) # ask agent
         
-        action = action_out["action"]
-        state.offload_to_cpu()
+        # state.offload_to_cpu()
+        
+        if train_agent:
+            self.agent.init_new_group()
+            
+            actions = action_out["action"]
+            log_probs = action_out["log_probs"]
+            for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
+                reward = 0
+                temp_output_dict = {
+                    "cond_frame_outputs": output_dict["cond_frame_outputs"].copy(),
+                    "non_cond_frame_outputs": output_dict["non_cond_frame_outputs"].copy()
+                }
 
-        reward = 0
+                drop_frame = None
+                storage_key = "non_cond_frame_outputs"
+                valid = True
+                if action == 0:
+                    # Add
+                    if bank_full:
+                        reward= inference_state['rl_config']['invalid_penalty']
+                        valid = False
+                    else:
+                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                elif action == 1:
+                    # Skip (equivalent to adding then drop the same frame)
+                    reward = inference_state['rl_config']['lazy_penalty']
+                else:
+                    # Add the new frame and skip a specific frame
+                    if action not in action_frame_map.keys():
+                        reward= inference_state['rl_config']['invalid_penalty']
+                        valid = False
+                    else:
+                        drop_frame = action_frame_map[action]
+                        temp_output_dict[storage_key].pop(drop_frame)    
+                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                
+                if valid:
+                    with torch.no_grad():
+                        output_before = self.track_step(
+                            frame_idx=frame_idx,
+                            current_vision_feats=current_vision_feats,
+                            current_vision_pos_embeds=current_vision_pos_embeds,
+                            output_dict=temp_output_dict,
+                            **kwargs
+                        )
+
+                    pred_masks = output_before["pred_masks"]
+                    pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+                        
+                    loss_after = compute_loss(pred_masks, gt_masks, inference_state)
+                    
+                    reward += loss_after.detach().cpu() - loss_before.detach().cpu()
+
+                replay_instance_info = {
+                    "frame_idx": frame_idx,
+                    "state": state,
+                    "action": action,
+                    "reward": reward,
+                    "log_probs": log_prob,
+                }
+                
+                self.agent.add_new_instance_to_group(**replay_instance_info)
+                
+            self.agent.final_group()
+            
         drop_frame = None
-        storage_key = "non_cond_frame_outputs"
+        reward = 0.0
+        action = action_out['main_action']
         if action == 0:
             # Add
-            if bank_full:
-                reward = inference_state["rl_config"]["invalid_penalty"]
-            else:
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
             reward = 0.0
         else:
             # Add the new frame and skip a specific frame
-            if action not in action_frame_map.keys():
-                # penalty for dropping blank
-                reward = inference_state["rl_config"]["invalid_penalty"]
-                # raise ValueError(
-                    # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-            else:
-                # drop_frame = list(output_dict[storage_key].keys())[drop_key]
-                drop_frame = action_frame_map[action]
-                output_dict[storage_key].pop(drop_frame)    
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-        
-        # if not train_agent:
-        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
-        
-        if train_agent:
-            replay_instance_info = {
-                "frame_idx": frame_idx,
-                "state": state,
-                "loss_before": loss_before.detach().cpu(),
-                "reward": reward,
-            }
-            replay_instance_info.update(action_out)
+            drop_frame = action_frame_map[action]
+            output_dict["non_cond_frame_outputs"].pop(drop_frame)    
+            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
             
-            self.agent.init_new_replay_instance(**replay_instance_info)
-
-    # loss_after + next_state
-    def agent_update_second_stage(
-        self,
-        inference_state,
-        output_dict,
-        frame_idx,
-        storage_device,
-        current_vision_feats,
-        current_vision_pos_embeds,
-    ):
-        pred_masks_gpu = output_dict["await_outputs"][frame_idx-1]["pred_masks"]
-        pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
-        gt_masks = inference_state["gt_masks"][frame_idx-1].to(device=storage_device, non_blocking=True)
-        gt_masks = gt_masks.to(torch.float32) 
-        
-        loss_after = compute_loss(pred_masks, gt_masks, inference_state)
-        
-        next_state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            self.num_maskmem - 1,
-            offload_to_cpu=True
-        )
-        
-        self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")

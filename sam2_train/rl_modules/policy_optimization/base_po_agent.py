@@ -181,7 +181,7 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(action_query, action_context)
             
         actions_logits = self.action_proj(action_query)
-        
+        # actions_logits = actions_logits.clamp(min=-20, max=20)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
         # if not training:
@@ -259,17 +259,8 @@ class BasePOAgent(BaseAgent):
             lr=value_lr
         )
         
-        # self.optimizer = optim.AdamW(
-        #     list(self.feat_summarizer.parameters()) + \
-        #     list(self.policy_net.parameters()) + \
-        #     list(self.value_net.parameters()),
-        #     lr=policy_lr
-        # )
-        
         self.tau = tau
         self.entropy_weight= entropy_weight
-        
-        self.priority_weight = deque(maxlen=buffer_size)
     
     def init_new_trajectory(self):
         self.await_trajectory = Trajectory()
@@ -322,7 +313,9 @@ class BasePOAgent(BaseAgent):
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
         
         if training:
-            action_idx = torch.multinomial(valid_probs, 1)
+            valid_probs_a = valid_probs.numpy()
+            valid_probs_a = valid_probs_a / valid_probs_a.sum()
+            action_idx = np.random.choice(len(valid_actions), size=1, replace=False, p=valid_probs_a)
         else:
             action_idx = torch.argmax(valid_probs)
         return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
@@ -377,7 +370,7 @@ class BasePOAgent(BaseAgent):
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        advantages = 0.7 * (advantages - adv_mean) / adv_std
         
         # print("advantages", advantages.mean())
         

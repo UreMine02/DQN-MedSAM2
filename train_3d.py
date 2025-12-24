@@ -16,17 +16,13 @@ from func_3d import function
 from conf import settings
 from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
-import wandb
 from datetime import datetime
 import pytz
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import StepLR, SequentialLR, ConstantLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import numpy as np
-
-import warnings
-warnings.filterwarnings("ignore")
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -45,14 +41,10 @@ def train(rank=0, world_size=0):
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
 
-    if args.wandb_enabled:
-        wandb.init(
-            project="dqn-medsam2",
-            name=args.exp_name              # Experiment name from args
-        )
-
-    net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution = args.distributed)
+    net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
+    if getattr(net, "agent", None) is not None:
+        net.agent.to_dtype(torch.bfloat16) 
     
     if args.pretrain:
         print(args.pretrain)
@@ -62,15 +54,12 @@ def train(rank=0, world_size=0):
             net.agent.load_state_dict(weights["agent"])
     
     if args.distributed:
-        net = DDP(net, device_ids=[rank])
-        net.module.agent.q_net = DDP(net.module.agent.q_net, device_ids=[rank])
+        net = DDP(net, device_ids=[rank], output_device=rank)
+        net.module.agent.to_distributed(rank=rank)
+        print("Wrap agent for distributed training")
     
-    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-08, amsgrad=False, fused=True)
-    # scheduler = SequentialLR(
-    #     optimizer,
-    #     [StepLR(optimizer, step_size=10, gamma=0.5), ConstantLR(optimizer, factor=0.25, total_iters=args.ep-30)],
-    #     [30]
-    # )
+    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
+    # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -79,7 +68,7 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader = get_dataloader(args)
+    nice_train_loader, nice_test_loader, train_sampler = get_dataloader(args, rank=rank, world_size=world_size)
 
     '''checkpoint path and tensorboard'''
     #create checkpoint folder to save model
@@ -94,8 +83,34 @@ def train(rank=0, world_size=0):
     best_dice = 0.0
     for epoch in range(args.ep):
         net.train()
+        if args.distributed:
+            train_sampler.set_epoch(epoch)
+            
+        agent = getattr(net, "agent", None)
+        if agent is not None:
+            agent.set_epoch(epoch, distributed=args.distributed)
+        for name, param in net.named_parameters():
+            if "image_encoder" in name:
+                param.requires_grad_(False)
+            if "sam_prompt_encoder" in name:
+                param.requires_grad_(False)
+                
         time_start = time.time()
-        loss, dice_loss, focal_loss, mae_loss, bce_loss, agent_loss = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
+        (
+            loss,
+            dice_loss,
+            focal_loss,
+            mae_loss,
+            bce_loss,
+            agent_loss
+        ) = function.train_sam(
+            args,
+            net,
+            optimizer,
+            nice_train_loader,
+            epoch,
+            rank=rank
+        )
         loss_dict = {
             'train/loss': loss, 
             'train/dice loss': dice_loss, 
@@ -103,16 +118,12 @@ def train(rank=0, world_size=0):
             'train/mae_loss': mae_loss, 
             'train/bce_loss': bce_loss, 
             "train/actor_loss": agent_loss["actor_loss"],
-            "train/critic_loss": agent_loss["critic_loss"],
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
-        if args.wandb_enabled and loss is not None:
-            wandb.log(loss_dict, step=epoch)
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-        # scheduler.step()
         
         if args.distributed:
             torch.distributed.barrier()
@@ -131,12 +142,12 @@ def train(rank=0, world_size=0):
                 print(f"val/IOU: {iou}, val/dice : {dice}")
                 
             if dice > best_dice:
+                print(f"Achieve best Dice: {dice} > {best_dice}")
                 best_dice = dice
                 new_best = True
-            
-            if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-
+        
+        # scheduler.step()
+        
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:
                 torch.save({
@@ -146,7 +157,6 @@ def train(rank=0, world_size=0):
                 os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    print(f"Achieve best Dice: {dice} > {best_dice}")
                     torch.save({
                         'model': net.module.state_dict(),
                         'agent': net.module.agent.q_net.module.state_dict(),
@@ -161,7 +171,6 @@ def train(rank=0, world_size=0):
                 os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    print(f"Achieve best Dice: {dice} > {best_dice}")
                     torch.save({
                         'model': net.state_dict(),
                         'agent': net.agent.state_dict(),
