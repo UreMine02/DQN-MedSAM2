@@ -42,6 +42,9 @@ def get_dataloader(args, rank=None, world_size=None):
             nice_train_loader = DataLoader(sarcom_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
             nice_test_loader = DataLoader(sarcom_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
         else:
+            train_sampler = None
+            test_sampler = None
+            
             nice_train_loader = DataLoader(sarcom_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
             nice_test_loader = DataLoader(sarcom_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
         '''end'''
@@ -56,6 +59,9 @@ def get_dataloader(args, rank=None, world_size=None):
             nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
             nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
         else:
+            train_sampler = None
+            test_sampler = None
+            
             nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=2, pin_memory=True)
             nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
         '''end'''
@@ -71,6 +77,9 @@ def get_dataloader(args, rank=None, world_size=None):
             nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
             nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
         else:
+            train_sampler = None
+            test_sampler = None
+            
             nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=True, num_workers=2, pin_memory=True)
             nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
         '''end'''

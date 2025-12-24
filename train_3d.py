@@ -53,8 +53,6 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys():
             net.agent.load_state_dict(weights["agent"])
     
-    pg1 = None
-    pg2 = None
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank)
         net.module.agent.to_distributed(rank=rank)
@@ -85,7 +83,9 @@ def train(rank=0, world_size=0):
     best_dice = 0.0
     for epoch in range(args.ep):
         net.train()
-        train_sampler.set_epoch(epoch)
+        if args.distributed:
+            train_sampler.set_epoch(epoch)
+            
         agent = getattr(net, "agent", None)
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
@@ -108,10 +108,7 @@ def train(rank=0, world_size=0):
             net,
             optimizer,
             nice_train_loader,
-            train_sampler,
             epoch,
-            pg1=pg1,
-            pg2=pg2,
             rank=rank
         )
         loss_dict = {

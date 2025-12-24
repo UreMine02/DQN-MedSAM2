@@ -62,11 +62,11 @@ class MSD(Dataset):
         support_list = np.argwhere(np.logical_and(self.task == self.task[index], self.obj_id == self.obj_id[index])).squeeze()
         support_index = np.random.choice(support_list, size=1)
 
-        label_path = self.gt_path[index].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
-        image_path = label_path.replace("label", "image")      
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_label_path = self.gt_path[support_index][0].replace("/data/datasets", "/hpcfs/users/a1232079/duyanh/MedSAM2/datasets")
-        support_image_path = support_label_path.replace("label", "image")
+        support_label_path = os.path.join(self.root, self.gt_path[support_index][0])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,

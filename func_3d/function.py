@@ -28,7 +28,7 @@ global_step_best = 0
 epoch_loss_values = []
 metric_values = []
 
-def train_sam(args, net: nn.Module, optimizer, train_loader, train_sampler, epoch, pg1=None, pg2=None, rank=None):
+def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
         net = net.module
         GPUdevice = torch.device('cuda', rank)
@@ -36,15 +36,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, train_sampler, epoc
         GPUdevice = torch.device('cuda', args.gpu_device)
     
     net.train()
-    if agent is not None:
-        agent.set_epoch(epoch, distributed=args.distributed)
-            
-    for name, param in net.named_parameters():
-        # param.requires_grad_(False)
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        if "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
         
     video_length = args.video_length
     dice_loss_per_class = {}
@@ -175,10 +166,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, train_sampler, epoc
             # memory_info = process.memory_info()
             # print(f"Memory Usage (RSS): {memory_info.rss / (1024 * 1024):.2f} MB")
 
-        
+    print("after epoch")
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
-    
+    print("averaging loss")
     
     avg_agent_loss = {}
     if agent_step > 0:
@@ -186,6 +177,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, train_sampler, epoc
     else:
         avg_agent_loss["actor_loss"] = 0
 
+    print("returning")
+    
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
