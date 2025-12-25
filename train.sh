@@ -1,14 +1,14 @@
 #!/bin/bash
 
-EXP=msd_task02+grpo+entropy1e-1+num_support10+clip_grad0.1
+EXP=msd_task04+grpo+entropy1e-1+num_support10+clip_grad0.1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
-    -dataset sarcoma \
-    -task Task02 \
+    -dataset msd \
+    -task Task04 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \

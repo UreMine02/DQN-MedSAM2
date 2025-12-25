@@ -161,23 +161,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             )
             total_loss["num_step"] += 1
             pbar.update()
-            
-            # process = psutil.Process(os.getpid())
-            # memory_info = process.memory_info()
-            # print(f"Memory Usage (RSS): {memory_info.rss / (1024 * 1024):.2f} MB")
 
-    print("after epoch")
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
-    print("averaging loss")
-    
+
     avg_agent_loss = {}
     if agent_step > 0:
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
     else:
         avg_agent_loss["actor_loss"] = 0
-
-    print("returning")
     
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
@@ -324,4 +316,4 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         print(f"{name}:")
         print(tabulate([metrics_dict.values()], headers=metrics_dict.keys(), floatfmt=".4f"))
 
-    return score_per_class["Avg"]['iou'], score_per_class["Avg"]['dice']
+    return torch.Tensor([score_per_class["Avg"]['iou']]).to(GPUdevice), torch.Tensor([score_per_class["Avg"]['dice']]).to(GPUdevice)

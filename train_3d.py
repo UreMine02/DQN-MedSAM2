@@ -56,7 +56,7 @@ def train(rank=0, world_size=0):
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank)
         net.module.agent.to_distributed(rank=rank)
-        print("Wrap agent for distributed training")
+        print("Wrapped agent for distributed training")
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
@@ -68,7 +68,7 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader, train_sampler = get_dataloader(args, rank=rank, world_size=world_size)
+    nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
 
     '''checkpoint path and tensorboard'''
     #create checkpoint folder to save model
@@ -84,7 +84,7 @@ def train(rank=0, world_size=0):
     for epoch in range(args.ep):
         net.train()
         if args.distributed:
-            train_sampler.set_epoch(epoch)
+            nice_train_loader.sampler.set_epoch(epoch)
             
         agent = getattr(net, "agent", None)
         if agent is not None:
@@ -95,7 +95,7 @@ def train(rank=0, world_size=0):
             if "sam_prompt_encoder" in name:
                 param.requires_grad_(False)
                 
-        time_start = time.time()
+        # time_start = time.time()
         (
             loss,
             dice_loss,
@@ -121,9 +121,9 @@ def train(rank=0, world_size=0):
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
-        time_end = time.time()
+        # time_end = time.time()
         print(loss_dict)
-        print('time_for_training ', time_end - time_start)
+        # print('time_for_training ', time_end - time_start)
         
         if args.distributed:
             torch.distributed.barrier()
@@ -136,6 +136,7 @@ def train(rank=0, world_size=0):
 
             if args.distributed:
                 dist.all_reduce(iou), dist.all_reduce(dice)
+                iou, dice = iou.item(), dice.item() 
                 iou, dice = iou/world_size, dice/world_size
                 print(f"val/IOU: {iou}, val/dice : {dice}")
             else:
@@ -152,14 +153,14 @@ def train(rank=0, world_size=0):
             if args.distributed and dist.get_rank() == 0:
                 torch.save({
                     'model': net.module.state_dict(),
-                    'agent': net.module.agent.q_net.module.state_dict(),
+                    'agent': net.module.agent.state_dict(),
                 },
                 os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
                     torch.save({
                         'model': net.module.state_dict(),
-                        'agent': net.module.agent.q_net.module.state_dict(),
+                        'agent': net.module.agent.state_dict(),
                     },
                     os.path.join(checkpoint_path, f"best.pth"))
                     
@@ -176,6 +177,9 @@ def train(rank=0, world_size=0):
                         'agent': net.agent.state_dict(),
                     },
                     os.path.join(checkpoint_path, f"best.pth"))
+                    
+        if args.distributed:
+            torch.distributed.barrier()
             
     if args.distributed:
         cleanup()         

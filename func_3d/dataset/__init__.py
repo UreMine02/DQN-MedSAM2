@@ -53,11 +53,27 @@ def get_dataloader(args, rank=None, world_size=None):
         msd_test_dataset = MSD(args, mode="test")
         
         if args.distributed:
-            train_sampler = DistributedSampler(msd_train_dataset, num_replicas=world_size, rank=rank)
-            test_sampler = DistributedSampler(msd_test_dataset, num_replicas=world_size, rank=rank)
+            train_sampler = DistributedSampler(msd_train_dataset, num_replicas=world_size, rank=rank, drop_last=True)
+            test_sampler = DistributedSampler(msd_test_dataset, num_replicas=world_size, rank=rank, drop_last=True)
 
-            nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
+            nice_train_loader = DataLoader(
+                msd_train_dataset,
+                batch_size=1,
+                shuffle=False,
+                num_workers=2,
+                pin_memory=True,
+                sampler=train_sampler,
+                persistent_workers=False
+            )
+            nice_test_loader = DataLoader(
+                msd_test_dataset,
+                batch_size=1,
+                shuffle=False,
+                num_workers=8,
+                pin_memory=True,
+                sampler=test_sampler,
+                persistent_workers=False
+            )
         else:
             train_sampler = None
             test_sampler = None
@@ -86,4 +102,4 @@ def get_dataloader(args, rank=None, world_size=None):
     else:
         raise ValueError(f"the dataset {args.dataset} is not supported now!!!")
         
-    return nice_train_loader, nice_test_loader, train_sampler
+    return nice_train_loader, nice_test_loader

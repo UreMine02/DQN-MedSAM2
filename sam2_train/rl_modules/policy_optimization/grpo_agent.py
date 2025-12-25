@@ -4,7 +4,9 @@ import numpy as np
 from collections import deque
 
 import torch
+import torch.distributed as dist
 from torch import optim, nn
+from torch.utils.checkpoint import checkpoint
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
@@ -117,6 +119,10 @@ class GRPOAgent(BasePOAgent):
         
         self.await_group = None
         self.priority = deque(maxlen=buffer_size)
+        
+        # For distributed training
+        self.rank = 0
+        self.distributed = False
     
     def to(self, device, non_blocking=True):
         self.device = device
@@ -143,13 +149,15 @@ class GRPOAgent(BasePOAgent):
                 self.priority.append(1.0)
         
     def select_action(self, state, valid_actions, num_samples=1, training=False):
+        self.actor.eval()
+        
         image_feat = state.next_image_feat.detach().to(torch.float32)
         memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
         memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).detach().cpu().squeeze(0)
+        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).squeeze(0).detach().cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
@@ -171,13 +179,18 @@ class GRPOAgent(BasePOAgent):
             }
         
     def update(self, num_update):
-        if len(self.replay_buffer) < self.batch_size or num_update <= 0:
+        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        if self.distributed:
+            dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
+            
+        if local_count < self.batch_size or num_update <= 0:
             return None
         
+        np.random.seed(self.rank + self.epoch * 100)
         print(f"Update agent for {num_update} steps")
-        self.feat_summarizer.train()
-        self.policy_net.train()
+        self.actor.train()
         
+        device = self.device
         total_policy_loss = 0
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
@@ -187,54 +200,45 @@ class GRPOAgent(BasePOAgent):
             batch = []
             for idx in batch_idx:
                 batch.append(self.replay_buffer[idx])
-
-            policy_loss = self.train_step(batch)
+        
+            states, old_log_probs, actions, rewards, dones = zip(*batch)
             
-            total_policy_loss += policy_loss
-        
-        self.feat_summarizer.eval()
-        self.policy_net.eval()
-        return {"actor_loss": total_policy_loss / num_update}
-    
-    def train_step(self, batch, update_value=True):
-        device = self.device
-        
-        states, old_log_probs, actions, rewards,  dones = zip(*batch)
-        
-        image_feat = torch.cat([state.next_image_feat for state in states]).detach()
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
-        
-        image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-        
-        actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
-        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+            image_feat = torch.cat([state.next_image_feat for state in states]).detach()
+            memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
+            memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
+            bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
+            bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
+            
+            image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            
+            actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
+            rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+            old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+            dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
 
-        with torch.enable_grad():
-            policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-            action_probs = policy_probs.gather(1, actions)
-            log_probs = torch.log(policy_probs)
-            log_action_probs = torch.log(action_probs)
+            with torch.enable_grad():
+                policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+                action_probs = policy_probs.gather(1, actions)
+                log_probs = torch.log(policy_probs)
+                log_action_probs = torch.log(action_probs)
 
-            policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-            minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
-            policy_loss += minus_entropy * self.entropy_weight # entropy regularization
-            policy_loss = policy_loss.mean()
+                policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
+                minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
+                policy_loss += minus_entropy * self.entropy_weight # entropy regularization
+                policy_loss = policy_loss.mean()
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
             
-        return policy_loss.item()
+            total_policy_loss += policy_loss.detach()
+        
+        return {"actor_loss": total_policy_loss / num_update}
     
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         ratio = (log_prob - old_log_prob).exp()
@@ -252,4 +256,6 @@ class GRPOAgent(BasePOAgent):
         self.actor.load_state_dict(state_dict["actor"])
         
     def to_distributed(self, rank):
+        self.distributed = True
+        self.rank = rank
         self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)
