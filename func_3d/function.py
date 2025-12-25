@@ -6,7 +6,6 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import torchshow as ts
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -14,7 +13,6 @@ import numpy as np
 import cfg
 from conf import settings
 from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple
-import wandb
 
 args = cfg.parse_args()
 
@@ -37,18 +35,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
     
-    
-    agent = getattr(net, "agent", None)
     net.train()
-    if agent is not None:
-        agent.set_epoch(epoch, distributed=args.distributed)
-            
-    for name, param in net.named_parameters():
-        # param.requires_grad_(False)
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        if "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
         
     video_length = args.video_length
     dice_loss_per_class = {}
@@ -80,7 +67,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 if obj_id not in dice_loss_per_class.keys():
                     dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0} 
                 imgs_tensor = pack['image']
-                # print('imgs_tensor',imgs_tensor.shape)
                 masks_tensor = pack['label']
 
                 support_imgs_tensor = pack["support_image"]
@@ -96,18 +82,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     args=args,
                     imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
                 )
-                
-                # if args.wandb_enabled:
-                #     support_pair = []
-                #     for frame_idx in range(support_imgs_tensor.shape[0]):
-                #         support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
-                #         # print(support_imgs_tensor[frame_idx].shape)
-                #         # support_image = support_imgs_tensor[frame_idx].unsqueeze(-1).expand(1024,1024,3).detach().cpu().numpy()
-                #         # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
-                #         support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
-                #         support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
-
-                #     wandb.log({"train/support set": support_pair})
                 
                 with torch.cuda.amp.autocast():
                     for frame_idx in range(support_masks_tensor.shape[0]):
@@ -158,10 +132,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss.backward()
                     torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                     optimizer.step()
-
-                    if args.distributed:
-                        torch.distributed.barrier()
-                        
+                    
+                    agent = getattr(net, "agent", None)
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
@@ -194,21 +166,19 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             # memory_info = process.memory_info()
             # print(f"Memory Usage (RSS): {memory_info.rss / (1024 * 1024):.2f} MB")
 
-        
+    print("after epoch")
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
-    
+    print("averaging loss")
     
     avg_agent_loss = {}
     if agent_step > 0:
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
     else:
         avg_agent_loss["actor_loss"] = 0
-        
-    if args.wandb_enabled:
-        for class_, dice_loss in dice_loss_per_class.items():
-            wandb.log({f"train/Class {class_} loss": dice_loss}, step=epoch)
 
+    print("returning")
+    
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
@@ -279,26 +249,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     args=args,
                     imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
                 )
-                # print('train_st:', train_state)
-                support_pair = []
-                filtered_support_pair = []
-                for frame_idx in range(support_imgs_tensor.shape[0]):
-                    support_image = support_imgs_tensor[frame_idx].permute(1, 2, 0).detach().cpu().numpy()
-                    # support_image = support_imgs_tensor[frame_idx].detach().cpu().numpy()
-                    support_label = support_masks_tensor[frame_idx].detach().cpu().numpy()
-                    support_pair.append(wandb.Image(support_image, masks={"ground_truth": {"mask_data": support_label}}, caption=f"support {frame_idx}"))
-                     # Add to the filtered support pair if the label contains the current obj_id
-                    if (support_label == obj_id).any():
-                        filtered_support_pair.append(
-                            wandb.Image(
-                                support_image,
-                                masks={"ground_truth": {"mask_data": support_label}},
-                                caption=f"Support {frame_idx} (class {obj_id})"
-                            )
-                        )
                 
-                if args.wandb_enabled:
-                    wandb.log({"test/support set": support_pair}, step=epoch)
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -321,7 +272,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             }
                             
                 # Record the loss in this step
-                wandb_result = []
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
@@ -345,21 +295,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
-                    
-                    if args.vis:
-                        save_dir = "/".join(args.pretrain.split("/")[:-1])
-                        save_prefix = f"{save_dir}/vis/{packs['case']}_{task}_idx{frame_idx}_"
-                        ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
-                        ts.overlay(
-                            [save_prefix + "image.png", pred_mask], [1, 0.4],
-                            save_as=save_prefix + "pred.png",
-                            cmap="jet"
-                        )
-                        ts.overlay(
-                            [save_prefix + "image.png", mask], [1, 0.4],
-                            save_as=save_prefix + "mask.png",
-                            cmap="jet"
-                        )
                     
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])

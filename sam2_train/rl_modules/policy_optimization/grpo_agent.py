@@ -61,11 +61,17 @@ class GRPOGroup:
     def get_instances(self):
         return [ins.get() for ins in self.group]
     
-class GRPOActorNet(nn.Module):
+class GRPOActor(nn.Module):
     def __init__(self, feat_summarizer, policy_net):
         super().__init__()
+        
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
+        
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
+        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+        policy_probs = self.policy_net(*curr_feats)
+        return policy_probs
 
 class GRPOAgent(BasePOAgent):
     def __init__(
@@ -98,13 +104,13 @@ class GRPOAgent(BasePOAgent):
         )
         self.epsilon = epsilon
         
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
-        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = None
+        self.actor = GRPOActor(feat_summarizer, policy_net)
 
         self.policy_optimizer = optim.AdamW(
-            list(self.policy_net.parameters()) + \
-            list(self.feat_summarizer.parameters()),
+            self.actor.parameters(),
             lr=policy_lr,
             weight_decay=0.01
         )
@@ -114,13 +120,11 @@ class GRPOAgent(BasePOAgent):
     
     def to(self, device, non_blocking=True):
         self.device = device
-        self.feat_summarizer.to(device=device, non_blocking=non_blocking)
-        self.policy_net.to(device=device, non_blocking=non_blocking)
+        self.actor.to(device=device, non_blocking=non_blocking)
         
     def to_dtype(self, dtype):
         self.dtype = dtype
-        self.feat_summarizer.to(dtype=dtype)
-        self.policy_net.to(dtype=dtype)
+        self.actor.to(dtype=dtype)
     
     def init_new_group(self):
         self.await_group = GRPOGroup()
@@ -139,14 +143,13 @@ class GRPOAgent(BasePOAgent):
                 self.priority.append(1.0)
         
     def select_action(self, state, valid_actions, num_samples=1, training=False):
-        image_feat = state.next_image_feat.detach()
-        memory_feat = state.curr_memory_feat["mem_feat"].detach()
-        memory_ptr = state.curr_memory_feat["obj_ptr"].detach()
-        bank_feat = state.prev_memory_bank["mem_feat"].detach()
-        bank_ptr = state.prev_memory_bank["obj_ptr"].detach()
+        image_feat = state.next_image_feat.detach().to(torch.float32)
+        memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
+        memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
+        bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
+        bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=False).cpu().squeeze(0)
+        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).detach().cpu().squeeze(0)
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
@@ -204,25 +207,23 @@ class GRPOAgent(BasePOAgent):
         bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
         bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
         
-        image_feat = image_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        memory_feat = memory_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        memory_ptr = memory_ptr.to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        bank_feat = bank_feat.to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        bank_ptr = bank_ptr.to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+        bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
         
         actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.bfloat16, non_blocking=True)
+        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
 
         with torch.enable_grad():
-            curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-            
-            policy_probs = self.policy_net(*curr_feats)
+            policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
             action_probs = policy_probs.gather(1, actions)
             log_probs = torch.log(policy_probs)
             log_action_probs = torch.log(action_probs)
-            
+
             policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
@@ -230,11 +231,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                list(self.policy_net.parameters()) + \
-                list(self.feat_summarizer.parameters()),
-                max_norm=0.5
-            )
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
             
         return policy_loss.item()
@@ -247,20 +244,12 @@ class GRPOAgent(BasePOAgent):
         return policy_loss
     
     def state_dict(self):
-        if isinstance(self.feat_summarizer, DDP):
-            return {
-                "feat_summarizer": self.feat_summarizer.module.state_dict(),
-                "policy_net": self.policy_net.module.state_dict(),
-            }
-        return {
-            "feat_summarizer": self.feat_summarizer.state_dict(),
-            "policy_net": self.policy_net.state_dict(),
-        }
+        if isinstance(self.actor, DDP):
+            return self.actor.module.state_dict()
+        return self.actor.state_dict()
         
     def load_state_dict(self, state_dict):
-        self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
-        self.policy_net.load_state_dict(state_dict["policy_net"])
+        self.actor.load_state_dict(state_dict["actor"])
         
     def to_distributed(self, rank):
-        self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank])
-        self.policy_net = DDP(self.policy_net, device_ids=[rank])
+        self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)

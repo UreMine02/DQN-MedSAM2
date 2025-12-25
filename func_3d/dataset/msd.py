@@ -30,7 +30,7 @@ class MSD(Dataset):
         self.mode = mode
         df = []
         
-        csv_root = "/data/code/DQN-MedSAM2/data/MSD"
+        csv_root = "./data/MSD"
         for csv_path in os.listdir(csv_root):
             if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
@@ -59,11 +59,11 @@ class MSD(Dataset):
         support_list = np.argwhere(support_list).squeeze()
         support_index = np.random.choice(support_list, size=1)[0]
 
-        image_path = self.gt_path[index].replace("label", "image")
-        label_path = self.gt_path[index]
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_image_path = self.gt_path[support_index].replace("label", "image")
-        support_label_path = self.gt_path[support_index]
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,

@@ -1527,7 +1527,6 @@ class SAM2VideoPredictor(SAM2Base):
         bank_full = (bank_size >= self.num_maskmem - 1)
         valid_actions = [1] if bank_full else [0, 1]
         valid_actions.extend(list(action_frame_map.keys()))
-        # valid_actions = list(range(8))
         with torch.no_grad():
             action_out = self.agent.select_action(
                 state,
@@ -1536,7 +1535,7 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent,
             ) # ask agent
         
-        state.offload_to_cpu()
+        # state.offload_to_cpu()
         
         if train_agent:
             self.agent.init_new_group()
