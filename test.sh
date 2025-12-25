@@ -17,9 +17,9 @@ export CUDA_VISIBLE_DEVICES=0
 # done
 
 python eval_3d.py \
-    -pretrain output/msd_task02+grpo+entropy1e-1+num_support10+clip_grad0.1/2025-12-22-11-55-52/best.pth \
+    -pretrain output/sarcoma+grpo+entropy1e-1+num_support10+clip_grad0.1/2025-12-23-18-05-01/best.pth \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
-    -dataset msd \
+    -dataset sarcoma \
     -task Task02 \
-    -data_path /data/datasets/MSD \
+    -data_path /data/datasets/Sarcoma \
     -num_support 5

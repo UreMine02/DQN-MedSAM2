@@ -10,13 +10,6 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 
-SUPPORT_EXCLUDE = [
-    "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_104.nii.gz",
-    "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_176.nii.gz",
-    "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_089.nii.gz",
-    "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_095.nii.gz",
-    "/data/datasets/Combined_Dataset/MSD/Task10_Colon/imagesTr/colon_134.nii.gz",
-] # These volumes don't have enough slices to be support (their num of positive slices < args.support_size)
 
 def normalization(image):
     image_min = np.min(image)
@@ -48,6 +41,7 @@ class MSD(Dataset):
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
         
         self.image_size = args.image_size
         self.num_support = args.num_support
@@ -59,13 +53,16 @@ class MSD(Dataset):
     def __getitem__(self, index):
         task = self.task[index]
         obj_id = self.obj_id[index]
-        support_list = np.argwhere(np.logical_and(self.task == self.task[index], self.obj_id == self.obj_id[index])).squeeze()
-        support_index = np.random.choice(support_list, size=1)
+        support_list = (self.task == self.task[index]) & \
+                        (self.obj_id == self.obj_id[index]) & \
+                        (self.n_pos >= self.num_support)
+        support_list = np.argwhere(support_list).squeeze()
+        support_index = np.random.choice(support_list, size=1)[0]
 
         label_path = os.path.join(self.root, self.gt_path[index])
         image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_label_path = os.path.join(self.root, self.gt_path[support_index][0])
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
         support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
         
         image_3d, data_seg_3d = self.load_image_label(
