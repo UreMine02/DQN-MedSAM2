@@ -1,5 +1,5 @@
-,task,gt_path,obj_id
-0,Task02_Heart,/data/datasets/MSD/Task02_Heart/labelsTs/la_030.nii.gz,1
-1,Task02_Heart,/data/datasets/MSD/Task02_Heart/labelsTs/la_007.nii.gz,1
-2,Task02_Heart,/data/datasets/MSD/Task02_Heart/labelsTs/la_011.nii.gz,1
-3,Task02_Heart,/data/datasets/MSD/Task02_Heart/labelsTs/la_023.nii.gz,1
+,task,gt_path,obj_id,n_pos
+0,Task02_Heart,Task02_Heart/labelsTs/la_030.nii.gz,1,69
+1,Task02_Heart,Task02_Heart/labelsTs/la_007.nii.gz,1,76
+2,Task02_Heart,Task02_Heart/labelsTs/la_011.nii.gz,1,68
+3,Task02_Heart,Task02_Heart/labelsTs/la_023.nii.gz,1,54
