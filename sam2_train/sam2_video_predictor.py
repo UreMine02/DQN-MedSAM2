@@ -1519,6 +1519,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
+            num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=False,
             training=train_agent
         )

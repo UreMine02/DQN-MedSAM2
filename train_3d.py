@@ -151,11 +151,11 @@ def train(rank=0, world_size=0):
         
         if args.save_ckpt:
             if args.distributed and dist.get_rank() == 0:
-                torch.save({
-                    'model': net.module.state_dict(),
-                    'agent': net.module.agent.state_dict(),
-                },
-                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                # torch.save({
+                #     'model': net.module.state_dict(),
+                #     'agent': net.module.agent.state_dict(),
+                # },
+                # os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
                     torch.save({
@@ -165,11 +165,11 @@ def train(rank=0, world_size=0):
                     os.path.join(checkpoint_path, f"best.pth"))
                     
             elif not args.distributed:
-                torch.save({
-                    'model': net.state_dict(),
-                    'agent': net.agent.state_dict(),
-                },
-                os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
+                # torch.save({
+                #     'model': net.state_dict(),
+                #     'agent': net.agent.state_dict(),
+                # },
+                # os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
                     torch.save({

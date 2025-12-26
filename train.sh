@@ -1,6 +1,10 @@
 #!/bin/bash
 
+<<<<<<< HEAD
 EXP=msd_task03+grpo+entropy1e-1+num_support10+clip_grad0.1
+=======
+EXP=msd_task02+grpo+entropy1e-1+num_support10+clip_grad0.1
+>>>>>>> 89162d0e529b7904eecbe0b3959222d2de55774a
 
 python train_3d.py \
     -exp_name $EXP \
@@ -8,16 +12,20 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
+<<<<<<< HEAD
     -task Task03 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
+=======
+    -task Task02 \
+    -data_path /data/datasets/MSD \
+>>>>>>> 89162d0e529b7904eecbe0b3959222d2de55774a
     -lr 1e-4 \
     -val_freq 1 \
     -ep 200 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 10 \
-    -distributed
+    -num_support 3
 
 # CUDA_VISIBLE_DEVICES=0 python train_3d.py \
 #     -exp_name sarcoma+ppo+normalized_gae0.99+entropy1e-1+num_support3 \

@@ -17,6 +17,7 @@ def prepare_rl_state(
     output_dict,
     frame_idx,
     num_maskmem,
+    num_max_prompt=10,
     offload_to_cpu=True,
     training=False
 ):
@@ -59,7 +60,7 @@ def prepare_rl_state(
         prev_obj_ptr.append(obj_ptr)
         
     # Append zero memory
-    while len(prev_memory_bank) < 16:
+    while len(prev_memory_bank) < num_maskmem + num_max_prompt:
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
     
