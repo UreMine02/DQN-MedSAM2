@@ -1507,8 +1507,6 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent,
         **kwargs
     ):
-        print('output_dict_cond',output_dict['cond_frame_outputs'].keys())
-        print('output_dict_noncond',output_dict['non_cond_frame_outputs'].keys())
         # compute loss before
         loss_before = None
         if train_agent:
@@ -1534,7 +1532,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
+            num_max_prompt=1,
             offload_to_cpu=False,
             training=train_agent
         )

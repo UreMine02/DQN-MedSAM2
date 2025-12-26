@@ -18,6 +18,7 @@ from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
 from datetime import datetime
 import pytz
+import wandb
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
@@ -40,6 +41,9 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
+        
+    if args.wandb_enabled:
+        wandb.init()
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)

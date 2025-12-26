@@ -255,13 +255,7 @@ class GRPOAgent(BasePOAgent):
         return self.actor.state_dict()
         
     def load_state_dict(self, state_dict):
-<<<<<<< HEAD
-        self.actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
-        self.actor.policy_net.load_state_dict(state_dict["policy_net"])
-        # self.actor.load_state_dict(state_dict)
-=======
         self.actor.load_state_dict(state_dict)
->>>>>>> 56b11a7769ed7ae5a89227036fbc446cee63d881
         
     def to_distributed(self, rank):
         self.distributed = True

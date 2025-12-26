@@ -130,8 +130,6 @@ class BaseFeatureSummarizer(nn.Module):
         combined_mem_feat = combined_mem_feat.reshape(B * (T+1), C, H, W)
         memory_spatial_query = self.memory_spatial_summary(combined_mem_feat)
         image_spatial_query = self.image_spatial_summary(image_feat)
-
-        print('memory_spatial_query', memory_spatial_query.shape)
         
         memory_spatial_query = memory_spatial_query.reshape(B, (T+1), self.n_query, self.memory_dim)
         (
