@@ -129,6 +129,8 @@ class BaseFeatureSummarizer(nn.Module):
         combined_mem_feat = combined_mem_feat.reshape(B * (T+1), C, H, W)
         memory_spatial_query = self.memory_spatial_summary(combined_mem_feat)
         image_spatial_query = self.image_spatial_summary(image_feat)
+
+        print('memory_spatial_query', memory_spatial_query.shape)
         
         memory_spatial_query = memory_spatial_query.reshape(B, (T+1), self.n_query, self.memory_dim)
         (
@@ -145,7 +147,7 @@ class BaseFeatureSummarizer(nn.Module):
         non_cond_bank_feat = torch.cat([non_cond_bank_feat, non_cond_obj_ptr], dim=-1)
         cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=-1)
         curr_mem_feat = torch.cat([curr_mem_feat, memory_ptr.unsqueeze(1)], dim=-1)
-        
+
         return image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat
 
 class BasePolicyNetwork(nn.Module):

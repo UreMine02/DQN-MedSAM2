@@ -55,6 +55,11 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         agent = getattr(net, "agent", None)
         if agent is not None:
             agent.to(device=gpu_device, non_blocking=False)
+    # if use_gpu:
+    #     net = net.to(device=gpu_device)
+    #     agent = getattr(net, "agent", None)
+    #     if agent is not None:
+    #         agent.to(device=gpu_device)
 
     return net
 
@@ -780,3 +785,58 @@ def extract_object_multiple(images_tensor, masks_tensor, support_images_list, su
 
 
 
+def sample_points_from_gt(
+        gt_mask,
+        num_fg,
+        num_bg,
+    ):
+        """
+        gt_mask: Tensor[H, W] (0/1)
+        return:
+            fg_points: Tensor[num_fg, 2]
+            bg_points: Tensor[num_bg, 2]
+        """
+        gt_mask = gt_mask.bool()
+
+        fg_coords = torch.nonzero(gt_mask)          # (y, x)
+        bg_coords = torch.nonzero(~gt_mask)
+
+        fg_idx = torch.randperm(len(fg_coords))[:num_fg]
+        bg_idx = torch.randperm(len(bg_coords))[:num_bg]
+
+        fg_points = fg_coords[fg_idx][:, [1, 0]]    # -> (x, y)
+        bg_points = bg_coords[bg_idx][:, [1, 0]]
+
+        return fg_points, bg_points
+
+def build_point_inputs(
+    gt_mask,
+    fg_points,
+    bg_points,
+    video_H,
+    video_W,
+    image_size,
+    device,
+):
+    fg_points, bg_points = sample_points_from_gt(gt_mask, fg_points, bg_points)
+    points = torch.cat([fg_points, bg_points], dim=0).float()
+    labels = torch.cat([
+        torch.ones(len(fg_points)),
+        torch.zeros(len(bg_points)),
+    ])
+
+    # normalize to [0,1]
+    points = points / torch.tensor(
+        [video_W, video_H], device=points.device, dtype=points.dtype,)
+
+    # scale to model space
+    points = points * image_size
+
+    # add batch dim
+    points = points.unsqueeze(0).to(device)
+    labels = labels.unsqueeze(0).to(device)
+
+    return {
+        "point_coords": points,
+        "point_labels": labels,
+    }

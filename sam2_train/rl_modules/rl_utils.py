@@ -25,7 +25,7 @@ def prepare_rl_state(
     curr_memory_feat = output_dict["await_outputs"][frame_idx-1]
     curr_memory_feat = curr_memory_feat["maskmem_features"] + curr_memory_feat["maskmem_pos_enc"][0]
     curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"]
-    
+    print('test shape', curr_memory_feat.shape, curr_obj_ptr.shape)
     # Add non_cond memory
     cond_bank_list = list(output_dict["cond_frame_outputs"].values())
     non_cond_bank_list = list(output_dict["non_cond_frame_outputs"].values())
@@ -48,6 +48,7 @@ def prepare_rl_state(
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
 
+
     # Add cond memory
     for feat in cond_bank_list:
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
@@ -66,6 +67,8 @@ def prepare_rl_state(
     prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
     
+    print('prev_memory_bank, prev_obj_ptr ', prev_memory_bank.shape, prev_obj_ptr.shape)
+
     if training:
         randperm = np.random.permutation(num_maskmem)
         prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
@@ -88,6 +91,7 @@ def prepare_rl_state(
             "obj_ptr": prev_obj_ptr,
         }
     }
+
     
     state = RLStates(**rl_state)
     list_frame = list(output_dict["non_cond_frame_outputs"].keys())

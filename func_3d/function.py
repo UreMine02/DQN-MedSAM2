@@ -12,7 +12,7 @@ import numpy as np
 
 import cfg
 from conf import settings
-from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple
+from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple, build_point_inputs 
 
 args = cfg.parse_args()
 
@@ -74,24 +74,48 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
                     print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue  # Skip empty tensors
-                if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                    print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                    continue
+                # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
+                #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                #     continue
                 
                 train_state = net.train_init_state(
                     args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
+                    imgs_tensor=imgs_tensor, 
+                    masks_tensor=masks_tensor, 
+                    # support_imgs_tensor=support_imgs_tensor
                 )
                 
                 with torch.cuda.amp.autocast():
-                    for frame_idx in range(support_masks_tensor.shape[0]):
-                        mask = support_masks_tensor[frame_idx]
-                        _, _, _ = net.train_add_new_mask(
+                    # for frame_idx in range(support_masks_tensor.shape[0]):
+                    #     mask = support_masks_tensor[frame_idx]
+                    #     _, _, _ = net.train_add_new_mask(
+                    #         inference_state=train_state,
+                    #         frame_idx=frame_idx,
+                    #         obj_id=obj_id,
+                    #         mask=mask.to(device=GPUdevice),
+                    #     )
+
+            
+                    for frame_idx in range(masks_tensor.shape[0]):
+                        gt_mask = masks_tensor[frame_idx]
+                        point_inputs = build_point_inputs(
+                            gt_mask=gt_mask,
+                            fg_points=10,
+                            bg_points=5,
+                            video_H=train_state["video_height"],
+                            video_W=train_state["video_width"],
+                            image_size=net.image_size,
+                            device=GPUdevice,
+                        )
+                        _, _, _ = net.train_add_new_points(
                             inference_state=train_state,
                             frame_idx=frame_idx,
                             obj_id=obj_id,
-                            mask=mask.to(device=GPUdevice),
+                            points=point_inputs["point_coords"].to(device=GPUdevice),
+                            labels=point_inputs["point_labels"].to(device=GPUdevice),
+                            normalize_coords=False,
                         )
+                        break
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -241,26 +265,47 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue  # Skip empty tensors
 
-                if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                    print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                    continue
+                # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
+                #     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                #     continue
         
                 train_state = net.val_init_state(
                     args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
+                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor
                 )
                 
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
-                        for frame_idx in range(support_masks_tensor.shape[0]):
+                        # for frame_idx in range(support_masks_tensor.shape[0]):
                             
-                            mask = support_masks_tensor[frame_idx]
-                            _, _, _ = net.train_add_new_mask(
+                        #     mask = support_masks_tensor[frame_idx]
+                        #     _, _, _ = net.train_add_new_mask(
+                        #         inference_state=train_state,
+                        #         frame_idx=frame_idx,
+                        #         obj_id=obj_id,
+                        #         mask=mask.to(device=GPUdevice),
+                        #     )
+
+                        for frame_idx in range(masks_tensor.shape[0]):
+                            gt_mask = masks_tensor[frame_idx]
+                            point_inputs = build_point_inputs(
+                                gt_mask=gt_mask,
+                                fg_points=10,
+                                bg_points=5,
+                                video_H=train_state["video_height"],
+                                video_W=train_state["video_width"],
+                                image_size=net.image_size,
+                                device=GPUdevice,
+                            )
+                            _, _, _ = net.train_add_new_points(
                                 inference_state=train_state,
                                 frame_idx=frame_idx,
                                 obj_id=obj_id,
-                                mask=mask.to(device=GPUdevice),
+                                points=point_inputs["point_coords"].to(device=GPUdevice),
+                                labels=point_inputs["point_labels"].to(device=GPUdevice),
+                                normalize_coords=False,
                             )
+                            break
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
                     

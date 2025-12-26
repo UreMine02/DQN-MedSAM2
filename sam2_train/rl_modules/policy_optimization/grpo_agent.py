@@ -249,7 +249,7 @@ class GRPOAgent(BasePOAgent):
         return self.actor.state_dict()
         
     def load_state_dict(self, state_dict):
-        self.actor.load_state_dict(state_dict["actor"])
+        self.actor.load_state_dict(state_dict)
         
     def to_distributed(self, rank):
         self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)
