@@ -1,6 +1,7 @@
 agent:
   _target_: sam2_train.rl_modules.policy_optimization.grpo_agent.GRPOAgent
   num_maskmem: 6
+  num_support: 10
   policy_lr: 1e-4
   value_lr: 1e-5
   gamma: 0.99

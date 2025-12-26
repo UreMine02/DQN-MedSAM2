@@ -108,10 +108,11 @@ class Trajectory:
         return log_probs, actions, rewards, dones, curr_feats, next_feats
 
 class BaseFeatureSummarizer(nn.Module):
-    def __init__(self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256):
+    def __init__(self, num_maskmem, num_support, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256):
         super().__init__()
         
         self.num_maskmem = num_maskmem
+        self.num_support = num_support
         self.n_query = n_query
         self.memory_dim = memory_dim
         self.hidden_dim = n_query * memory_dim + obj_ptr_dim
@@ -135,8 +136,8 @@ class BaseFeatureSummarizer(nn.Module):
             non_cond_bank_feat,
             cond_bank_feat,
             curr_mem_feat
-        ) = torch.tensor_split(memory_spatial_query, (self.num_maskmem, 16), dim=1)
-        non_cond_obj_ptr, cond_obj_ptr, _ = torch.tensor_split(bank_ptr, (self.num_maskmem, 16), dim=1)
+        ) = torch.tensor_split(memory_spatial_query, (self.num_maskmem, self.num_maskmem + self.num_support), dim=1)
+        non_cond_obj_ptr, cond_obj_ptr, _ = torch.tensor_split(bank_ptr, (self.num_maskmem, self.num_maskmem + self.num_support), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
         cond_bank_feat = cond_bank_feat.flatten(2)
@@ -232,7 +233,8 @@ class BaseValueNetwork(nn.Module):
 class BasePOAgent(BaseAgent):
     def __init__(
         self,
-        num_maskmem, 
+        num_maskmem,
+        num_support,
         policy_lr=1e-4,
         value_lr=1e-3,
         gamma=0.99, 
@@ -245,7 +247,7 @@ class BasePOAgent(BaseAgent):
         sam2_dim={}
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
+        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
         self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim)
 

@@ -78,7 +78,8 @@ class GRPOActor(nn.Module):
 class GRPOAgent(BasePOAgent):
     def __init__(
         self, 
-        num_maskmem, 
+        num_maskmem,
+        num_support,
         policy_lr=0.0001, 
         value_lr=0.001, 
         gamma=0.99, 
@@ -92,7 +93,8 @@ class GRPOAgent(BasePOAgent):
         sam2_dim={}
     ):
         super().__init__(
-            num_maskmem=num_maskmem, 
+            num_maskmem=num_maskmem,
+            num_support=num_support,
             policy_lr=policy_lr, 
             value_lr=value_lr, 
             gamma=gamma, 
@@ -106,7 +108,7 @@ class GRPOAgent(BasePOAgent):
         )
         self.epsilon = epsilon
         
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
         policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
@@ -143,7 +145,7 @@ class GRPOAgent(BasePOAgent):
         new_normalized_instances = self.await_group.get_instances()
         self.replay_buffer.extend(new_normalized_instances)
         for ins in new_normalized_instances:
-            if ins[2] == 0:
+            if ins[2] == 0: # If action = 0 (add without skip), then assign lower priority
                 self.priority.append(0.25)
             else:
                 self.priority.append(1.0)
@@ -233,7 +235,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()
@@ -253,7 +255,9 @@ class GRPOAgent(BasePOAgent):
         return self.actor.state_dict()
         
     def load_state_dict(self, state_dict):
-        self.actor.load_state_dict(state_dict["actor"])
+        self.actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
+        self.actor.policy_net.load_state_dict(state_dict["policy_net"])
+        # self.actor.load_state_dict(state_dict)
         
     def to_distributed(self, rank):
         self.distributed = True
