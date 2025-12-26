@@ -16,6 +16,7 @@ from func_3d import function
 from conf import settings
 from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
+import wandb
 from datetime import datetime
 import pytz
 import torch.distributed as dist
@@ -40,6 +41,12 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
+        
+    if args.wandb_enabled:
+        wandb.init(
+            project="rl-interactive-sam2",
+            name=args.exp_name              # Experiment name from args
+        )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -95,7 +102,7 @@ def train(rank=0, world_size=0):
             if "sam_prompt_encoder" in name:
                 param.requires_grad_(False)
                 
-        # time_start = time.time()
+        time_start = time.time()
         (
             loss,
             dice_loss,
@@ -121,9 +128,11 @@ def train(rank=0, world_size=0):
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
-        # time_end = time.time()
+        if args.wandb_enabled and loss is not None:
+            wandb.log(loss_dict, step=epoch)
+        time_end = time.time()
         print(loss_dict)
-        # print('time_for_training ', time_end - time_start)
+        print('time_for_training ', time_end - time_start)
         
         if args.distributed:
             torch.distributed.barrier()
@@ -146,6 +155,9 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice} > {best_dice}")
                 best_dice = dice
                 new_best = True
+                
+            if args.wandb_enabled:
+                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
         
         # scheduler.step()
         
