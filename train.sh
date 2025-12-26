@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP=msd_task04+grpo+entropy1e-1+num_support10+clip_grad0.1
+EXP=msd_task03+grpo+entropy1e-1+num_support10+clip_grad0.1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -8,11 +8,11 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
-    -task Task04 \
+    -task Task03 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 200 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \

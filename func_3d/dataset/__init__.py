@@ -69,7 +69,7 @@ def get_dataloader(args, rank=None, world_size=None):
                 msd_test_dataset,
                 batch_size=1,
                 shuffle=False,
-                num_workers=8,
+                num_workers=4,
                 pin_memory=True,
                 sampler=test_sampler,
                 persistent_workers=False
