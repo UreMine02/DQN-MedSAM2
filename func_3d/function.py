@@ -278,12 +278,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         #         mask=mask.to(device=GPUdevice),
                         #     )
 
+                        print("fg_point", args.eval_fg_point, "bg_point", args.eval_bg_point)
                         for frame_idx in range(masks_tensor.shape[0]):
                             gt_mask = masks_tensor[frame_idx]
                             point_inputs = build_point_inputs(
                                 gt_mask=gt_mask,
-                                fg_points=10,
-                                bg_points=5,
+                                fg_points=args.eval_fg_point,
+                                bg_points=args.eval_bg_point,
                                 video_H=train_state["video_height"],
                                 video_W=train_state["video_width"],
                                 image_size=net.image_size,

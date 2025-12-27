@@ -65,7 +65,7 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader, train_sampler = get_dataloader(args)
+    nice_train_loader, nice_test_loader = get_dataloader(args)
     
     net.eval()
 

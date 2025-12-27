@@ -1549,7 +1549,7 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent,
             ) # ask agent
         
-        # state.offload_to_cpu()
+        state.offload_to_cpu()
         
         if train_agent:
             self.agent.init_new_group()

@@ -51,11 +51,9 @@ class GRPOGroup:
         
     def finalize(self):
         group_rewards = torch.Tensor([ins.reward for ins in self.group])
-        # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
         group_rewards = 0.05 * (group_rewards - group_mean) / (group_std + 1e-8)
-        # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]

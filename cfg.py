@@ -38,7 +38,8 @@ def parse_args():
     parser.add_argument('-invalid_penalty', type=float, default=-5, help='number of training epoch')
     parser.add_argument('-q_updates_per_step', type=int, default=1, help='number of agent updates per training step')
     parser.add_argument('-rl_config', type=str, default='normal_agent.yaml', help='number of agent updates per training step')
-
+    parser.add_argument('-eval_fg_point', type=int, default=1)
+    parser.add_argument('-eval_bg_point', type=int, default=0)
     opt = parser.parse_args()
 
     return opt
