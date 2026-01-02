@@ -43,7 +43,8 @@ class GRPOReplayInstance(RLReplayInstance):
         self.done = True
     
 class GRPOGroup:
-    def __init__(self):
+    def __init__(self, range=0.05):
+        self.range = range
         self.group = []
         
     def add_instance(self, instance):
@@ -54,7 +55,7 @@ class GRPOGroup:
         # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = 0.05 * (group_rewards - group_mean) / (group_std + 1e-8)
+        group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
         # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
@@ -85,6 +86,7 @@ class GRPOAgent(BasePOAgent):
         gamma=0.99, 
         beta=0.9995,
         tau=0.9,
+        range=0.05,
         buffer_size=500, 
         batch_size=64, 
         device="cpu", 
@@ -107,6 +109,7 @@ class GRPOAgent(BasePOAgent):
             sam2_dim=sam2_dim
         )
         self.epsilon = epsilon
+        self.range = range
         
         feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
         policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
@@ -135,7 +138,7 @@ class GRPOAgent(BasePOAgent):
         self.actor.to(dtype=dtype)
     
     def init_new_group(self):
-        self.await_group = GRPOGroup()
+        self.await_group = GRPOGroup(range=self.range)
     
     def add_new_instance_to_group(self, **instance_info):
         self.await_group.add_instance(GRPOReplayInstance(**instance_info))
@@ -226,6 +229,10 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
+            
+            rewards_mean = rewards.mean(dim=0, keepdim=True)
+            rewards_std  = rewards.std(dim=0, keepdim=True)
+            rewards = self.range * (rewards - rewards_mean) / (rewards_std + 1e-8)
 
             with torch.enable_grad():
                 policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -240,7 +247,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()

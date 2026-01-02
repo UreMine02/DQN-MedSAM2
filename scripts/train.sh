@@ -1,15 +1,15 @@
 #!/bin/bash
 
-EXP=msd+grpo+entropy1e-1+num_support10+clip_grad0.1
+EXP=msd_task03+grpo+entropy1e-3+num_support10+clip_grad0.5+norm0.5
 
-python train_3d.py \
+CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \
-    -pretrain output/msd+grpo+entropy1e-1+num_support10+clip_grad0.1/2025-12-27-20-17-46/best.pth \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
+    -task Task03 \
+    -data_path /data/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
@@ -17,4 +17,4 @@ python train_3d.py \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 10 \
-    -distributed
+    -wandb_enabled

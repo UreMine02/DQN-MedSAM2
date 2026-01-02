@@ -2,14 +2,15 @@ agent:
   _target_: sam2_train.rl_modules.policy_optimization.grpo_agent.GRPOAgent
   num_maskmem: 6
   num_support: 10
-  policy_lr: 1e-4
+  policy_lr: 1e-5
   value_lr: 1e-5
   gamma: 0.99
-  buffer_size: 200
-  batch_size: 32
-  entropy_weight: 0.1
-  epsilon: 0.2
+  buffer_size: 500
+  batch_size: 128
+  entropy_weight: 0.001
+  epsilon: 0.1
   tau: 0.99
+  range: 0.1
   sam2_dim:
     n_query: 16
     image_dim: 256

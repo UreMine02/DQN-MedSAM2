@@ -174,11 +174,13 @@ def train(rank=0, world_size=0):
                 
                 if new_best:
                     torch.save({
+                        'dice': dice,
+                        'epoch': epoch,
                         'model': net.module.state_dict(),
                         'agent': net.module.agent.state_dict(),
                     },
                     os.path.join(checkpoint_path, f"best.pth"))
-                    print(f"Save best checkpoint to {os.path.join(checkpoint_path, f"best.pth")}")
+                    print(f"Save best checkpoint to {os.path.join(checkpoint_path, f'best.pth')}")
                     
             elif not args.distributed:
                 # torch.save({
