@@ -54,7 +54,7 @@ class GRPOGroup:
         # print("rewards before", group_rewards)
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = 0.05 * (group_rewards - group_mean) / (group_std + 1e-8)
+        group_rewards = 0.5 * (group_rewards - group_mean) / (group_std + 1e-8)
         # print("rewards after", group_rewards)
         
         for i, ins in enumerate(self.group):
@@ -70,8 +70,8 @@ class GRPOActor(nn.Module):
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
         
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
-        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
+        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
         policy_probs = self.policy_net(*curr_feats)
         return policy_probs
 
@@ -159,7 +159,7 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).squeeze(0).detach().cpu()
+        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training).squeeze(0).detach().cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
