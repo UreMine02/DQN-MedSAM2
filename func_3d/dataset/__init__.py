@@ -62,8 +62,7 @@ def get_dataloader(args, rank=None, world_size=None):
                 shuffle=False,
                 num_workers=2,
                 pin_memory=True,
-                sampler=train_sampler,
-                persistent_workers=False
+                sampler=train_sampler
             )
             nice_test_loader = DataLoader(
                 msd_test_dataset,
@@ -71,8 +70,7 @@ def get_dataloader(args, rank=None, world_size=None):
                 shuffle=False,
                 num_workers=4,
                 pin_memory=True,
-                sampler=test_sampler,
-                persistent_workers=False
+                sampler=test_sampler
             )
         else:
             train_sampler = None
@@ -90,8 +88,22 @@ def get_dataloader(args, rank=None, world_size=None):
             train_sampler = DistributedSampler(btcv_train_dataset, num_replicas=world_size, rank=rank)
             test_sampler = DistributedSampler(btcv_test_dataset, num_replicas=world_size, rank=rank)
 
-            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
+            nice_train_loader = DataLoader(
+                btcv_train_dataset,
+                batch_size=1,
+                shuffle=False,
+                num_workers=2,
+                pin_memory=True,
+                sampler=train_sampler
+            )
+            nice_test_loader = DataLoader(
+                btcv_test_dataset,
+                batch_size=1,
+                shuffle=False,
+                num_workers=4,
+                pin_memory=True,
+                sampler=test_sampler
+            )
         else:
             train_sampler = None
             test_sampler = None

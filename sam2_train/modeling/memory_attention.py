@@ -91,10 +91,10 @@ class MemoryAttentionLayer(nn.Module):
     ) -> torch.Tensor:
 
         # Self-Attn, Cross-Attn
-        tgt = self._forward_sa(tgt, query_pos)
-        tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
-        # tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
-        # tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, use_reentrant=False)
+        # tgt = self._forward_sa(tgt, query_pos)
+        # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
+        tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
+        tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, use_reentrant=False)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
@@ -154,21 +154,21 @@ class MemoryAttention(nn.Module):
             kwds = {}
             if isinstance(layer.cross_attn_image, RoPEAttention):
                 kwds = {"num_k_exclude_rope": num_obj_ptr_tokens}
-            output = layer(
-                tgt=output,
-                memory=memory,
-                pos=memory_pos,
-                query_pos=curr_pos,
-                **kwds
-            )
-            # output = checkpoint(layer,
+            # output = layer(
             #     tgt=output,
             #     memory=memory,
             #     pos=memory_pos,
             #     query_pos=curr_pos,
-            #     **kwds,
-            #     use_reentrant=False
+            #     **kwds
             # )
+            output = checkpoint(layer,
+                tgt=output,
+                memory=memory,
+                pos=memory_pos,
+                query_pos=curr_pos,
+                **kwds,
+                use_reentrant=False
+            )
         normed_output = self.norm(output)
 
         if self.batch_first:

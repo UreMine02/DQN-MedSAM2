@@ -37,6 +37,8 @@ def train(rank=0, world_size=0):
 
     if args.distributed:
         setup(rank, world_size)
+        # os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
+        torch.cuda.set_device(rank)
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
@@ -95,7 +97,7 @@ def train(rank=0, world_size=0):
             if "sam_prompt_encoder" in name:
                 param.requires_grad_(False)
                 
-        # time_start = time.time()
+        time_start = time.time()
         (
             loss,
             dice_loss,
@@ -121,9 +123,9 @@ def train(rank=0, world_size=0):
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
-        # time_end = time.time()
+        time_end = time.time()
         print(loss_dict)
-        # print('time_for_training ', time_end - time_start)
+        print('time_for_training ', time_end - time_start)
         
         if args.distributed:
             torch.distributed.barrier()
@@ -138,11 +140,12 @@ def train(rank=0, world_size=0):
                 dist.all_reduce(iou), dist.all_reduce(dice)
                 iou, dice = iou.item(), dice.item() 
                 iou, dice = iou/world_size, dice/world_size
-                print(f"val/IOU: {iou}, val/dice : {dice}")
+                if rank == 0:
+                    print(f"val/IOU: {iou}, val/dice : {dice}")
             else:
                 print(f"val/IOU: {iou}, val/dice : {dice}")
                 
-            if dice > best_dice:
+            if dice > best_dice and rank == 0:
                 print(f"Achieve best Dice: {dice} > {best_dice}")
                 best_dice = dice
                 new_best = True
@@ -150,7 +153,7 @@ def train(rank=0, world_size=0):
         # scheduler.step()
         
         if args.save_ckpt:
-            if args.distributed and dist.get_rank() == 0:
+            if args.distributed and rank == 0:
                 # torch.save({
                 #     'model': net.module.state_dict(),
                 #     'agent': net.module.agent.state_dict(),
@@ -163,6 +166,7 @@ def train(rank=0, world_size=0):
                         'agent': net.module.agent.state_dict(),
                     },
                     os.path.join(checkpoint_path, f"best.pth"))
+                    print(f"Save best checkpoint to {os.path.join(checkpoint_path, f"best.pth")}")
                     
             elif not args.distributed:
                 # torch.save({
