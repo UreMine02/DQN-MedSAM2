@@ -68,9 +68,9 @@ class GRPOActor(nn.Module):
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
         
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
         curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        policy_probs = self.policy_net(*curr_feats)
+        policy_probs = self.policy_net(*curr_feats, training=training)
         return policy_probs
 
 class GRPOAgent(BasePOAgent):
@@ -157,7 +157,9 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).squeeze(0).detach().cpu()
+        action_probs = self.actor(
+            image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training
+        ).squeeze(0).detach().cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
@@ -233,7 +235,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()

@@ -1350,6 +1350,7 @@ class SAM2VideoPredictor(SAM2Base):
         #     image_size=self.image_size,
         #     device=inference_state["device"],
         # )
+        
         # QAgent
         if agent_act and frame_idx > 0:            
             # Initiate replay buffer instance for current frame
@@ -1532,7 +1533,6 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
-            num_max_prompt=1,
             offload_to_cpu=False,
             training=train_agent
         )

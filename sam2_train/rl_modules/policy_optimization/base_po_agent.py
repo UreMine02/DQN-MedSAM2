@@ -136,8 +136,8 @@ class BaseFeatureSummarizer(nn.Module):
             non_cond_bank_feat,
             cond_bank_feat,
             curr_mem_feat
-        ) = torch.tensor_split(memory_spatial_query, (self.num_maskmem, self.num_maskmem + self.num_support), dim=1)
-        non_cond_obj_ptr, cond_obj_ptr, _ = torch.tensor_split(bank_ptr, (self.num_maskmem, self.num_maskmem + self.num_support), dim=1)
+        ) = torch.tensor_split(memory_spatial_query, (self.num_maskmem, -1), dim=1)
+        non_cond_obj_ptr, cond_obj_ptr = torch.tensor_split(bank_ptr, indices=(self.num_maskmem,), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
         cond_bank_feat = cond_bank_feat.flatten(2)
@@ -185,9 +185,9 @@ class BasePolicyNetwork(nn.Module):
         # actions_logits = actions_logits.clamp(min=-20, max=20)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
+        if not training:
+            print(actions_logits.squeeze())
+            print(actions_probs.squeeze())
             
         return actions_probs.squeeze(-1)
     

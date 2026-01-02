@@ -83,6 +83,7 @@ def train(rank=0, world_size=0):
     root_path = args.checkpoint_path
     current_time = datetime.now(pytz.timezone("Australia/Adelaide")).strftime("%Y-%m-%d-%H-%M-%S")
     checkpoint_path = os.path.join(root_path, current_time)
+    args.checkpoint_path = checkpoint_path
     if not os.path.exists(checkpoint_path) and args.save_ckpt and rank == 0:
         os.makedirs(checkpoint_path)
         print(f"checkpoint saved in {checkpoint_path}")
@@ -100,8 +101,8 @@ def train(rank=0, world_size=0):
         for name, param in net.named_parameters():
             if "image_encoder" in name:
                 param.requires_grad_(False)
-            if "sam_prompt_encoder" in name:
-                param.requires_grad_(False)
+            # if "sam_prompt_encoder" in name:
+            #     param.requires_grad_(False)
                 
         time_start = time.time()
         (

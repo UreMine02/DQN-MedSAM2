@@ -270,7 +270,7 @@ def eval_seg(pred, mask):
     fb_iou[fb_iou.isnan()] = 0.
     hd[torch.logical_or(hd.isnan(), hd.isinf())] = 0.
     
-    return iou, dice, fb_iou, hd
+    return pred, iou, dice, fb_iou, hd
 
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)

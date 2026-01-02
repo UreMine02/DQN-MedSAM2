@@ -1,7 +1,7 @@
 """ function for training and validation in one epoch
     Yunli Qi
 """
-
+import os
 import copy
 import torch
 import torch.nn as nn
@@ -13,6 +13,7 @@ import numpy as np
 import cfg
 from conf import settings
 from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple, build_point_inputs 
+import torchshow as ts
 
 args = cfg.parse_args()
 
@@ -94,14 +95,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     #         obj_id=obj_id,
                     #         mask=mask.to(device=GPUdevice),
                     #     )
+                    prompt_frames = np.random.choice(
+                        masks_tensor.shape[0], size=args.train_num_prompted_frame, replace=False)
 
-            
-                    for frame_idx in range(masks_tensor.shape[0]):
+                    for frame_idx in prompt_frames:                        
                         gt_mask = masks_tensor[frame_idx]
                         point_inputs = build_point_inputs(
                             gt_mask=gt_mask,
                             fg_points=10,
-                            bg_points=5,
+                            bg_points=10,
                             video_H=train_state["video_height"],
                             video_W=train_state["video_width"],
                             image_size=net.image_size,
@@ -115,7 +117,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             labels=point_inputs["point_labels"].to(device=GPUdevice),
                             normalize_coords=False,
                         )
-                        break
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -220,7 +221,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     # lossfunc = paper_loss
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
-        for packs in val_loader:
+        for batch_idx, packs in enumerate(val_loader):
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -277,14 +278,18 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         #         obj_id=obj_id,
                         #         mask=mask.to(device=GPUdevice),
                         #     )
-
-                        print("fg_point", args.eval_fg_point, "bg_point", args.eval_bg_point)
-                        for frame_idx in range(masks_tensor.shape[0]):
+                        if args.val_num_prompted_frame != -1:
+                            s = masks_tensor.shape[0] // args.val_num_prompted_frame
+                            s = s if s != 0 else masks_tensor.shape[0]
+                        else:
+                            s = masks_tensor.shape[0]
+                        
+                        for frame_idx in range(0, masks_tensor.shape[0], s):
                             gt_mask = masks_tensor[frame_idx]
                             point_inputs = build_point_inputs(
                                 gt_mask=gt_mask,
-                                fg_points=args.eval_fg_point,
-                                bg_points=args.eval_bg_point,
+                                fg_points=args.val_fg_point,
+                                bg_points=args.val_bg_point,
                                 video_H=train_state["video_height"],
                                 video_W=train_state["video_width"],
                                 image_size=net.image_size,
@@ -298,7 +303,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 labels=point_inputs["point_labels"].to(device=GPUdevice),
                                 normalize_coords=False,
                             )
-                            break
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
                     
@@ -310,6 +314,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             }
                             
                 # Record the loss in this step
+                wandb_results = []
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
@@ -317,6 +322,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)
                         (
+                            pred_mask,
                             iou,
                             dice,
                             fb_iou,
@@ -329,11 +335,40 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.item())
                         score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.item())
                         score_per_class[f"{task}_{obj_id}"]["hausdorf_dist"].append(hd.item())
-
                     else:
-                        pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
+                        pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
+                        
+                    if args.vis:
+                        save_prefix = os.path.join(args.checkpoint_path, "vis", f"{packs['vol'][0]}_{packs['obj_id'].item()}_idx{frame_idx}_")
+                        ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                        ts.overlay(
+                            [save_prefix + "image.png", pred_mask], [1, 0.4],
+                            save_as=save_prefix + "pred.png",
+                            cmap="jet"
+                        )
+                        ts.overlay(
+                            [save_prefix + "image.png", mask], [1, 0.4],
+                            save_as=save_prefix + "mask.png",
+                            cmap="jet"
+                        )
+
                     
+                #     if args.wandb_enabled:
+                #         mask_img = wandb.Image(
+                #             imgs_tensor[frame_idx, 0].cpu().numpy(),
+                #             masks={
+                #                 "predictions": {"mask_data": pred_mask.cpu().numpy()},
+                #                 "ground_truth": {"mask_data": mask.cpu().numpy()},
+                #             },
+                #         )
+                    
+                #         if len(wandb_results) < 10:
+                #             wandb_results.append(mask_img)
+                
+                # if args.wandb_enabled:
+                #     wandb.log({"vis/test": wandb_results}, step=epoch)
+                
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
 
