@@ -189,7 +189,7 @@ class GRPOAgent(BasePOAgent):
             return None
         
         np.random.seed(self.rank + self.epoch * 100)
-        print(f"Update agent for {num_update} steps")
+        # print(f"Update agent for {num_update} steps")
         self.actor.train()
         
         device = self.device
@@ -211,16 +211,21 @@ class GRPOAgent(BasePOAgent):
             bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
             bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
             
-            image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-            bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            actions = torch.LongTensor(actions).unsqueeze(1)
+            rewards = torch.FloatTensor(rewards).unsqueeze(1)
+            old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1)
+            dones = torch.FloatTensor(dones).unsqueeze(1)
             
-            actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-            rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
-            old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
-            dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, dtype=torch.float32, non_blocking=True)
+            # image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            # memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            # memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            # bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            # bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            
+            actions = actions.to(device=device, non_blocking=True)
+            rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
+            old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
+            dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
 
             with torch.enable_grad():
                 policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -235,7 +240,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            # torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()
@@ -255,7 +260,11 @@ class GRPOAgent(BasePOAgent):
         return self.actor.state_dict()
         
     def load_state_dict(self, state_dict):
-        self.actor.load_state_dict(state_dict)
+        if "feat_summarizer" in state_dict.keys():
+            self.actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
+            self.actor.policy_net.load_state_dict(state_dict["policy_net"])
+        else:
+            self.actor.load_state_dict(state_dict)
         
     def to_distributed(self, rank):
         self.distributed = True

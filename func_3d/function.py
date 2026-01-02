@@ -188,7 +188,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         "iou": [],
         "dice": [],
         "fb_iou": [],
-        "hausdorf_dist": [],
     }
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
@@ -274,7 +273,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             iou,
                             dice,
                             fb_iou,
-                            hd
                         ) = eval_seg(pred, mask)
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
@@ -282,10 +280,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_per_class[f"{task}_{obj_id}"]["iou"].append(iou.item())
                         score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.item())
                         score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.item())
-                        score_per_class[f"{task}_{obj_id}"]["hausdorf_dist"].append(hd.item())
 
                     else:
-                        pred_mask = torch.where(torch.sigmoid(pred)>=0.5, 1, 0)
+                        pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
                     
                 average_score(class_score)
@@ -294,7 +291,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 instance_score["num_step"] += 1
 
             average_score(instance_score)
-            print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
+            # print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
             total_score["num_step"] += 1
             pbar.update()
