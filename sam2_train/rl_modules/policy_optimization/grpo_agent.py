@@ -219,11 +219,11 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1)
             dones = torch.FloatTensor(dones).unsqueeze(1)
             
-            # image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            # memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            # memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-            # bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-            # bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+            bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+            bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
             
             actions = actions.to(device=device, non_blocking=True)
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)

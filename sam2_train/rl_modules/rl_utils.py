@@ -68,7 +68,7 @@ def prepare_rl_state(
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
     
     if training:
-        randperm = np.random.permutation(num_maskmem)
+        randperm = torch.randperm(num_maskmem)
         prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
         prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
     
