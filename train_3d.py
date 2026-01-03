@@ -46,7 +46,7 @@ def train(rank=0, world_size=0):
         
     if args.wandb_enabled:
         wandb.init(
-            project="rl-interactive-sam2",
+            project="dqn-medsam2",
             name=args.exp_name              # Experiment name from args
         )
 

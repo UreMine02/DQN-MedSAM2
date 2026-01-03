@@ -1,12 +1,11 @@
-#!/bin/bash -l\
-
+#!/bin/bash -l
 # #SBATCH -p a100 # keep as is
 # #SBATCH -N 1 # keep as is
 # #SBATCH -n 32 # num cpus
 # #SBATCH --gres=gpu:4 # num gpus
 # #SBATCH --mem=200GB # ram
 # #SBATCH --time=2-00:00:00 # time
-# #SBATCH -J btcv # job name
+# #SBATCH -J msd02 # job name
 # #SBATCH -A strategic
 
 # conda activate rlsam2
@@ -14,20 +13,21 @@
 # conda init
 # conda activate rlsam2
 
-EXP=btcv+grpo+entropy1e-1+num_support10+clip_grad0.1
+EXP=msd_task02+grpo+entropy1e-3+num_support3+clip_grad0.1+lazy_pen0.1+invalid_pen1
 
-CUDA_VISIBLE_DEVICES=1 python train_3d.py \
+CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
-    -dataset btcv \
-    -data_path /data/datasets/BTCV \
+    -dataset msd \
+    -task Task02 \
+    -data_path /data/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 300 \
     -q_updates_per_step 2 \
-    -lazy_penalty -0.01 \
-    -invalid_penalty -0.01 \
-    -num_support 10 \
+    -lazy_penalty -0.1 \
+    -invalid_penalty -0.1 \
+    -num_support 3 \
     -wandb_enabled
