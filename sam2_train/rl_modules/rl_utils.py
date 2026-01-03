@@ -58,7 +58,7 @@ def prepare_rl_state(
             obj_ptr = obj_ptr.detach().cpu()
         prev_memory_bank.append(mem_feat)
         prev_obj_ptr.append(obj_ptr)
-        
+    
     # Append zero memory
     while len(prev_memory_bank) < num_maskmem + num_max_prompt:
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))

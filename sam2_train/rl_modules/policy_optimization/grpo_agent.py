@@ -72,8 +72,8 @@ class GRPOActor(nn.Module):
         self.policy_net = policy_net
         
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
-        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
-        policy_probs = self.policy_net(*curr_feats)
+        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+        policy_probs = self.policy_net(*curr_feats, training=training)
         return policy_probs
 
 class GRPOAgent(BasePOAgent):

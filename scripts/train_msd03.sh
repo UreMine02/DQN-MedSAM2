@@ -6,7 +6,7 @@
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd03 # job name
-#SBATCH -A strategic
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03-%j.out"
 
 conda activate rlsam2
 cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2

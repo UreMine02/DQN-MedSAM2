@@ -7,6 +7,7 @@
 #SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd09 # job name
 #SBATCH -A strategic
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd09-%j.out"
 
 conda activate rlsam2
 cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
