@@ -215,9 +215,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     continue
                 if obj_id not in score_per_class.keys():
                     score_per_class[f"{task}_{obj_id}"] = {
-                        "iou": [],
-                        "dice": [],
-                        "fb_iou": [],
+                        "iou": torch.FloatTensor([]).to(device=GPUdevice),
+                        "dice": torch.FloatTensor([]).to(device=GPUdevice),
+                        "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
                     }
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
@@ -278,9 +278,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        score_per_class[f"{task}_{obj_id}"]["iou"].append(iou.detach())
-                        score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.detach())
-                        score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.detach())
+                        score_per_class[f"{task}_{obj_id}"]["iou"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["iou"], iou.detach()])
+                        score_per_class[f"{task}_{obj_id}"]["dice"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["dice"], dice.detach()])
+                        score_per_class[f"{task}_{obj_id}"]["fb_iou"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["fb_iou"], fb_iou.detach()])
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
@@ -308,15 +308,15 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     table_data = []
     
     for name, metrics_dict in score_per_class.items():
-        miou = metrics_dict["iou"]
-        mdice = metrics_dict["dice"]
-        mfb_iou = metrics_dict["fb_iou"]
+        miou = torch.mean(torch.Tensor(metrics_dict["iou"]))
+        mdice = torch.mean(torch.Tensor(metrics_dict["dice"]))
+        mfb_iou = torch.mean(torch.Tensor(metrics_dict["fb_iou"]))
         
         table_data.append((
             name, 
-            torch.mean(metrics_dict["iou"]).item(), 
-            torch.mean(metrics_dict["dice"]).item(), 
-            torch.mean(metrics_dict["fb_iou"]).item(),
+            miou.item(), 
+            mdice.item(), 
+            mfb_iou.item(),
         ))
         
         avg["iou"] = miou
@@ -325,9 +325,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             
     table_data.append((
         "Average",
-        torch.mean(metrics_dict["iou"]).item(),
-        torch.mean(metrics_dict["dice"]).item(),
-        torch.mean(metrics_dict["fb_iou"]).item(),
+        torch.mean(torch.Tensor(avg["iou"])).item(),
+        torch.mean(torch.Tensor(avg["dice"])).item(),
+        torch.mean(torch.Tensor(avg["fb_iou"])).item(),
     ))
 
     print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou"], floatfmt=".4f", tablefmt="grid"))
