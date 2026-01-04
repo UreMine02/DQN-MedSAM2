@@ -198,7 +198,19 @@ class GRPOAgent(BasePOAgent):
         device = self.device
         total_policy_loss = 0
         for i in range(num_update):
-            batch = random.sample(self.replay_buffer, k=self.batch_size)
+            # batch = random.sample(self.replay_buffer, k=self.batch_size)
+            n_actions = {}
+            for sample in self.replay_buffer:
+                action = sample[2]
+                if action not in n_actions.keys():
+                    n_actions = 0
+                n_actions += 1
+                
+            
+            p = []
+            for sample in self.replay_buffer:
+                p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            
             p = np.asanyarray(self.priority)
             p = p / p.sum()
             batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
@@ -229,6 +241,8 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
+            
+            print(actions.unique(return_counts=True))
             
             rewards_mean = rewards.mean(dim=0, keepdim=True)
             rewards_std  = rewards.std(dim=0, keepdim=True)

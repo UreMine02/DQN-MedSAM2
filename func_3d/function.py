@@ -329,9 +329,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             
     table_data.append((
         "Average",
-        torch.mean(torch.Tensor(avg["iou"])).item(),
-        torch.mean(torch.Tensor(avg["dice"])).item(),
-        torch.mean(torch.Tensor(avg["fb_iou"])).item(),
+        torch.mean(avg["iou"]).item(),
+        torch.mean(avg["dice"]).item(),
+        torch.mean(avg["fb_iou"]).item(),
     ))
 
     print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou"], floatfmt=".4f", tablefmt="grid"))
