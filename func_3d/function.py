@@ -38,6 +38,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     net.train()
         
     video_length = args.video_length
+    train_agent = not args.no_agent
+    agent_act = not args.no_agent
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
@@ -95,7 +97,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
-                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, train_agent=True):
+                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, train_agent=train_agent, agent_act=agent_act):
                         video_segments[out_frame_idx] = {
                             out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                             "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
@@ -191,7 +193,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     }
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
-
+    agent_act = not args.no_agent
     # lossfunc = paper_loss
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
@@ -255,7 +257,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
                     
-                        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state):
+                        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act):
                             video_segments[out_frame_idx] = {
                                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                                 "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}

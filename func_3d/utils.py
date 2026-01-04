@@ -42,13 +42,14 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
 
         net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
-        hydra_overrides = [
-            f"++rl_modules.config.agent.num_support={args.num_support}",
-        ]
-        cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
-        print(cfg)
-        OmegaConf.resolve(cfg)
-        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
+        if not args.no_agent:
+            hydra_overrides = [
+                f"++rl_modules.config.agent.num_support={args.num_support}",
+            ]
+            cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
+            print(cfg)
+            OmegaConf.resolve(cfg)
+            net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()

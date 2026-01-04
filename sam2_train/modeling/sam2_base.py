@@ -531,6 +531,7 @@ class SAM2Base(torch.nn.Module):
         output_dict,
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
+        agent_act=True
     ):
         # print("output_dict", output_dict["non_cond_frame_outputs"].keys())
         """Fuse the current frame's visual feature map with previous memory."""
@@ -564,43 +565,45 @@ class SAM2Base(torch.nn.Module):
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
             # We also allow taking the memory frame non-consecutively (with r>1), in which case
             # we take (self.num_maskmem - 2) frames among every r-th frames plus the last frame.
-            # r = self.memory_temporal_stride_for_eval
-            # for t_pos in range(1, self.num_maskmem):
-            #     t_rel = self.num_maskmem - t_pos  # how many frames before current frame
-            #     if t_rel == 1:
-            #         # for t_rel == 1, we take the last frame (regardless of r)
-            #         if not track_in_reverse:
-            #             # the frame immediately before this frame (i.e. frame_idx - 1)
-            #             prev_frame_idx = frame_idx - t_rel
-            #         else:
-            #             # the frame immediately after this frame (i.e. frame_idx + 1)
-            #             prev_frame_idx = frame_idx + t_rel
-            #     else:
-            #         # for t_rel >= 2, we take the memory frame from every r-th frames
-            #         if not track_in_reverse:
-            #             # first find the nearest frame among every r-th frames before this frame
-            #             # for r=1, this would be (frame_idx - 2)
-            #             prev_frame_idx = ((frame_idx - 2) // r) * r
-            #             # then seek further among every r-th frames
-            #             prev_frame_idx = prev_frame_idx - (t_rel - 2) * r
-            #         else:
-            #             # first find the nearest frame among every r-th frames after this frame
-            #             # for r=1, this would be (frame_idx + 2)
-            #             prev_frame_idx = -(-(frame_idx + 2) // r) * r
-            #             # then seek further among every r-th frames
-            #             prev_frame_idx = prev_frame_idx + (t_rel - 2) * r
-            #     out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
-            #     if out is None:
-            #         # If an unselected conditioning frame is among the last (self.num_maskmem - 1)
-            #         # frames, we still attend to it as if it's a non-conditioning frame.
-            #         out = unselected_cond_outputs.get(prev_frame_idx, None)
-            #     if out is not None:
-            #         prev_frame_idx_list.append(prev_frame_idx)
-            #     t_pos_and_prevs.append((t_pos, out))
             
-            t_pos_and_prevs.extend(
-                [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
-            )
+            if not agent_act:
+                r = self.memory_temporal_stride_for_eval
+                for t_pos in range(1, self.num_maskmem):
+                    t_rel = self.num_maskmem - t_pos  # how many frames before current frame
+                    if t_rel == 1:
+                        # for t_rel == 1, we take the last frame (regardless of r)
+                        if not track_in_reverse:
+                            # the frame immediately before this frame (i.e. frame_idx - 1)
+                            prev_frame_idx = frame_idx - t_rel
+                        else:
+                            # the frame immediately after this frame (i.e. frame_idx + 1)
+                            prev_frame_idx = frame_idx + t_rel
+                    else:
+                        # for t_rel >= 2, we take the memory frame from every r-th frames
+                        if not track_in_reverse:
+                            # first find the nearest frame among every r-th frames before this frame
+                            # for r=1, this would be (frame_idx - 2)
+                            prev_frame_idx = ((frame_idx - 2) // r) * r
+                            # then seek further among every r-th frames
+                            prev_frame_idx = prev_frame_idx - (t_rel - 2) * r
+                        else:
+                            # first find the nearest frame among every r-th frames after this frame
+                            # for r=1, this would be (frame_idx + 2)
+                            prev_frame_idx = -(-(frame_idx + 2) // r) * r
+                            # then seek further among every r-th frames
+                            prev_frame_idx = prev_frame_idx + (t_rel - 2) * r
+                    out = output_dict["non_cond_frame_outputs"].get(prev_frame_idx, None)
+                    if out is None:
+                        # If an unselected conditioning frame is among the last (self.num_maskmem - 1)
+                        # frames, we still attend to it as if it's a non-conditioning frame.
+                        out = unselected_cond_outputs.get(prev_frame_idx, None)
+                    if out is not None:
+                        prev_frame_idx_list.append(prev_frame_idx)
+                    t_pos_and_prevs.append((t_pos, out))
+            else:
+                t_pos_and_prevs.extend(
+                    [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
+                )
 
             for t_pos, prev in t_pos_and_prevs:
                 if prev is None:
@@ -762,6 +765,7 @@ class SAM2Base(torch.nn.Module):
         run_mem_encoder=True,
         # The previously predicted SAM mask logits (which can be fed together with new clicks in demo).
         prev_sam_mask_logits=None,
+        agent_act=True,
     ):
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
@@ -791,6 +795,7 @@ class SAM2Base(torch.nn.Module):
                 output_dict=output_dict,
                 num_frames=num_frames,
                 track_in_reverse=track_in_reverse,
+                agent_act=agent_act
             )
             # apply SAM-style segmentation head
             # here we might feed previously predicted low-res SAM mask logits into the SAM mask decoder,

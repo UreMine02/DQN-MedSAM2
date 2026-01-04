@@ -59,12 +59,13 @@ def train(rank=0, world_size=0):
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
-        if "agent" in weights.keys():
+        if "agent" in weights.keys() and not args.no_agent:
             net.agent.load_state_dict(weights["agent"])
     
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank)
-        net.module.agent.to_distributed(rank=rank)
+        if not args.no_agent:
+            net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
     
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
@@ -173,14 +174,15 @@ def train(rank=0, world_size=0):
                 # os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    torch.save({
+                    ckpt = {
                         'dice': dice,
                         'epoch': epoch,
                         'model': net.module.state_dict(),
-                        'agent': net.module.agent.state_dict(),
-                    },
-                    os.path.join(checkpoint_path, f"best.pth"))
-                    print(f"Save best checkpoint to {os.path.join(checkpoint_path, f'best.pth')}")
+                    }
+                    if not args.no_agent:
+                        ckpt['agent'] = net.module.agent.state_dict()
+                        
+                    torch.save(ckpt, os.path.join(checkpoint_path, f"best.pth"))
                     
             elif not args.distributed:
                 # torch.save({
@@ -190,11 +192,15 @@ def train(rank=0, world_size=0):
                 # os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
                 
                 if new_best:
-                    torch.save({
+                    ckpt = {
+                        'dice': dice,
+                        'epoch': epoch,
                         'model': net.state_dict(),
-                        'agent': net.agent.state_dict(),
-                    },
-                    os.path.join(checkpoint_path, f"best.pth"))
+                    }
+                    if not args.no_agent:
+                        ckpt['agent'] = net.agent.state_dict()
+                        
+                    torch.save(ckpt, os.path.join(checkpoint_path, f"best.pth"))
                     
         if args.distributed:
             torch.distributed.barrier()
