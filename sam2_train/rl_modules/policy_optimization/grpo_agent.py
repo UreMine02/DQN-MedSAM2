@@ -192,7 +192,7 @@ class GRPOAgent(BasePOAgent):
             return None
         
         np.random.seed(self.rank + self.epoch * 100)
-        print(f"Update agent for {num_update} steps")
+        # print(f"Update agent for {num_update} steps")
         self.actor.train()
         
         device = self.device
@@ -203,15 +203,14 @@ class GRPOAgent(BasePOAgent):
             for sample in self.replay_buffer:
                 action = sample[2]
                 if action not in n_actions.keys():
-                    n_actions = 0
-                n_actions += 1
-                
+                    n_actions[action] = 0
+                n_actions[action] += 1
             
             p = []
             for sample in self.replay_buffer:
                 p.append(len(self.replay_buffer) / n_actions[sample[2]])
             
-            p = np.asanyarray(self.priority)
+            p = np.asanyarray(p)
             p = p / p.sum()
             batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
             batch = []
@@ -241,8 +240,6 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
-            
-            print(actions.unique(return_counts=True))
             
             rewards_mean = rewards.mean(dim=0, keepdim=True)
             rewards_std  = rewards.std(dim=0, keepdim=True)

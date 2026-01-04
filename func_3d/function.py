@@ -12,7 +12,11 @@ import numpy as np
 
 import cfg
 from conf import settings
-from func_3d.utils import eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score, average_score, extract_object, sample_diverse_support, calculate_bounding_box, extract_object_multiple
+from func_3d.utils import (
+    eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score,
+    average_score, extract_object, sample_diverse_support, calculate_bounding_box,
+    extract_object_multiple, reduce_dict
+)
 from func_3d.misc import MetricLogger
 
 args = cfg.parse_args()
@@ -133,11 +137,18 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 # Average loss of this class
                 average_loss(class_loss)
                 avg_loss = class_loss["total_loss"]
+                
+                losses_reduced = reduce_dict(class_loss)
+                loss_value = sum(losses_reduced.values()).item()
 
                 optimizer.zero_grad()
                 avg_loss.backward()
-                torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                 optimizer.step()
+                
+                metric_logger.update(loss=loss_value, **losses_reduced)
+                metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+                metric_logger.update(grad_norm=grad_total_norm)
                 
                 agent = getattr(net, "agent", None)
                 if agent is not None:
