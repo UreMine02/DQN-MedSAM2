@@ -777,6 +777,3 @@ def extract_object_multiple(images_tensor, masks_tensor, support_images_list, su
 #     )
 
 #     return output_dict
-
-
-
