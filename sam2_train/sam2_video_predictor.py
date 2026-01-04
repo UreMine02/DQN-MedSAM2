@@ -1152,6 +1152,7 @@ class SAM2VideoPredictor(SAM2Base):
         max_frame_num_to_track=None,
         reverse=False,
         train_agent=False,
+        agent_act=True,
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1179,8 +1180,11 @@ class SAM2VideoPredictor(SAM2Base):
             # batched forward on them via `_run_single_frame_inference` because the
             # number of clicks on each object might be different.
             
-            storage_key = "await_outputs"
-            # storage_key = "non_cond_frame_outputs"
+            if agent_act:
+                storage_key = "await_outputs"
+            else:
+                storage_key = "non_cond_frame_outputs"
+                
             current_out, pred_masks = self._run_single_frame_inference(
                 inference_state=inference_state,
                 output_dict=output_dict,
@@ -1191,7 +1195,7 @@ class SAM2VideoPredictor(SAM2Base):
                 mask_inputs=None,
                 reverse=reverse,
                 run_mem_encoder=True,
-                agent_act=True,
+                agent_act=agent_act,
                 train_agent=train_agent,
             )
             output_dict[storage_key][frame_idx] = current_out
@@ -1376,6 +1380,7 @@ class SAM2VideoPredictor(SAM2Base):
             track_in_reverse=reverse,
             run_mem_encoder=run_mem_encoder,
             prev_sam_mask_logits=prev_sam_mask_logits,
+            agent_act=agent_act
         )
 
         # optionally offload the output to CPU memory to save GPU space
@@ -1503,6 +1508,7 @@ class SAM2VideoPredictor(SAM2Base):
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     output_dict=output_dict,
+                    agent_act=True,
                     **kwargs
                 )
 
@@ -1580,6 +1586,7 @@ class SAM2VideoPredictor(SAM2Base):
                             current_vision_feats=current_vision_feats,
                             current_vision_pos_embeds=current_vision_pos_embeds,
                             output_dict=temp_output_dict,
+                            agent_act=True,
                             **kwargs
                         )
 

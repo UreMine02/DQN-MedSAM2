@@ -42,13 +42,14 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
 
         net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
-        hydra_overrides = [
-            f"++rl_modules.config.agent.num_support={args.num_support}",
-        ]
-        cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
-        print(cfg)
-        OmegaConf.resolve(cfg)
-        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
+        if not args.no_agent:
+            hydra_overrides = [
+                f"++rl_modules.config.agent.num_support={args.num_support}",
+            ]
+            cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
+            print(cfg)
+            OmegaConf.resolve(cfg)
+            net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
@@ -218,12 +219,11 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
 def score_cal(seg_map, prd_map):
     '''
-    labels B * 1
     seg_map B * H * W
     prd_map B * H * W
     '''
-    assert seg_map.ndim == prd_map.ndim
-    assert seg_map.ndim >= 2
+    assert seg_map.ndim == 2 or seg_map.ndim == 3
+    assert prd_map.ndim == 2 or prd_map.ndim == 3
     if seg_map.ndim == 2:
         seg_map = seg_map.unsqueeze(0)
         prd_map = prd_map.unsqueeze(0)

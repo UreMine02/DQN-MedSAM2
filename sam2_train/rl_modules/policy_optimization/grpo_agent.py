@@ -192,7 +192,7 @@ class GRPOAgent(BasePOAgent):
             return None
         
         np.random.seed(self.rank + self.epoch * 100)
-        # print(f"Update agent for {num_update} steps")
+        print(f"Update agent for {num_update} steps")
         self.actor.train()
         
         device = self.device
