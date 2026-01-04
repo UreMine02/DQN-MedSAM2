@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -data_path /data/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 300 \
+    -ep 100 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \

@@ -5,15 +5,16 @@
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2-00:00:00 # time
-#SBATCH -J msd03 # job name
-#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03-%j.out"
+#SBATCH -J msd # job name
+#SBATCH -A strategic
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd-%j.out"
 
 conda activate rlsam2
 cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+entropy1e-1+num_support10+clip_grad0.1
+EXP=msd+grpo+entropy1e-3+num_support3+clip_grad0.1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -21,13 +22,12 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
-    -task Task03 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
     -q_updates_per_step 2 \
-    -lazy_penalty -0.01 \
-    -invalid_penalty -0.01 \
-    -num_support 10 \
+    -lazy_penalty -0.1 \
+    -invalid_penalty -0.1 \
+    -num_support 3 \
     -distributed
