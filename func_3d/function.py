@@ -186,11 +186,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     net.eval()
     n_val = len(val_loader)
     
-    metrics = {
-        "iou": [],
-        "dice": [],
-        "fb_iou": [],
-    }
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
     agent_act = not args.no_agent
@@ -219,7 +214,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
                 if obj_id not in score_per_class.keys():
-                    score_per_class[f"{task}_{obj_id}"] = copy.deepcopy(metrics)
+                    score_per_class[f"{task}_{obj_id}"] = {
+                        "iou": [],
+                        "dice": [],
+                        "fb_iou": [],
+                    }
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -279,9 +278,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        score_per_class[f"{task}_{obj_id}"]["iou"].append(iou.item())
-                        score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.item())
-                        score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.item())
+                        score_per_class[f"{task}_{obj_id}"]["iou"].append(iou.detach())
+                        score_per_class[f"{task}_{obj_id}"]["dice"].append(dice.detach())
+                        score_per_class[f"{task}_{obj_id}"]["fb_iou"].append(fb_iou.detach())
 
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
@@ -300,19 +299,37 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         
     average_score(total_score)
 
-    score_per_class["Avg"] = copy.deepcopy(metrics)
+    avg = {
+        "iou": [],
+        "dice": [],
+        "fb_iou": [],
+    }
+    
+    table_data = []
+    
     for name, metrics_dict in score_per_class.items():
-        if name == "Avg":
-            continue
-        mean_metrics = {k: np.mean(v) for k, v in metrics_dict.items()}
-        score_per_class[name] = mean_metrics
-        for metric in score_per_class["Avg"].keys():
-            score_per_class["Avg"][metric].append(score_per_class[name][metric])
+        miou = metrics_dict["iou"]
+        mdice = metrics_dict["dice"]
+        mfb_iou = metrics_dict["fb_iou"]
+        
+        table_data.append((
+            name, 
+            torch.mean(metrics_dict["iou"]).item(), 
+            torch.mean(metrics_dict["dice"]).item(), 
+            torch.mean(metrics_dict["fb_iou"]).item(),
+        ))
+        
+        avg["iou"] = miou
+        avg["dice"] = mdice
+        avg["fb_iou"] = mfb_iou
             
-    score_per_class["Avg"] = {k: np.mean(v) for k, v in score_per_class["Avg"].items()}
+    table_data.append((
+        "Average",
+        torch.mean(metrics_dict["iou"]).item(),
+        torch.mean(metrics_dict["dice"]).item(),
+        torch.mean(metrics_dict["fb_iou"]).item(),
+    ))
 
-    for name, metrics_dict in score_per_class.items():
-        print(f"{name}:")
-        print(tabulate([metrics_dict.values()], headers=metrics_dict.keys(), floatfmt=".4f"))
+    print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou"], floatfmt=".4f", tablefmt="grid"))
 
-    return torch.Tensor([score_per_class["Avg"]['iou']]).to(GPUdevice), torch.Tensor([score_per_class["Avg"]['dice']]).to(GPUdevice)
+    return avg['iou'], avg['dice']

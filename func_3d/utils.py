@@ -219,12 +219,11 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
 def score_cal(seg_map, prd_map):
     '''
-    labels B * 1
     seg_map B * H * W
     prd_map B * H * W
     '''
-    assert seg_map.ndim == prd_map.ndim
-    assert seg_map.ndim >= 2
+    assert seg_map.ndim == 2 or seg_map.ndim == 3
+    assert prd_map.ndim == 2 or prd_map.ndim == 3
     if seg_map.ndim == 2:
         seg_map = seg_map.unsqueeze(0)
         prd_map = prd_map.unsqueeze(0)
