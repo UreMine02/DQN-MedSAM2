@@ -15,9 +15,9 @@ from conf import settings
 from func_3d.utils import (
     eval_seg, iou_score, CombinedLoss, update_loss, average_loss, update_score,
     average_score, extract_object, sample_diverse_support, calculate_bounding_box,
-    extract_object_multiple, reduce_dict
+    extract_object_multiple
 )
-from func_3d.misc import MetricLogger
+from func_3d.misc import MetricLogger, reduce_dict
 
 args = cfg.parse_args()
 

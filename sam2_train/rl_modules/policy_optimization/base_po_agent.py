@@ -460,10 +460,14 @@ class BasePOAgent(BaseAgent):
             self.policy_optimizer.step()
             
             if update_value:
-                with torch.no_grad():
-                    curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+                image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat = curr_feats
                 
-                pred_value = self.value_net(*curr_feats)
+                image_spatial_query_sg = image_spatial_query.detach()
+                non_cond_bank_feat_sg = non_cond_bank_feat.detach()
+                cond_bank_feat_sg = cond_bank_feat.detach()
+                curr_mem_feat_sg = curr_mem_feat.detach()
+                
+                pred_value = self.value_net(image_spatial_query_sg, non_cond_bank_feat_sg, cond_bank_feat_sg, curr_mem_feat_sg)
                 value_loss = F.smooth_l1_loss(pred_value, returns)
                 
                 self.value_optimizer.zero_grad()
@@ -503,3 +507,11 @@ class BasePOAgent(BaseAgent):
         self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
         self.policy_net.load_state_dict(state_dict["policy_net"])
         self.value_net.load_state_dict(state_dict["value_net"])
+        
+    def to_distributed(self, rank):
+        self.distributed = True
+        self.rank = rank
+        self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank], output_device=rank)
+        self.policy_net = DDP(self.policy_net, device_ids=[rank], output_device=rank)
+        self.value_net = DDP(self.value_net, device_ids=[rank], output_device=rank)
+        
