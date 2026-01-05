@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 from sam2_train.rl_modules.rl_components import RLStates, RLReplayInstance
@@ -108,10 +109,11 @@ class Trajectory:
         return log_probs, actions, rewards, dones, curr_feats, next_feats
 
 class BaseFeatureSummarizer(nn.Module):
-    def __init__(self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256):
+    def __init__(self, num_maskmem, num_support, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256):
         super().__init__()
         
         self.num_maskmem = num_maskmem
+        self.num_support = num_support
         self.n_query = n_query
         self.memory_dim = memory_dim
         self.hidden_dim = n_query * memory_dim + obj_ptr_dim
@@ -135,8 +137,8 @@ class BaseFeatureSummarizer(nn.Module):
             non_cond_bank_feat,
             cond_bank_feat,
             curr_mem_feat
-        ) = torch.tensor_split(memory_spatial_query, (self.num_maskmem, 16), dim=1)
-        non_cond_obj_ptr, cond_obj_ptr, _ = torch.tensor_split(bank_ptr, (self.num_maskmem, 16), dim=1)
+        ) = torch.tensor_split(memory_spatial_query, indices=(self.num_maskmem, -1), dim=1)
+        non_cond_obj_ptr, cond_obj_ptr = torch.tensor_split(bank_ptr, indices=(self.num_maskmem,), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
         cond_bank_feat = cond_bank_feat.flatten(2)
@@ -184,6 +186,7 @@ class BasePolicyNetwork(nn.Module):
         actions_probs = torch.softmax(actions_logits, dim=1)
         
         # if not training:
+        #     print(actions_logits.squeeze())
         #     print(actions_probs.squeeze())
             
         return actions_probs.squeeze(-1)
@@ -230,7 +233,8 @@ class BaseValueNetwork(nn.Module):
 class BasePOAgent(BaseAgent):
     def __init__(
         self,
-        num_maskmem, 
+        num_maskmem,
+        num_support,
         policy_lr=1e-4,
         value_lr=1e-3,
         gamma=0.99, 
@@ -243,7 +247,7 @@ class BasePOAgent(BaseAgent):
         sam2_dim={}
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
+        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
         self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim)
 
@@ -263,6 +267,10 @@ class BasePOAgent(BaseAgent):
         
         self.tau = tau
         self.entropy_weight= entropy_weight
+        
+        # For distributed training
+        self.rank = 0
+        self.distributed = False
         
     def freeze(self):
         for param in self.feat_summarizer.parameters():
@@ -308,20 +316,21 @@ class BasePOAgent(BaseAgent):
             self.await_trajectory.add_transition(self.await_replay_instance)
             self.await_replay_instance = None
             self.final_trajectory()
-        
+    
+    @torch.no_grad()
     def select_action(self, state: RLStates, valid_actions, training=False):
         self.feat_summarizer.eval()
         self.policy_net.eval()
         self.value_net.eval()
         
-        image_feat = state.next_image_feat
-        memory_feat = state.curr_memory_feat["mem_feat"]
-        memory_ptr = state.curr_memory_feat["obj_ptr"]
-        bank_feat = state.prev_memory_bank["mem_feat"]
-        bank_ptr = state.prev_memory_bank["obj_ptr"]
+        image_feat = state.next_image_feat.detach().to(torch.float32)
+        memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
+        memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
+        bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
+        bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=training).cpu()
+        action_probs = self.policy_net(*state, training=training).detach().cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
@@ -335,30 +344,62 @@ class BasePOAgent(BaseAgent):
             
         return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
     
-    def to(self, device):
+    def to(self, device, non_blocking=False):
         self.device = device
-        self.feat_summarizer.to(device=device, non_blocking=True)
-        self.policy_net.to(device=device, non_blocking=True)
-        self.value_net.to(device=device, non_blocking=True)
+        self.feat_summarizer.to(device=device, non_blocking=non_blocking)
+        self.policy_net.to(device=device, non_blocking=non_blocking)
+        self.value_net.to(device=device, non_blocking=non_blocking)
+        
+    def to_dtype(self, dtype):
+        self.dtype = dtype
+        self.feat_summarizer.to(dtype=dtype)
+        self.policy_net.to(dtype=dtype)
+        self.value_net.to(dtype=dtype)
 
     def update(self, num_update):
-        if len(self.replay_buffer) < self.batch_size or num_update <= 0:
+        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        if self.distributed:
+            dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
+            
+        if local_count < self.batch_size or num_update <= 0:
             return None
         
-        print(f"Update agent for {num_update} steps")
+        np.random.seed(self.rank + self.epoch * 100)
+        
+        # print(f"Update agent for {num_update} steps")
         self.feat_summarizer.train()
         self.policy_net.train()
         self.value_net.train()
         
         total_policy_loss, total_value_loss = 0, 0
         for i in range(num_update):
-            batch = random.sample(self.replay_buffer, k=self.batch_size)
+            # batch = random.sample(self.replay_buffer, k=self.batch_size)
+            
+            n_actions = {}
+            for sample in self.replay_buffer:
+                action = sample[2]
+                if action not in n_actions.keys():
+                    n_actions[action] = 0
+                n_actions[action] += 1
+            
+            p = []
+            for sample in self.replay_buffer:
+                p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            
+            p = np.asanyarray(p)
+            p = p / p.sum()
+            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            batch = []
+            for idx in batch_idx:
+                batch.append(self.replay_buffer[idx])
 
             update_value = i % 2
             value_loss, policy_loss = self.train_step(batch, update_value=update_value)
             
             total_policy_loss += policy_loss
-            total_value_loss += value_loss
+            
+            if update_value:
+                total_value_loss += value_loss
             
         return {"actor_loss": total_policy_loss / num_update, "critic_loss": total_value_loss / num_update}
         
@@ -367,18 +408,31 @@ class BasePOAgent(BaseAgent):
         
         states, old_log_probs, actions, rewards, next_states, dones, returns, advantages = zip(*batch)
         
-        image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
+        image_feat = torch.cat([state.next_image_feat for state in states]).detach()
+        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
+        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
+        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
+        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
         
-        actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, non_blocking=True)
-        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1).to(device=device, non_blocking=True)
-        dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, non_blocking=True)
-        returns = torch.FloatTensor(returns).unsqueeze(1).to(device=device, non_blocking=True)
-        advantages = torch.FloatTensor(advantages).unsqueeze(1).to(device=device, non_blocking=True)
+        actions = torch.LongTensor(actions).unsqueeze(1)
+        rewards = torch.FloatTensor(rewards).unsqueeze(1)
+        old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1)
+        dones = torch.FloatTensor(dones).unsqueeze(1)
+        advantages = torch.FloatTensor(advantages).unsqueeze(1)
+        returns = torch.FloatTensor(returns).unsqueeze(1)
+        
+        image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+        bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
+        bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
+        
+        actions = actions.to(device=device, non_blocking=True)
+        rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
+        old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
+        dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
+        advantages = advantages.to(device=device, dtype=torch.float32, non_blocking=True)
+        returns = returns.to(device=device, dtype=torch.float32, non_blocking=True)
         
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
@@ -401,7 +455,7 @@ class BasePOAgent(BaseAgent):
             policy_loss.backward()
             # nn.utils.clip_grad_norm_(
             #     list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-            #     max_norm=0.2
+            #     max_norm=0.5
             # )
             self.policy_optimizer.step()
             
@@ -414,7 +468,7 @@ class BasePOAgent(BaseAgent):
                 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-                # nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.2)
+                # nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
@@ -427,7 +481,7 @@ class BasePOAgent(BaseAgent):
             
             # print("loss", policy_loss, value_loss, minus_entropy.mean())
             
-        return value_loss.item(), policy_loss.item()
+        return value_loss.detach(), policy_loss.detach()
     
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         return -(advantage * log_prob)

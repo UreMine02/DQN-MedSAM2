@@ -2,7 +2,6 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from einops import rearrange
 from collections import OrderedDict
 
 class BatchNorm1d(nn.BatchNorm1d):

@@ -6,3 +6,5 @@ wandb/
 full_grad/
 __pycache__/
 *.pyc
+rlsam2.sh
+*.out

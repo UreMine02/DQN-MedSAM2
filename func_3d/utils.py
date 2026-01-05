@@ -16,6 +16,7 @@ import torch
 import torch.nn as nn
 from torch.nn import L1Loss, BCEWithLogitsLoss
 from torch.autograd import Function
+import torch.distributed as dist
 
 from monai.losses import DiceLoss, FocalLoss
 from monai.metrics import compute_hausdorff_distance
@@ -42,19 +43,23 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
 
         net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
-        cfg = compose(config_name=args.rl_config)
-        print(cfg)
-        OmegaConf.resolve(cfg)
-        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
+        if not args.no_agent:
+            hydra_overrides = [
+                f"++rl_modules.config.agent.num_support={args.num_support}",
+            ]
+            cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
+            print(cfg)
+            OmegaConf.resolve(cfg)
+            net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
 
     if use_gpu:
-        net = net.to(device=gpu_device)
+        net = net.to(device=gpu_device, non_blocking=False)
         agent = getattr(net, "agent", None)
         if agent is not None:
-            agent.to(device=gpu_device)
+            agent.to(device=gpu_device, non_blocking=False)
 
     return net
 
@@ -215,12 +220,11 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
 def score_cal(seg_map, prd_map):
     '''
-    labels B * 1
     seg_map B * H * W
     prd_map B * H * W
     '''
-    assert seg_map.ndim == prd_map.ndim
-    assert seg_map.ndim >= 2
+    assert seg_map.ndim == 2 or seg_map.ndim == 3
+    assert prd_map.ndim == 2 or prd_map.ndim == 3
     if seg_map.ndim == 2:
         seg_map = seg_map.unsqueeze(0)
         prd_map = prd_map.unsqueeze(0)
@@ -502,7 +506,7 @@ def average_score(score_dict):
 
 def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
     obj_mask = masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.any(obj_mask, axis=(1, 2))).flatten()
+    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
     if channels_with_true.numel() == 0:
         print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
         return None
@@ -550,7 +554,7 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
         class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
     obj_mask = support_masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.any(obj_mask, axis=(1, 2))).flatten()
+    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
     if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
         print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
         return None
@@ -774,6 +778,40 @@ def extract_object_multiple(images_tensor, masks_tensor, support_images_list, su
 #     )
 
 #     return output_dict
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
 
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
 
-
+def reduce_dict(input_dict, average=True):
+    """
+    Args:
+        input_dict (dict): all the values will be reduced
+        average (bool): whether to do average or sum
+    Reduce the values in the dictionary from all processes so that all processes
+    have the averaged results. Returns a dict with the same fields as
+    input_dict, after reduction.
+    """
+    world_size = get_world_size()
+    if world_size < 2:
+        return input_dict
+    with torch.no_grad():
+        names = []
+        values = []
+        # sort the keys so that they are consistent across processes
+        for k in sorted(input_dict.keys()):
+            names.append(k)
+            values.append(input_dict[k])
+        values = torch.stack(values, dim=0)
+        dist.all_reduce(values)
+        if average:
+            values /= world_size
+        reduced_dict = {k: v for k, v in zip(names, values)}
+    return reduced_dict

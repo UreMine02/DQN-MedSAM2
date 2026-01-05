@@ -3,6 +3,7 @@ import glob
 import random
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn.functional as F
@@ -24,52 +25,56 @@ class BTCV(Dataset):
     def __init__(self, args, subset="train"):
         self.root = args.data_path
         self.subset = subset
-
-        self.train_list = glob.glob(os.path.join(self.root, "imagesTr", "*"))
-        self.test_list = glob.glob(os.path.join(self.root, "imagesTs", "*"))
+        csv_root = "./data/BTCV"
+        suffix = "Tr" if subset == "train" else "Ts"
+        
+        df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
+        self.gt_path = np.asarray(df["gt_path"])
+        self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
         
         self.image_size = args.image_size
-        self.max_slices = 16
+        self.num_support = args.num_support
+        self.max_slices = args.video_length
         
     def __len__(self):
-        if self.subset == "train":
-            return len(self.train_list)
-        return len(self.test_list)
+        return len(self.gt_path)
     
     def __getitem__(self, index):
-        volume_list = self.train_list if self.subset == "train" else self.test_list
+        obj_id = self.obj_id[index]
+        support_list = (self.obj_id == obj_id) & \
+                        (self.n_pos >= self.num_support)
+        support_list = np.argwhere(support_list).squeeze()
+        support_index = np.random.choice(support_list, size=1)[0]
 
-        if self.subset == "train":
-            support_index = random.choice([i for i in range(len(volume_list)) if i != index])
-        else:
-            support_index = random.choice([i for i in range(len(volume_list))])
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        image_path = volume_list[index]
-        label_path = image_path.replace("image", "label")
-
-        support_image_path = volume_list[support_index]
-        support_label_path = support_image_path.replace("image", "label")
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
+            obj_id=obj_id,
             max_slices=self.max_slices if self.subset == "train" else -1
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            max_slices=self.max_slices
+            obj_id=obj_id,
+            max_slices=self.num_support
         )
         
-        output_dict ={
+        output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": image_path.split("/")[-1]
+            "task": "btcv", "obj_id": obj_id
         }
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, max_slices=16):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=16):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -83,6 +88,7 @@ class BTCV(Dataset):
                 
         image_3d = np.asanyarray(image_3d)
         data_seg_3d = np.asanyarray(data_seg_3d)
+        data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
