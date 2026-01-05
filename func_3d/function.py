@@ -155,6 +155,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                     agent_step_loss = agent.update(q_updates_per_step)
                     if agent_step_loss is not None:
+                        metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
                         agent_loss["actor_loss"] += agent_step_loss["actor_loss"]
                         agent_step += 1
                             
@@ -234,6 +235,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         "dice": torch.FloatTensor([]).to(device=GPUdevice),
                         "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
                     }
+                    
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -292,11 +294,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         ) = eval_seg(pred, mask)
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
+                        
+                        score_dict = score_per_class[f"{task}_{obj_id}"]
 
-                        score_per_class[f"{task}_{obj_id}"]["iou"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["iou"], iou.detach()])
-                        score_per_class[f"{task}_{obj_id}"]["dice"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["dice"], dice.detach()])
-                        score_per_class[f"{task}_{obj_id}"]["fb_iou"] = torch.cat([score_per_class[f"{task}_{obj_id}"]["fb_iou"], fb_iou.detach()])
-
+                        score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
+                        score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
+                        score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
                         pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)

@@ -24,6 +24,8 @@ import torch.multiprocessing as mp
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import numpy as np
 
+import wandb
+
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12348'
@@ -42,6 +44,12 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
+        
+    if args.wandb_enabled:
+        wandb.init(
+            project="dqn-medsam2",
+            name=args.exp_name              # Experiment name from args
+        )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -81,6 +89,24 @@ def train(rank=0, world_size=0):
     if not os.path.exists(checkpoint_path) and args.save_ckpt and rank == 0:
         os.makedirs(checkpoint_path)
         print(f"checkpoint saved in {checkpoint_path}")
+        
+    for name, param in net.named_parameters():
+        if "sam_mask_decoder" in name:
+            param.requires_grad_(True)
+        else:
+            param.requires_grad_(False)
+        # if "image_encoder" in name:
+            # param.requires_grad_(False)
+        # if "sam_prompt_encoder" in name:
+            # param.requires_grad_(False)
+        
+    
+    tuned_param = []
+    for name, param in net.named_parameters():
+        if param.requires_grad:
+            tuned_param.append(name)
+            
+    print("Fine-tuned parameters:", tuned_param)
 
     '''begain training'''
     best_dice = 0.0
@@ -92,11 +118,6 @@ def train(rank=0, world_size=0):
         agent = getattr(net, "agent", None)
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
-        for name, param in net.named_parameters():
-            if "image_encoder" in name:
-                param.requires_grad_(False)
-            if "sam_prompt_encoder" in name:
-                param.requires_grad_(False)
                 
         time_start = time.time()
         (
@@ -124,6 +145,9 @@ def train(rank=0, world_size=0):
             # "train/lr": scheduler.get_last_lr()[0],
         }
         
+        if args.wandb_enabled and loss is not None:
+            wandb.log(loss_dict, step=epoch)
+        
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
@@ -150,6 +174,9 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice} > {best_dice}")
                 best_dice = dice
                 new_best = True
+                
+            if args.wandb_enabled:
+                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
         
         # scheduler.step()
         

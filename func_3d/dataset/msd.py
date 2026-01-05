@@ -56,7 +56,7 @@ class MSD(Dataset):
         support_list = (self.task == self.task[index]) & \
                         (self.obj_id == self.obj_id[index]) & \
                         (self.n_pos >= self.num_support)
-        support_list = np.argwhere(support_list).squeeze()
+        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
         support_index = np.random.choice(support_list, size=1)[0]
 
         label_path = os.path.join(self.root, self.gt_path[index])
