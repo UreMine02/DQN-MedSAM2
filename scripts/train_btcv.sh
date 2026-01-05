@@ -9,12 +9,12 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/btcv-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
-EXP=btcv+grpo+entropy1e-3+num_support3+clip_grad0.1
+EXP=btcv+grpo
 
 python train_3d.py \
     -exp_name $EXP \
@@ -30,4 +30,5 @@ python train_3d.py \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \
-    -distributed
+    -no_agent \
+    -wandb_enabled

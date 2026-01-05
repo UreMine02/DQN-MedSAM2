@@ -14,9 +14,11 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+grpo+entropy1e-3+num_support3+clip_grad0.1+lazy_pen0.1+invalid_pen0.1
+EXP=sarcoma+grpo
 
-CUDA_VISIBLE_DEVICES=1 python train_3d.py \
+export CUDA_VISIBLE_DEVICES=1
+
+python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
@@ -25,7 +27,7 @@ CUDA_VISIBLE_DEVICES=1 python train_3d.py \
     -data_path /data/datasets/Sarcoma \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
