@@ -24,7 +24,7 @@ python train_3d.py \
     -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
-    -data_path /data/datasets/Sarcoma \
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/Sarcoma \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
@@ -32,4 +32,4 @@ python train_3d.py \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \
-    -wandb_enabled
+    -distributed

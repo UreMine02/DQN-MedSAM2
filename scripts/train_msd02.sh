@@ -1,5 +1,4 @@
 #!/bin/bash -l
-
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
@@ -15,8 +14,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+no_agent
-export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task02+ppo
+# export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -33,5 +32,4 @@ python train_3d.py \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.1 \
     -num_support 3 \
-    -no_agent \
-    -wandb_enabled
+    -distributed
