@@ -91,12 +91,19 @@ def train(rank=0, world_size=0):
         print(f"checkpoint saved in {checkpoint_path}")
 
     for name, param in net.named_parameters():
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        else:
+        if "sam_mask_decoder" in name:
             param.requires_grad_(True)
+        elif "maskmem_tpos_enc" in name:
+            param.requires_grad_(True)
+        else:
+            param.requires_grad_(False)
+        
+        # if "image_encoder" in name:
+        #     param.requires_grad_(False)
+        # elif "sam_prompt_encoder" in name:
+        #     param.requires_grad_(False)
+        # else:
+        #     param.requires_grad_(True)
 
 
     tuned_param = []
