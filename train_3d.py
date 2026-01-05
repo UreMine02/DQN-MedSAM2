@@ -24,7 +24,7 @@ import torch.multiprocessing as mp
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import numpy as np
 
-import wandb
+# import wandb
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -45,11 +45,11 @@ def train(rank=0, world_size=0):
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
 
-    if args.wandb_enabled:
-        wandb.init(
-            project="dqn-medsam2",
-            name=args.exp_name              # Experiment name from args
-        )
+    # if args.wandb_enabled:
+    #     wandb.init(
+    #         project="dqn-medsam2",
+    #         name=args.exp_name              # Experiment name from args
+    #     )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -144,8 +144,8 @@ def train(rank=0, world_size=0):
             # "train/lr": scheduler.get_last_lr()[0],
         }
 
-        if args.wandb_enabled and loss is not None:
-            wandb.log(loss_dict, step=epoch)
+        # if args.wandb_enabled and loss is not None:
+        #     wandb.log(loss_dict, step=epoch)
 
         time_end = time.time()
         print(loss_dict)
@@ -174,8 +174,8 @@ def train(rank=0, world_size=0):
                 best_dice = dice
                 new_best = True
 
-            if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
+            # if args.wandb_enabled:
+            #     wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
 
         # scheduler.step()
 
