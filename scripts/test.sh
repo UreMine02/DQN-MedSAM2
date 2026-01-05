@@ -16,9 +16,10 @@
 export CUDA_VISIBLE_DEVICES=1
 
 python eval_3d.py \
-    -pretrain output/msd_task02+ppo+entropy1e-3/2026-01-05-19-21-35/best.pth \
+    -pretrain output/sarcoma+no_agent/2026-01-05-13-06-00/best.pth \
     -rl_config rl_modules/config/ppo_po_agent.yaml \
-    -dataset msd \
+    -dataset sarcoma \
     -task Task02 \
-    -data_path /data/datasets/MSD \
-    -num_support 1
+    -data_path /data/datasets/Sarcoma \
+    -no_agent \
+    -num_support 5

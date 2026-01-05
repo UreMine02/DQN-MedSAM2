@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd+grpo+entropy1e-3+num_support3+clip_grad0.1
+EXP=msd+ppo
 
 python train_3d.py \
     -exp_name $EXP \

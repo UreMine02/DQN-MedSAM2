@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP=msd_task03+grpo+entropy1e-3+num_support10+clip_grad0.5+norm0.5
+EXP=msd_task03+ppo+entropy1e-3+num_support10+clip_grad0.5+norm0.5
 
 CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \

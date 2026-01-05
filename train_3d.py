@@ -64,7 +64,7 @@ def train(rank=0, world_size=0):
             net.agent.load_state_dict(weights["agent"])
 
     if args.distributed:
-        net = DDP(net, device_ids=[rank], output_device=rank)
+        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")

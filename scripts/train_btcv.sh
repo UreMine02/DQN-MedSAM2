@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=btcv+grpo
+EXP=btcv+ppo
 # export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
