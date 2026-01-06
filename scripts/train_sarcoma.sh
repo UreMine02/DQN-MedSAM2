@@ -14,13 +14,13 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+ppo+perceiver
+EXP=sarcoma+no_agent+perceiver
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/ppo_po_agent.yaml \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
     -data_path /data/datasets/Sarcoma \
@@ -31,4 +31,5 @@ python train_3d.py \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \
+    -no_agent \
     -wandb_enabled

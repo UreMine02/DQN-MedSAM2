@@ -14,8 +14,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+perceiver_noicl
-export CUDA_VISIBLE_DEVICES=0
+EXP=msd_task02+no_agent+perceiver+noicl
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -36,4 +36,5 @@ python train_3d.py \
     -val_bg_point 5 \
     -val_prompt_every 10 \
     -train_num_prompted_frame 2 \
+    -no_agent \
     -wandb_enabled
