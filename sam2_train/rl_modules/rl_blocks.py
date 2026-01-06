@@ -79,30 +79,81 @@ class QFormerBlock(nn.Module):
         x = self.mlp(self.norm3(x)) + x
         return x
     
+# class SpatialSummarizer(nn.Module):
+#     def __init__(self, n_query, query_dim, spatial_dim, n_heads, d_heads, n_layers=2, down_scale=2, dropout=0.):
+#         super().__init__()
+#         self.down_scale = down_scale
+#         self.n_query = n_query
+#         self.query_dim = query_dim
+        
+#         self.conv_in = nn.Conv2d(spatial_dim, spatial_dim, kernel_size=down_scale, stride=down_scale)
+#         self.qformer = nn.ModuleList(
+#             [QFormerBlock(query_dim, spatial_dim, n_heads, d_heads, dropout=dropout) for _ in range(n_layers)]
+#         )
+#         self.spatial_query = nn.Parameter(torch.rand(1, n_query, query_dim))
+        
+#     def forward(self, x):
+#         """x: [B,C,H,W]"""
+#         B, C, H, W = x.shape
+        
+#         spatial_query = self.spatial_query.expand(B, self.n_query, self.query_dim)
+        
+#         x = self.conv_in(x)
+#         x = x.reshape(B, C, (H // self.down_scale) * (W // self.down_scale)).permute(0, 2, 1) # [B,L,D]
+        
+#         for layer in self.qformer:
+#             spatial_query = layer(spatial_query, x)
+            
+#         return spatial_query
+
+class PerceiverResampler(nn.Module):
+    def __init__(self, hidden_dim=256, num_heads=1):
+        super().__init__()
+        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
+        self.norm1 = nn.LayerNorm(hidden_dim)
+        self.mlp = nn.Sequential(OrderedDict([
+            ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
+            ("gelu", QuickGELU()),
+            ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))
+        ]))
+        self.norm2 = nn.LayerNorm(hidden_dim)
+        
+        self.hidden_dim = hidden_dim
+        
+    def forward(self, x_f, x):
+        """
+        Forward
+        
+        :param x_f: [B,L,D]
+        :param x: [B,L,D]
+        """
+        
+        x = x + self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1))
+        x = x + self.mlp(self.norm2(x))
+        return x
+    
 class SpatialSummarizer(nn.Module):
     def __init__(self, n_query, query_dim, spatial_dim, n_heads, d_heads, n_layers=2, down_scale=2, dropout=0.):
         super().__init__()
         self.down_scale = down_scale
         self.n_query = n_query
-        self.query_dim = query_dim
         
-        self.conv_in = nn.Conv2d(spatial_dim, spatial_dim, kernel_size=down_scale, stride=down_scale)
         self.qformer = nn.ModuleList(
-            [QFormerBlock(query_dim, spatial_dim, n_heads, d_heads, dropout=dropout) for _ in range(n_layers)]
+            [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads) for _ in range(n_layers)]
         )
-        self.spatial_query = nn.Parameter(torch.rand(1, n_query, query_dim))
+        self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
+        self.spatial_dim = spatial_dim
         
     def forward(self, x):
         """x: [B,C,H,W]"""
         B, C, H, W = x.shape
         
-        spatial_query = self.spatial_query.expand(B, self.n_query, self.query_dim)
-        
-        x = self.conv_in(x)
-        x = x.reshape(B, C, (H // self.down_scale) * (W // self.down_scale)).permute(0, 2, 1) # [B,L,D]
+        spatial_query = self.spatial_query.expand(B, self.n_query, self.spatial_dim)
+
+        x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
         
         for layer in self.qformer:
-            spatial_query = layer(spatial_query, x)
+            spatial_query = layer(x_f=x, x=spatial_query)
             
         return spatial_query
     

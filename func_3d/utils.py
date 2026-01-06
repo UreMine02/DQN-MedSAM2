@@ -47,7 +47,7 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             hydra_overrides = [
                 f"++rl_modules.config.agent.num_support={args.num_support}",
             ]
-            cfg = compose(config_name=args.rl_config, overrides=hydra_overrides)
+            cfg = compose(config_name=args.rl_config)
             print(cfg)
             OmegaConf.resolve(cfg)
             net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)

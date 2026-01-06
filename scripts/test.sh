@@ -16,10 +16,9 @@
 export CUDA_VISIBLE_DEVICES=1
 
 python eval_3d.py \
-    -pretrain output/sarcoma+no_agent/2026-01-05-13-06-00/best.pth \
-    -rl_config rl_modules/config/ppo_po_agent.yaml \
-    -dataset sarcoma \
+    -pretrain output/msd_task02+grpo+perceiver/2026-01-06-13-37-35/best.pth \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -dataset msd \
     -task Task02 \
-    -data_path /data/datasets/Sarcoma \
-    -no_agent \
+    -data_path /data/datasets/MSD \
     -num_support 5

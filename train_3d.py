@@ -53,15 +53,45 @@ def train(rank=0, world_size=0):
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
-    if getattr(net, "agent", None) is not None:
-        net.agent.to_dtype(torch.bfloat16)
+    agent = getattr(net, "agent", None)
+    if agent is not None:
+        agent.to_dtype(torch.bfloat16)
 
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys() and not args.no_agent:
-            net.agent.load_state_dict(weights["agent"])
+            agent.load_state_dict(weights["agent"])
+            
+    for name, param in net.named_parameters():
+        if "sam_mask_decoder" in name:
+            param.requires_grad_(True)
+        elif "maskmem_tpos_enc" in name:
+            param.requires_grad_(True)
+        else:
+            param.requires_grad_(False)
+        
+        # if "image_encoder" in name:
+        #     param.requires_grad_(False)
+        # elif "sam_prompt_encoder" in name:
+        #     param.requires_grad_(False)
+        # else:
+        #     param.requires_grad_(True)
+        
+    agent_n_params = 0
+    if agent is not None:
+        agent_n_params = agent.num_parameters()
+
+    n_parameters_tot = sum(p.numel() for p in net.parameters()) + agent_n_params
+    print(f'number of params: {n_parameters_tot}')
+
+    head, fix = [], []
+    for k, v in net.named_parameters():
+        (head if v.requires_grad else fix).append(v)
+
+    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
+    print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
@@ -90,29 +120,6 @@ def train(rank=0, world_size=0):
         os.makedirs(checkpoint_path)
         print(f"checkpoint saved in {checkpoint_path}")
 
-    for name, param in net.named_parameters():
-        if "sam_mask_decoder" in name:
-            param.requires_grad_(True)
-        elif "maskmem_tpos_enc" in name:
-            param.requires_grad_(True)
-        else:
-            param.requires_grad_(False)
-        
-        # if "image_encoder" in name:
-        #     param.requires_grad_(False)
-        # elif "sam_prompt_encoder" in name:
-        #     param.requires_grad_(False)
-        # else:
-        #     param.requires_grad_(True)
-
-
-    tuned_param = []
-    for name, param in net.named_parameters():
-        if param.requires_grad:
-            tuned_param.append(name)
-
-    print("Fine-tuned parameters:", tuned_param)
-
     '''begain training'''
     best_dice = 0.0
     for epoch in range(args.ep):
@@ -120,7 +127,6 @@ def train(rank=0, world_size=0):
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
 
-        agent = getattr(net, "agent", None)
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
 

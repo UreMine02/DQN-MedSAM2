@@ -8,7 +8,6 @@ class PPOAgent(BasePOAgent):
     def __init__(
         self,
         num_maskmem,
-        num_support,
         policy_lr=0.0001,
         value_lr=0.001,
         gamma=0.99,
@@ -23,7 +22,6 @@ class PPOAgent(BasePOAgent):
     ):
         super().__init__(
             num_maskmem=num_maskmem,
-            num_support=num_support,
             policy_lr=policy_lr,
             value_lr=value_lr,
             gamma=gamma,

@@ -17,7 +17,8 @@ from sam2_train.rl_modules.rl_blocks import (
     BatchNorm1d,
     BidirectionalQFormer,
     BasicTransformerBlock,
-    QuickGELU
+    QuickGELU,
+    PerceiverResampler
 )
 from sam2_train.rl_modules.rl_base_agent import BaseAgent
 
@@ -74,7 +75,6 @@ class POReplayInstance(RLReplayInstance):
         self.return_ = return_
         self.advantage = advantage
 
-
 class Trajectory:
     def __init__(self):
         self.transitions = []
@@ -109,20 +109,38 @@ class Trajectory:
         return log_probs, actions, rewards, dones, curr_feats, next_feats
 
 class BaseFeatureSummarizer(nn.Module):
-    def __init__(self, num_maskmem, num_support, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256):
+    def __init__(self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256, n_layers=4):
         super().__init__()
 
         self.num_maskmem = num_maskmem
-        self.num_support = num_support
         self.n_query = n_query
         self.memory_dim = memory_dim
-        self.hidden_dim = n_query * memory_dim + obj_ptr_dim
+        # self.hidden_dim = n_query * memory_dim + obj_ptr_dim
         memory_num_head = memory_dim // 64
+        self.hidden_dim = image_dim
 
         self.image_spatial_summary = SpatialSummarizer(
-            n_query, self.hidden_dim, image_dim, self.hidden_dim // 64, 64, n_layers=4)
+            n_query=n_query,
+            query_dim=self.hidden_dim,
+            spatial_dim=image_dim,
+            n_heads=1,
+            d_heads=image_dim,
+            n_layers=n_layers,
+            dropout=0.1
+        )
         self.memory_spatial_summary = SpatialSummarizer(
-            n_query, memory_dim, memory_dim, memory_num_head, 64, n_layers=4)
+            n_query=n_query,
+            query_dim=memory_dim,
+            spatial_dim=memory_dim,
+            n_heads=1,
+            d_heads=memory_dim,
+            n_layers=n_layers,
+            dropout=0.1
+        )
+        
+        self.cond_mem_proj = nn.Linear(memory_dim, image_dim)
+        self.cond_obj_proj = nn.Linear(obj_ptr_dim, image_dim)
+        self.non_cond_proj = nn.Linear(n_query * memory_dim + obj_ptr_dim, image_dim)
 
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
         B, T, C, H, W = bank_feat.shape
@@ -141,12 +159,26 @@ class BaseFeatureSummarizer(nn.Module):
         non_cond_obj_ptr, cond_obj_ptr = torch.tensor_split(bank_ptr, indices=(self.num_maskmem,), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
-        cond_bank_feat = cond_bank_feat.flatten(2)
+        # cond_bank_feat = cond_bank_feat.flatten(2)
         curr_mem_feat = curr_mem_feat.flatten(2)
 
         non_cond_bank_feat = torch.cat([non_cond_bank_feat, non_cond_obj_ptr], dim=-1)
-        cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=-1)
+        # cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=-1)
         curr_mem_feat = torch.cat([curr_mem_feat, memory_ptr.unsqueeze(1)], dim=-1)
+        
+        cond_bank_feat = self.cond_mem_proj(cond_bank_feat)
+        cond_obj_ptr = self.cond_obj_proj(cond_obj_ptr)
+        cond_bank_feat = torch.flatten(cond_bank_feat, start_dim=1, end_dim=2)
+        
+        cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=1)
+        
+        non_cond_bank_feat = self.non_cond_proj(non_cond_bank_feat)
+        curr_mem_feat = self.non_cond_proj(curr_mem_feat)
+        
+        # image_spatial_query = print("image_spatial_query", image_spatial_query.shape)
+        # non_cond_bank_feat = print("non_cond_bank_feat", non_cond_bank_feat.shape)
+        # cond_bank_feat = print("cond_bank_feat", cond_bank_feat.shape)
+        # curr_mem_feat = print("curr_mem_feat", curr_mem_feat.shape)
 
         return image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat
 
@@ -154,22 +186,26 @@ class BasePolicyNetwork(nn.Module):
     def __init__(
         self,
         hidden_dim,
+        n_layers=1,
     ):
         super().__init__()
         self.hidden_dim = hidden_dim
 
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
-
         self.action_decoder = nn.ModuleList(
-            [QFormerBlock(self.hidden_dim, self.hidden_dim, hidden_dim // 64, 64) for _ in range(4)]
+            [PerceiverResampler(self.hidden_dim, 1) for _ in range(n_layers)]
         )
+        # self.action_proj = nn.Sequential(
+        #     nn.LayerNorm(self.hidden_dim),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.hidden_dim, self.hidden_dim * 4),
+        #     QuickGELU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.hidden_dim * 4, 1)
+        # )
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
-            nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim, self.hidden_dim * 4),
-            QuickGELU(),
-            nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim * 4, 1)
+            nn.Linear(self.hidden_dim, 1)
         )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
@@ -180,7 +216,7 @@ class BasePolicyNetwork(nn.Module):
         action_context = torch.cat([cond_bank_feat, image_spatial_query], dim=1)
 
         for layer in self.action_decoder:
-            action_query = layer(action_query, action_context)
+            action_query = layer(x_f=action_context, x=action_query)
 
         actions_logits = self.action_proj(action_query)
         actions_probs = torch.softmax(actions_logits, dim=1)
@@ -195,37 +231,37 @@ class BaseValueNetwork(nn.Module):
     def __init__(
         self,
         hidden_dim,
+        n_layers=4
     ):
         super().__init__()
 
         self.hidden_dim = hidden_dim
 
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
-
         self.value_decoder = nn.ModuleList(
-            [BasicTransformerBlock(self.hidden_dim, 64) for _ in range(4)]
-        )
-        self.value_proj = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim, self.hidden_dim * 4),
-            QuickGELU(),
-            nn.Dropout(0.2),
-            nn.Linear(self.hidden_dim * 4, 1)
+            [PerceiverResampler(self.hidden_dim, 1) for _ in range(n_layers)]
         )
         # self.value_proj = nn.Sequential(
         #     nn.LayerNorm(self.hidden_dim),
-        #     nn.Linear(self.hidden_dim, 1)
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.hidden_dim, self.hidden_dim * 4),
+        #     QuickGELU(),
+        #     nn.Dropout(0.2),
+        #     nn.Linear(self.hidden_dim * 4, 1)
         # )
+        self.value_proj = nn.Sequential(
+            nn.LayerNorm(self.hidden_dim),
+            nn.Linear(self.hidden_dim, 1)
+        )
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
         B = image_spatial_query.shape[0]
         value_query = self.value_query.expand(B, 1, self.hidden_dim)
 
-        tokens = torch.cat([value_query, curr_mem_feat, non_cond_bank_feat, cond_bank_feat, image_spatial_query], dim=1)
+        tokens = torch.cat([curr_mem_feat, non_cond_bank_feat, cond_bank_feat, image_spatial_query], dim=1)
 
         for layer in self.value_decoder:
-            tokens = layer(tokens)
+            value_query = layer(x_f=tokens, x=value_query)
 
         return self.value_proj(tokens[:, 0, :])
 
@@ -234,7 +270,6 @@ class BasePOAgent(BaseAgent):
     def __init__(
         self,
         num_maskmem,
-        num_support,
         policy_lr=1e-4,
         value_lr=1e-3,
         gamma=0.99,
@@ -247,9 +282,9 @@ class BasePOAgent(BaseAgent):
         sam2_dim={}
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
-        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
-        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim)
+        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
+        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
 
         self.policy_optimizer = optim.AdamW(
             list(self.policy_net.parameters()) + \
@@ -369,37 +404,46 @@ class BasePOAgent(BaseAgent):
         self.policy_net.train()
         self.value_net.train()
 
-        total_policy_loss, total_value_loss = 0, 0
+        total_policy_loss, total_value_loss, total_actor_gradnorm, total_critic_gradnorm = 0, 0, 0, 0
+        critic_num_update = 0
         for i in range(num_update):
-            # batch = random.sample(self.replay_buffer, k=self.batch_size)
+            batch = random.sample(self.replay_buffer, k=self.batch_size)
 
-            n_actions = {}
-            for sample in self.replay_buffer:
-                action = sample[2]
-                if action not in n_actions.keys():
-                    n_actions[action] = 0
-                n_actions[action] += 1
+            # n_actions = {}
+            # for sample in self.replay_buffer:
+            #     action = sample[2]
+            #     if action not in n_actions.keys():
+            #         n_actions[action] = 0
+            #     n_actions[action] += 1
 
-            p = []
-            for sample in self.replay_buffer:
-                p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            # p = []
+            # for sample in self.replay_buffer:
+            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
 
-            p = np.asanyarray(p)
-            p = p / p.sum()
-            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            batch = []
-            for idx in batch_idx:
-                batch.append(self.replay_buffer[idx])
+            # p = np.asanyarray(p)
+            # p = p / p.sum()
+            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            # batch = []
+            # for idx in batch_idx:
+            #     batch.append(self.replay_buffer[idx])
 
             update_value = i % 2
-            value_loss, policy_loss = self.train_step(batch, update_value=update_value)
+            value_loss, policy_loss, actor_gradnorm, critic_gradnorm = self.train_step(batch, update_value=update_value)
 
             total_policy_loss += policy_loss
+            total_actor_gradnorm += actor_gradnorm
 
             if update_value:
                 total_value_loss += value_loss
+                total_critic_gradnorm += critic_gradnorm
+                critic_num_update += 1
 
-        return {"actor_loss": total_policy_loss / num_update, "critic_loss": total_value_loss / num_update}
+        return {
+            "actor_loss": total_policy_loss / num_update, 
+            "critic_loss": total_value_loss / critic_num_update,
+            "actor_gradnorm": total_actor_gradnorm / num_update, 
+            "critic_gradnorm": total_critic_gradnorm / critic_num_update,
+        }
 
     def train_step(self, batch, update_value=True):
         device = self.device
@@ -461,9 +505,9 @@ class BasePOAgent(BaseAgent):
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            nn.utils.clip_grad_norm_(
+            actor_gradnorm = nn.utils.clip_grad_norm_(
                 list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.1
+                max_norm=1
             )
             self.policy_optimizer.step()
 
@@ -483,10 +527,11 @@ class BasePOAgent(BaseAgent):
 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-                nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.1)
+                critic_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
+                critic_gradnorm = 0
 
             # total_loss = policy_loss + 0.1 * value_loss
 
@@ -496,7 +541,7 @@ class BasePOAgent(BaseAgent):
 
             # print("loss", policy_loss, value_loss, minus_entropy.mean())
 
-        return value_loss.detach(), policy_loss.detach()
+        return value_loss.detach(), policy_loss.detach(), actor_gradnorm, critic_gradnorm
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         return -(advantage * log_prob)
@@ -525,3 +570,10 @@ class BasePOAgent(BaseAgent):
         self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank], output_device=rank)
         self.policy_net = DDP(self.policy_net, device_ids=[rank], output_device=rank)
         self.value_net = DDP(self.value_net, device_ids=[rank], output_device=rank)
+
+    def num_parameters(self):
+        """This function expect modules didn't wrapped by DDP"""
+        return sum(p.numel() for p in self.feat_summarizer.parameters()) + \
+                sum(p.numel() for p in self.policy_net.parameters()) + \
+                sum(p.numel() for p in self.value_net.parameters())
+
