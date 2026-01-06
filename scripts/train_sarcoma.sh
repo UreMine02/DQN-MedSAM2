@@ -14,8 +14,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+no_agent+perceiver
-export CUDA_VISIBLE_DEVICES=1
+EXP=sarcoma+grpo+perceiver
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -31,5 +31,4 @@ python train_3d.py \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \
-    -no_agent \
     -wandb_enabled
