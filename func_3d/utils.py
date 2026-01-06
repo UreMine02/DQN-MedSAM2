@@ -778,40 +778,61 @@ def extract_object_multiple(images_tensor, masks_tensor, support_images_list, su
 #     )
 
 #     return output_dict
-def is_dist_avail_and_initialized():
-    if not dist.is_available():
-        return False
-    if not dist.is_initialized():
-        return False
-    return True
 
-def get_world_size():
-    if not is_dist_avail_and_initialized():
-        return 1
-    return dist.get_world_size()
 
-def reduce_dict(input_dict, average=True):
-    """
-    Args:
-        input_dict (dict): all the values will be reduced
-        average (bool): whether to do average or sum
-    Reduce the values in the dictionary from all processes so that all processes
-    have the averaged results. Returns a dict with the same fields as
-    input_dict, after reduction.
-    """
-    world_size = get_world_size()
-    if world_size < 2:
-        return input_dict
-    with torch.no_grad():
-        names = []
-        values = []
-        # sort the keys so that they are consistent across processes
-        for k in sorted(input_dict.keys()):
-            names.append(k)
-            values.append(input_dict[k])
-        values = torch.stack(values, dim=0)
-        dist.all_reduce(values)
-        if average:
-            values /= world_size
-        reduced_dict = {k: v for k, v in zip(names, values)}
-    return reduced_dict
+
+def sample_points_from_gt(
+        gt_mask,
+        num_fg,
+        num_bg,
+    ):
+        """
+        gt_mask: Tensor[H, W] (0/1)
+        return:
+            fg_points: Tensor[num_fg, 2]
+            bg_points: Tensor[num_bg, 2]
+        """
+        gt_mask = gt_mask.bool()
+
+        fg_coords = torch.nonzero(gt_mask)          # (y, x)
+        bg_coords = torch.nonzero(~gt_mask)
+
+        fg_idx = torch.randperm(len(fg_coords))[:num_fg]
+        bg_idx = torch.randperm(len(bg_coords))[:num_bg]
+
+        fg_points = fg_coords[fg_idx][:, [1, 0]]    # -> (x, y)
+        bg_points = bg_coords[bg_idx][:, [1, 0]]
+
+        return fg_points, bg_points
+
+def build_point_inputs(
+    gt_mask,
+    fg_points,
+    bg_points,
+    video_H,
+    video_W,
+    image_size,
+    device,
+):
+    fg_points, bg_points = sample_points_from_gt(gt_mask, fg_points, bg_points)
+    points = torch.cat([fg_points, bg_points], dim=0).float()
+    labels = torch.cat([
+        torch.ones(len(fg_points)),
+        torch.zeros(len(bg_points)),
+    ])
+
+    # normalize to [0,1]
+    points = points / torch.tensor(
+        [video_W, video_H], device=points.device, dtype=points.dtype,)
+
+    # scale to model space
+    points = points * image_size
+
+    # add batch dim
+    points = points.unsqueeze(0).to(device)
+    labels = labels.unsqueeze(0).to(device)
+
+    return {
+        "point_coords": points,
+        "point_labels": labels,
+    }
