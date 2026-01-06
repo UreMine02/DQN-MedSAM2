@@ -1,7 +1,6 @@
 agent:
   _target_: sam2_train.rl_modules.policy_optimization.ppo_agent.PPOAgent
   num_maskmem: 6
-  num_support: 3
   policy_lr: 1e-5
   value_lr: 1e-5
   gamma: 0.99

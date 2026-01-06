@@ -171,8 +171,6 @@ def reduce_dict(input_dict, average=True):
         values = []
         # sort the keys so that they are consistent across processes
         for k in sorted(input_dict.keys()):
-            if k == "num_step":
-                continue
             names.append(k)
             values.append(input_dict[k])
         values = torch.stack(values, dim=0)

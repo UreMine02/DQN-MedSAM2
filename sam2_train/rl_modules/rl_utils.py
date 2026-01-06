@@ -69,7 +69,7 @@ def prepare_rl_state(
     
     #TODO: Finding out why this part affecting testing
     if training:
-        randperm = np.random.permutation(num_maskmem)
+        randperm = torch.randperm(num_maskmem)
         prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
         prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
     

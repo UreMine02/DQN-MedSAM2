@@ -80,7 +80,6 @@ class GRPOAgent(BasePOAgent):
     def __init__(
         self, 
         num_maskmem,
-        num_support,
         policy_lr=0.0001, 
         value_lr=0.001, 
         gamma=0.99, 
@@ -96,7 +95,6 @@ class GRPOAgent(BasePOAgent):
     ):
         super().__init__(
             num_maskmem=num_maskmem,
-            num_support=num_support,
             policy_lr=policy_lr, 
             value_lr=value_lr, 
             gamma=gamma, 
@@ -111,8 +109,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
         
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, num_support, **sam2_dim)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -196,7 +194,7 @@ class GRPOAgent(BasePOAgent):
         self.actor.train()
         
         device = self.device
-        total_policy_loss = 0
+        total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
             # batch = random.sample(self.replay_buffer, k=self.batch_size)
             n_actions = {}
@@ -241,9 +239,9 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
-            rewards_mean = rewards.mean(dim=0, keepdim=True)
-            rewards_std  = rewards.std(dim=0, keepdim=True)
-            rewards = self.range * (rewards - rewards_mean) / (rewards_std + 1e-8)
+            # rewards_mean = rewards.mean(dim=0, keepdim=True)
+            # rewards_std  = rewards.std(dim=0, keepdim=True)
+            # rewards = self.range * (rewards - rewards_mean) / (rewards_std + 1e-8)
 
             with torch.enable_grad():
                 policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
@@ -258,12 +256,13 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()
+            total_policy_gradnorm += gradnorm
         
-        return {"actor_loss": total_policy_loss / num_update}
+        return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
     
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         ratio = (log_prob - old_log_prob).exp()
@@ -288,3 +287,7 @@ class GRPOAgent(BasePOAgent):
         self.distributed = True
         self.rank = rank
         self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)
+        
+    def num_parameters(self):
+        """This function expect modules didn't wrapped by DDP"""
+        return sum(p.numel() for p in self.actor.parameters())

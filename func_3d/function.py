@@ -138,7 +138,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 average_loss(class_loss)
                 avg_loss = class_loss["total_loss"]
                 
-                losses_reduced = reduce_dict(class_loss)
+                to_reduce = {k: class_loss[k] for k in class_loss.keys() if k != "num_step"}
+                losses_reduced = reduce_dict(to_reduce)
                 loss_value = sum(losses_reduced.values()).item()
 
                 optimizer.zero_grad()
@@ -156,9 +157,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     agent_step_loss = agent.update(q_updates_per_step)
                     if agent_step_loss is not None:
                         metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
+                        metric_logger.update(actor_gradnorm=agent_step_loss["actor_gradnorm"].item())
                         agent_loss["actor_loss"] += agent_step_loss["actor_loss"]
                         if "critic_loss" in agent_step_loss.keys():
                             metric_logger.update(critic_loss=agent_step_loss["critic_loss"].item())
+                            metric_logger.update(critic_gradnorm=agent_step_loss["critic_gradnorm"].item())
                             agent_loss["critic_loss"] += agent_step_loss["critic_loss"]
                         agent_step += 1
                             

@@ -137,7 +137,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["images"] = images
         inference_state["support_images"] = support_images
         inference_state["num_frames"] = len(images)
-        inference_state["support_num_frames"] = len(support_images)
+        inference_state["support_num_frames"] = args.num_support
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
         inference_state["offload_video_to_cpu"] = offload_video_to_cpu
@@ -225,7 +225,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["images"] = images
         inference_state["support_images"] = support_images
         inference_state["num_frames"] = len(images)
-        inference_state["support_num_frames"] = len(support_images)
+        inference_state["support_num_frames"] = args.num_support
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
         inference_state["offload_video_to_cpu"] = offload_video_to_cpu
@@ -1671,8 +1671,8 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"].pop(drop_frame)    
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
+        # if not train_agent:
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
 
     def agent_update_first_stage(
         self,
@@ -1710,6 +1710,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
+            num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=False,
             training=train_agent
         )
@@ -1753,8 +1754,8 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict[storage_key].pop(drop_frame)    
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        # if not train_agent:
+        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
         
         if train_agent:
             replay_instance_info = {
@@ -1790,6 +1791,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
+            num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=True
         )
         
