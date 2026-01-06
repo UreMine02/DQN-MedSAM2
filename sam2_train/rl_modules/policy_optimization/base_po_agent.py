@@ -336,7 +336,7 @@ class BasePOAgent(BaseAgent):
         valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
 
         if training:
-            action_idx = torch.multinomial(valid_probs, size=1, replacement=False)
+            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
         else:
             action_idx = torch.argmax(valid_probs)
 
@@ -518,7 +518,7 @@ class BasePOAgent(BaseAgent):
         self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
         self.policy_net.load_state_dict(state_dict["policy_net"])
         self.value_net.load_state_dict(state_dict["value_net"])
-        
+
     def to_distributed(self, rank):
         self.distributed = True
         self.rank = rank
