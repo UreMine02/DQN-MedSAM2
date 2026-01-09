@@ -16,9 +16,9 @@
 export CUDA_VISIBLE_DEVICES=0
 
 python eval_3d.py \
-    -pretrain /data/code/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-08-01-51-23/best.pth \
+    -pretrain output/msd_task02+grpo+icl/2026-01-09-11-23-34/best.pth \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
-    -dataset btcv \
+    -dataset msd \
     -task Task02 \
-    -data_path /data/datasets/BTCV \
-    -num_support 1 \
+    -data_path /data/datasets/nii/MSD \
+    -num_support 5 \
