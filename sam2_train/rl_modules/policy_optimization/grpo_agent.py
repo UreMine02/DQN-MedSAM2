@@ -114,11 +114,7 @@ class GRPOAgent(BasePOAgent):
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
-        self.policy_optimizer = optim.AdamW(
-            self.actor.parameters(),
-            lr=policy_lr,
-            weight_decay=0.01
-        )
+        self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
         
         self.await_group = None
         self.priority = deque(maxlen=buffer_size)

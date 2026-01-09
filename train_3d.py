@@ -64,14 +64,7 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
             
-    for name, param in net.named_parameters():
-        # if "sam_mask_decoder" in name:
-        #     param.requires_grad_(True)
-        # elif "maskmem_tpos_enc" in name:
-        #     param.requires_grad_(True)
-        # else:
-        #     param.requires_grad_(False)
-        
+    for name, param in net.named_parameters():        
         if "image_encoder" in name:
             param.requires_grad_(False)
         elif "sam_prompt_encoder" in name:
@@ -83,8 +76,9 @@ def train(rank=0, world_size=0):
     if agent is not None:
         agent_n_params = agent.num_parameters()
 
-    n_parameters_tot = sum(p.numel() for p in net.parameters()) + agent_n_params
-    print(f'number of params: {n_parameters_tot}')
+    n_parameters_tot = sum(p.numel() for p in net.parameters())
+    print(f'number of sam2 params: {n_parameters_tot}')
+    print(f'number of agent params: {agent_n_params}')
 
     head, fix = [], []
     for k, v in net.named_parameters():
@@ -94,13 +88,14 @@ def train(rank=0, world_size=0):
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
     if args.distributed:
-        net = DDP(net, device_ids=[rank], output_device=rank)
+        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
+    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()

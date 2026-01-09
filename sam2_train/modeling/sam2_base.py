@@ -600,8 +600,10 @@ class SAM2Base(torch.nn.Module):
                     if out is not None:
                         prev_frame_idx_list.append(prev_frame_idx)
                     t_pos_and_prevs.append((t_pos, out))
+                
+                # print("FIFO:", prev_frame_idx_list)
             else:
-                # print(output_dict["non_cond_frame_outputs"].keys())
+                # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(
                     [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )
@@ -694,8 +696,6 @@ class SAM2Base(torch.nn.Module):
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
-        
-        # print(prev_frame_idx_list)
         
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
