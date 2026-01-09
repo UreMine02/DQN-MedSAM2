@@ -256,13 +256,13 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
+            torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()
-            total_policy_gradnorm += gradnorm
+            # total_policy_gradnorm += gradnorm
         
-        return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
+        return {"actor_loss": total_policy_loss / num_update}
     
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         ratio = (log_prob - old_log_prob).exp()

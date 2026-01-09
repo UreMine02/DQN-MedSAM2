@@ -1589,7 +1589,7 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent,
             ) # ask agent
         
-        state.offload_to_cpu()
+        # state.offload_to_cpu()
         
         if train_agent:
             self.agent.init_new_group()
@@ -1672,7 +1672,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
         # if not train_agent:
-        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
+        #     print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
 
     def agent_update_first_stage(
         self,
@@ -1754,8 +1754,8 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict[storage_key].pop(drop_frame)    
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        # if not train_agent:
-        print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        if not train_agent:
+            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
         
         if train_agent:
             replay_instance_info = {

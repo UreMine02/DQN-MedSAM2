@@ -65,19 +65,19 @@ def train(rank=0, world_size=0):
             agent.load_state_dict(weights["agent"])
             
     for name, param in net.named_parameters():
-        if "sam_mask_decoder" in name:
-            param.requires_grad_(True)
-        elif "maskmem_tpos_enc" in name:
-            param.requires_grad_(True)
-        else:
-            param.requires_grad_(False)
-        
-        # if "image_encoder" in name:
-        #     param.requires_grad_(False)
-        # elif "sam_prompt_encoder" in name:
-        #     param.requires_grad_(False)
-        # else:
+        # if "sam_mask_decoder" in name:
         #     param.requires_grad_(True)
+        # elif "maskmem_tpos_enc" in name:
+        #     param.requires_grad_(True)
+        # else:
+        #     param.requires_grad_(False)
+        
+        if "image_encoder" in name:
+            param.requires_grad_(False)
+        elif "sam_prompt_encoder" in name:
+            param.requires_grad_(False)
+        else:
+            param.requires_grad_(True)
         
     agent_n_params = 0
     if agent is not None:
@@ -94,11 +94,12 @@ def train(rank=0, world_size=0):
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
     if args.distributed:
-        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        net = DDP(net, device_ids=[rank], output_device=rank)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
+    param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
 
@@ -173,16 +174,16 @@ def train(rank=0, world_size=0):
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
 
             if args.distributed:
-                dist.all_reduce(iou), dist.all_reduce(dice)
+                dist.all_reduce(iou, op=dist.ReduceOp.AVG), dist.all_reduce(dice, op=dist.ReduceOp.AVG)
                 iou, dice = iou.item(), dice.item()
-                iou, dice = iou/world_size, dice/world_size
+                # iou, dice = iou/world_size, dice/world_size
                 if rank == 0:
                     print(f"val/IOU: {iou}, val/dice : {dice}")
             else:
                 iou, dice = iou.item(), dice.item()
                 print(f"val/IOU: {iou}, val/dice : {dice}")
 
-            if dice > best_dice:
+            if dice > best_dice and rank == 0:
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
