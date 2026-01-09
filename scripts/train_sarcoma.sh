@@ -1,21 +1,21 @@
-#!/bin/bash -l\
+#!/bin/bash -l
 
-# #SBATCH -p a100 # keep as is
-# #SBATCH -N 1 # keep as is
-# #SBATCH -n 32 # num cpus
-# #SBATCH --gres=gpu:4 # num gpus
-# #SBATCH --mem=200GB # ram
-# #SBATCH --time=2-00:00:00 # time
-# #SBATCH -J btcv # job name
-# #SBATCH -A strategic
+#SBATCH -p a100 # keep as is
+#SBATCH -N 1 # keep as is
+#SBATCH -n 32 # num cpus
+#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --mem=200GB # ram
+#SBATCH --time=2-00:00:00 # time
+#SBATCH -J btcv # job name
+#SBATCH -A strategic
 
 # conda activate rlsam2
 # cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+no_agent
-export CUDA_VISIBLE_DEVICES=1
+EXP=sarcoma+grpo+entropy5e-2+3support+0.1penalty
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -31,5 +31,4 @@ python train_3d.py \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \
-    -no_agent \
     -wandb_enabled

@@ -6,6 +6,7 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torchshow as ts
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -294,6 +295,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                     mask = video_segments[frame_idx][obj_id]["image_label"]
+                    pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)
                         (
@@ -310,8 +312,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
-                        pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
+                        
+                    if args.vis:
+                        save_dir = "/".join(args.pretrain.split("/")[:-1])
+                        save_prefix = f"{save_dir}/vis/{packs['case']}_{task}_idx{frame_idx}_"
+                        ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                        ts.overlay(
+                            [save_prefix + "image.png", pred_mask], [1, 0.4],
+                            save_as=save_prefix + "pred.png",
+                            cmap="jet"
+                        )
+                        ts.overlay(
+                            [save_prefix + "image.png", mask], [1, 0.4],
+                            save_as=save_prefix + "mask.png",
+                            cmap="jet"
+                        )
                     
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
