@@ -27,7 +27,7 @@ from omegaconf import OmegaConf
 from hydra import compose
 from hydra.utils import instantiate
 
-import wandb
+# import wandb
 
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
@@ -51,8 +51,8 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             ]
             cfg = compose(config_name=args.rl_config)
             print(cfg)
-            if args.wandb_enabled:
-                wandb.config.update(dict(cfg))
+            # if args.wandb_enabled:
+            #     wandb.config.update(dict(cfg))
             OmegaConf.resolve(cfg)
             net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:

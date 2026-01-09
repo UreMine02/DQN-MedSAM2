@@ -23,7 +23,7 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset btcv \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/BTCV \
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/BTCV \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \

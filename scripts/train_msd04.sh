@@ -24,7 +24,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task04 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
