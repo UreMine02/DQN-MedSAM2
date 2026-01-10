@@ -22,6 +22,6 @@ do
         -rl_config rl_modules/config/grpo_po_agent.yaml \
         -dataset msd \
         -task Task03 \
-        -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
+        -data_path /data/datasets/nii/MSD \
         -num_support $shot
 done

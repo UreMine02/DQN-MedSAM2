@@ -4,12 +4,12 @@ EXP=msd_task03+grpo+icl+entropy1e-3+num_support10+clip_grad0.5+norm0.5
 
 CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \
-    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+    -sam_ckpt /data/checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task03 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
+    -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
