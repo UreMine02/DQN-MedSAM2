@@ -8,10 +8,10 @@
 #SBATCH -J msd03_eval # job name
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03_eval-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
+# conda init
+# conda activate rlsam2
 
 # export CUDA_VISIBLE_DEVICES=1
 
