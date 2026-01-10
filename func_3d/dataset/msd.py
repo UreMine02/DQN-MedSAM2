@@ -81,7 +81,7 @@ class MSD(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id
+            "task": task, "obj_id": obj_id, "vol": os.path.splitext(os.path.basename(image_path))[0]
         }
         
         return output_dict

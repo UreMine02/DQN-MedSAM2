@@ -14,12 +14,11 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+prompt+rl
+EXP=msd_task02+grpo+prompt
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
-    -pretrain output/msd_task02+grpo+prompt/2026-01-09-18-26-53/best.pth \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
@@ -28,11 +27,10 @@ python train_3d.py \
     -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 100 \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
     -val_bg_point 0 \
     -val_fg_point 0 \
     -val_prompt_every -1 \

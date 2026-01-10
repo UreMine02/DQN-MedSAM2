@@ -15,7 +15,7 @@
 # conda activate rlsam2
 
 EXP=sarcoma+grpo+prompt
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 # sleep 4h
 
@@ -32,7 +32,6 @@ python train_3d.py \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
     -val_bg_point 0 \
     -val_fg_point 0 \
     -val_prompt_every -1 \

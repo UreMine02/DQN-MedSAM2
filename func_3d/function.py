@@ -2,11 +2,13 @@
     Yunli Qi
 """
 
+import os
 import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.ops import masks_to_boxes
+import torchshow as ts
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -306,24 +308,34 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                         for frame_idx in range(0, masks_tensor.shape[0], s):
                             gt_mask = masks_tensor[frame_idx]
-                            # point_inputs = build_point_inputs(
-                            #     gt_mask=gt_mask,
-                            #     fg_points=args.val_fg_point,
-                            #     bg_points=args.val_bg_point,
-                            #     video_H=train_state["video_height"],
-                            #     video_W=train_state["video_width"],
-                            #     image_size=net.image_size,
-                            #     device=GPUdevice,
-                            # )
                             
-                            bbox = masks_to_boxes(gt_mask.unsqueeze(0))
-                            _, _, _ = net.train_add_new_bbox(
-                                inference_state=train_state,
-                                frame_idx=frame_idx,
-                                obj_id=obj_id,
-                                bbox=bbox,
-                                normalize_coords=False,
-                            )
+                            if args.val_fg_point != 0 or args.val_bg_point != 0:
+                                point_inputs = build_point_inputs(
+                                    gt_mask=gt_mask,
+                                    fg_points=args.val_fg_point,
+                                    bg_points=args.val_bg_point,
+                                    video_H=train_state["video_height"],
+                                    video_W=train_state["video_width"],
+                                    image_size=net.image_size,
+                                    device=GPUdevice,
+                                )
+                                _, _, _ = net.train_add_new_points(
+                                    inference_state=train_state,
+                                    frame_idx=frame_idx,
+                                    obj_id=obj_id,
+                                    points=point_inputs["point_coords"].to(device=GPUdevice),
+                                    labels=point_inputs["point_labels"].to(device=GPUdevice),
+                                    normalize_coords=False,
+                                )
+                            else:
+                                bbox = masks_to_boxes(gt_mask.unsqueeze(0))
+                                _, _, _ = net.train_add_new_bbox(
+                                    inference_state=train_state,
+                                    frame_idx=frame_idx,
+                                    obj_id=obj_id,
+                                    bbox=bbox,
+                                    normalize_coords=False,
+                                )
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -339,6 +351,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                     mask = video_segments[frame_idx][obj_id]["image_label"]
+                    
+                    pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)
                         (
@@ -355,8 +369,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
-                        pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
+                        
+                    if args.vis:
+                        dir, _ = os.path.split(args.pretrain)
+                        save_prefix = os.path.join(dir, "vis", f"{packs['vol'][0]}_{packs['obj_id'].item()}_idx{frame_idx}_")
+                        ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                        ts.overlay(
+                            [save_prefix + "image.png", pred_mask], [1, 0.4],
+                            save_as=save_prefix + "pred.png",
+                            cmap="jet"
+                        )
+                        ts.overlay(
+                            [save_prefix + "image.png", mask], [1, 0.4],
+                            save_as=save_prefix + "mask.png",
+                            cmap="jet"
+                        )
 
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])

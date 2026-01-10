@@ -13,14 +13,14 @@
 # conda init
 # conda activate rlsam2
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 python eval_3d.py \
-    -pretrain output/msd_task10+grpo+icl/2026-01-09-13-21-21/best.pth \
+    -pretrain output/sarcoma+grpo+prompt/2026-01-10-18-03-35/best.pth \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
-    -dataset msd \
+    -dataset sarcoma \
     -task Task10 \
-    -data_path /data/datasets/nii/MSD \
-    -val_fg_point 1 \
+    -data_path /data/datasets/nii/Sarcoma \
+    -val_fg_point 0 \
     -val_bg_point 0 \
-    -val_prompt_every 10
+    -val_prompt_every -1
