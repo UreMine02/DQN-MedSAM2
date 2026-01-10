@@ -301,14 +301,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             
             with torch.no_grad():
                 with torch.cuda.amp.autocast():
-                    for frame_idx in range(support_masks_tensor.shape[0]):
+                    if args.val_prompt_every != -1:
+                        s = masks_tensor.shape[0] // args.val_prompt_every
+                        s = s if s != 0 else masks_tensor.shape[0]
+                    else:
+                        s = masks_tensor.shape[0]
+
+                    for frame_idx in range(0, masks_tensor.shape[0], s):
+                        gt_mask = masks_tensor[frame_idx]
+                        # point_inputs = build_point_inputs(
+                        #     gt_mask=gt_mask,
+                        #     fg_points=args.val_fg_point,
+                        #     bg_points=args.val_bg_point,
+                        #     video_H=train_state["video_height"],
+                        #     video_W=train_state["video_width"],
+                        #     image_size=net.image_size,
+                        #     device=GPUdevice,
+                        # )
                         
-                        mask = support_masks_tensor[frame_idx]
-                        _, _, _ = net.train_add_new_mask(
+                        bbox = masks_to_boxes(gt_mask.unsqueeze(0))
+                        _, _, _ = net.train_add_new_bbox(
                             inference_state=train_state,
                             frame_idx=frame_idx,
                             obj_id=obj_id,
-                            mask=mask.to(device=GPUdevice),
+                            bbox=bbox,
+                            normalize_coords=False,
                         )
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
