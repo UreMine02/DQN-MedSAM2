@@ -27,9 +27,12 @@ python train_3d.py \
     -data_path /data/rlsam2/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 50 \
+    -eo 100 \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
+    -val_bg_point 0 \
+    -val_fg_point 0 \
+    -val_prompt_every -1 \
+    -train_num_prompted_frame 2 \
     -distributed

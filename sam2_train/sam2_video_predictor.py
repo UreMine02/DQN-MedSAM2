@@ -128,16 +128,16 @@ class SAM2VideoPredictor(SAM2Base):
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
         )
-        support_images = load_video_frames_from_data(
-            imgs_tensor=support_imgs_tensor,
-            offload_video_to_cpu=offload_video_to_cpu,
-            async_loading_frames=async_loading_frames,
-        )
+        # support_images = load_video_frames_from_data(
+        #     imgs_tensor=support_imgs_tensor,
+        #     offload_video_to_cpu=offload_video_to_cpu,
+        #     async_loading_frames=async_loading_frames,
+        # )
         inference_state = {}
         inference_state["images"] = images
-        inference_state["support_images"] = support_images
+        # inference_state["support_images"] = support_images
         inference_state["num_frames"] = len(images)
-        inference_state["support_num_frames"] = args.num_support
+        # inference_state["support_num_frames"] = args.num_support
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
         inference_state["offload_video_to_cpu"] = offload_video_to_cpu
@@ -215,17 +215,17 @@ class SAM2VideoPredictor(SAM2Base):
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
         )
-        support_images = load_video_frames_from_data(
-            imgs_tensor=support_imgs_tensor,
-            offload_video_to_cpu=offload_video_to_cpu,
-            async_loading_frames=async_loading_frames,
-        )
+        # support_images = load_video_frames_from_data(
+        #     imgs_tensor=support_imgs_tensor,
+        #     offload_video_to_cpu=offload_video_to_cpu,
+        #     async_loading_frames=async_loading_frames,
+        # )
 
         inference_state = {}
         inference_state["images"] = images
-        inference_state["support_images"] = support_images
+        # inference_state["support_images"] = support_images
         inference_state["num_frames"] = len(images)
-        inference_state["support_num_frames"] = args.num_support
+        # inference_state["support_num_frames"] = args.num_support
         # whether to offload the video frames to CPU memory
         # turning on this option saves the GPU memory with only a very small overhead
         inference_state["offload_video_to_cpu"] = offload_video_to_cpu
@@ -1290,10 +1290,10 @@ class SAM2VideoPredictor(SAM2Base):
     def _get_image_feature(self, inference_state, frame_idx, batch_size):
         """Compute the image features on a given frame."""
 
-        if inference_state["support_set_stage"]:
-            image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
-        else:
-            image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+        # if inference_state["support_set_stage"]:
+        #     image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+        # else:
+        image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
         backbone_out = self.forward_image(image) # dict_keys(['vision_features', 'vision_pos_enc', 'backbone_fpn'])
         # Cache the most recent frame's feature (for repeated interactions with
         # a frame; we can use an LRU cache for more frames in the future).
@@ -1572,7 +1572,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
+            num_max_prompt=len(output_dict["cond_frame_outputs"]),
             offload_to_cpu=False,
             training=train_agent
         )
@@ -1671,8 +1671,8 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"].pop(drop_frame)    
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        # if not train_agent:
-        #     print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
+        if not train_agent:
+            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size}")
 
     def agent_update_first_stage(
         self,
@@ -1710,7 +1710,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
+            num_max_prompt=len(output_dict["cond_frame_outputs"]),
             offload_to_cpu=False,
             training=train_agent
         )
@@ -1754,8 +1754,8 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict[storage_key].pop(drop_frame)    
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
-        # if not train_agent:
-        #     print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        if not train_agent:
+            print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
         
         if train_agent:
             replay_instance_info = {
@@ -1791,7 +1791,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict,
             frame_idx,
             self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
+            num_max_prompt=len(output_dict["cond_frame_outputs"]),
             offload_to_cpu=True
         )
         
