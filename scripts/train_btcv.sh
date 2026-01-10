@@ -19,11 +19,11 @@ EXP=btcv+grpo+icl
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_ckpt /data/checkpoints/sam2_hiera_tiny.pt \
+    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset btcv \
-    -data_path /data/datasets/nii/BTCV \
+    -data_path /data/rlsam2/datasets/nii/BTCV \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
