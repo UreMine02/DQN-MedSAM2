@@ -445,7 +445,8 @@ class SAM2VideoPredictor(SAM2Base):
         if not isinstance(bbox, torch.Tensor):
             bbox = torch.tensor(bbox, dtype=torch.float32)
         bbox_coords = bbox.reshape(-1, 2, 2)
-        bbox_labels = torch.tensor([2, 3], dtype=torch.int)
+        bbox_labels = torch.tensor([2, 3], dtype=torch.int32, device=inference_state["device"])
+        bbox_labels = bbox_labels.reshape(1, 2)
 
         out_frame_idx, out_obj_ids, out_mask_logits = self.add_new_points(
             inference_state=inference_state,
@@ -471,7 +472,8 @@ class SAM2VideoPredictor(SAM2Base):
         if not isinstance(bbox, torch.Tensor):
             bbox = torch.tensor(bbox, dtype=torch.float32)
         bbox_coords = bbox.reshape(-1, 2, 2)
-        bbox_labels = torch.tensor([2, 3], dtype=torch.int)
+        bbox_labels = torch.tensor([2, 3], dtype=torch.int32, device=inference_state["device"])
+        bbox_labels = bbox_labels.reshape(1, 2)
 
         out_frame_idx, out_obj_ids, out_mask_logits = self.train_add_new_points(
             inference_state=inference_state,
