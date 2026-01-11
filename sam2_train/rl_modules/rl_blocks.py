@@ -154,9 +154,8 @@ class SpatialSummarizer(nn.Module):
         x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
         
         for layer in self.perceiver:
-            # spatial_query = layer(x_f=x, x=spatial_query)
-            
-            spatial_query = checkpoint(layer, x, spatial_query, use_reentrant=False)
+            spatial_query = layer(x_f=x, x=spatial_query)
+            # spatial_query = checkpoint(layer, x, spatial_query, use_reentrant=False)
             
         return spatial_query
     
