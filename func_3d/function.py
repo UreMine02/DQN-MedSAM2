@@ -106,8 +106,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     if use_point:
                         point_inputs = build_point_inputs(
                             gt_mask=gt_mask,
-                            fg_points=10,
-                            bg_points=10,
+                            fg_points=5,
+                            bg_points=5,
                             video_H=train_state["video_height"],
                             video_W=train_state["video_width"],
                             image_size=net.image_size,

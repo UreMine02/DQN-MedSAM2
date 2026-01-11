@@ -16,11 +16,11 @@
 export CUDA_VISIBLE_DEVICES=1
 
 python eval_3d.py \
-    -pretrain output/sarcoma+grpo+prompt/2026-01-10-18-03-35/best.pth \
+    -pretrain output/msd_task02+grpo+prompt/2026-01-11-10-05-32/best.pth \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
-    -dataset sarcoma \
-    -task Task10 \
-    -data_path /data/datasets/nii/Sarcoma \
-    -val_fg_point 0 \
-    -val_bg_point 0 \
-    -val_prompt_every -1
+    -dataset msd \
+    -task Task02 \
+    -data_path /data/datasets/nii/MSD \
+    -val_fg_point 10 \
+    -val_bg_point 5 \
+    -val_prompt_every 10
