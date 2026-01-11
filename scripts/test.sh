@@ -18,7 +18,7 @@ conda activate rlsam2
 for shot in 1 5;
 do
     python eval_3d.py \
-        -pretrain output/msd_task03+grpo+icl/2026-01-08-05-50-58/best.pth \
+        -pretrain /data/rlsam2/DQN-MedSAM2/output/msd_task03+grpo+icl/2026-01-11-11-39-40/best.pth \
         -rl_config rl_modules/config/grpo_po_agent.yaml \
         -dataset msd \
         -task Task03 \
