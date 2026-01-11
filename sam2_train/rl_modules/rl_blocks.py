@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from collections import OrderedDict
 
@@ -138,7 +139,7 @@ class SpatialSummarizer(nn.Module):
         self.down_scale = down_scale
         self.n_query = n_query
         
-        self.qformer = nn.ModuleList(
+        self.perceiver = nn.ModuleList(
             [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads) for _ in range(n_layers)]
         )
         self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
@@ -152,8 +153,10 @@ class SpatialSummarizer(nn.Module):
 
         x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
         
-        for layer in self.qformer:
-            spatial_query = layer(x_f=x, x=spatial_query)
+        for layer in self.perceiver:
+            # spatial_query = layer(x_f=x, x=spatial_query)
+            
+            spatial_query = checkpoint(layer, x, spatial_query, use_reentrant=False)
             
         return spatial_query
     
