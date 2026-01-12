@@ -95,12 +95,12 @@ class Sarcoma(Dataset):
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": name, "case": image_path.split("/")[5]
+            "task": "Sarcoma", "vol": image_path.split("/")[5], "obj_id": name
         }
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, max_slices=16):
+    def load_image_label(self, image_path, label_path, max_slices=16, contiguous=False):
         image_3d = nib.load(image_path, mmap=True)
         data_seg_3d = nib.load(label_path, mmap=True)
         image_3d = image_3d.dataobj
@@ -120,9 +120,15 @@ class Sarcoma(Dataset):
         data_seg_3d = data_seg_3d[:, :, pos_slices]
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
-            start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-            image_3d = image_3d[..., start_slice:start_slice+max_slices]
-            data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+            if contiguous:
+                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+            else:
+                s = image_3d.shape[-1] // (max_slices + 1)
+                slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
 
         image_3d = normalization(image_3d)
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)

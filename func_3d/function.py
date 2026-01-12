@@ -99,15 +99,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             with torch.cuda.amp.autocast():
                 prompt_frames = np.random.choice(
                     masks_tensor.shape[0], size=args.train_num_prompted_frame, replace=False)
-                use_point = np.random.choice([False, True])
-                
+                use_point = np.random.choice([False, True]) if not args.train_only_point else True
+                if args.train_only_point:
+                    assert args.train_fg_point + args.train_bg_point > 0, "train_only_point set to True, please give number of prompts > 0"
+
                 for frame_idx in prompt_frames:
                     gt_mask = masks_tensor[frame_idx]
-                    if use_point:
+                    if use_point and args.train_fg_point + args.train_bg_point > 0:
                         point_inputs = build_point_inputs(
                             gt_mask=gt_mask,
-                            fg_points=5,
-                            bg_points=5,
+                            fg_points=args.train_fg_point,
+                            bg_points=args.train_bg_point,
                             video_H=train_state["video_height"],
                             video_W=train_state["video_width"],
                             image_size=net.image_size,
@@ -310,6 +312,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             gt_mask = masks_tensor[frame_idx]
                             
                             if args.val_fg_point != 0 or args.val_bg_point != 0:
+                                print("Point prompt")
                                 point_inputs = build_point_inputs(
                                     gt_mask=gt_mask,
                                     fg_points=args.val_fg_point,
@@ -328,6 +331,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                     normalize_coords=False,
                                 )
                             else:
+                                print("Box prompt")
                                 bbox = masks_to_boxes(gt_mask.unsqueeze(0))
                                 _, _, _ = net.train_add_new_bbox(
                                     inference_state=train_state,
@@ -373,7 +377,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         
                     if args.vis:
                         dir, _ = os.path.split(args.pretrain)
-                        save_prefix = os.path.join(dir, "vis", f"{packs['vol'][0]}_{packs['obj_id'].item()}_idx{frame_idx}_")
+                        vol = packs['vol'][0]
+                        save_prefix = os.path.join(dir, "vis", f"{vol}_{obj_id}_idx{frame_idx}_")
                         ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
                         ts.overlay(
                             [save_prefix + "image.png", pred_mask], [1, 0.4],
