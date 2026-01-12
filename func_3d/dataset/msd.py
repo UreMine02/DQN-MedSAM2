@@ -9,6 +9,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import normalize 
 
 
 def normalization(image):
@@ -46,6 +47,12 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
+        
+        # self.transform = transforms.Compose([
+        #     transforms.Resize(size=(self.image_size, self.image_size)),
+        #     transforms.ToTensor(),
+        #     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        # ])
         
     def __len__(self):
         return len(self.gt_path)
@@ -88,7 +95,7 @@ class MSD(Dataset):
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection=True):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous'):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -123,9 +130,9 @@ class MSD(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
-
-        image_3d = normalization(image_3d)
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
+        
+        # image_3d = normalization(image_3d) # [H, W, D]
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
@@ -133,5 +140,7 @@ class MSD(Dataset):
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
+        
+        image_3d = normalize(image_3d, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
         return image_3d, data_seg_3d
