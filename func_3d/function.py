@@ -316,7 +316,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
-                        save_prefix = f"{save_dir}/vis/{packs['case']}_{task}_idx{frame_idx}_"
+                        save_prefix = f"{save_dir}/vis/{packs['case']}_{obj_id}_idx{frame_idx}_"
                         ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
                         ts.overlay(
                             [save_prefix + "image.png", pred_mask], [1, 0.4],

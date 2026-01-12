@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import normalize 
 
 
 def normalization(image):
@@ -84,12 +85,16 @@ class Sarcoma(Dataset):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            max_slices=self.video_length if self.subset == "train" else -1
+            # obj_id = 1,
+            max_slices=self.video_length if self.subset == "train" else -1,
+            slice_selection='contiguous'
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            max_slices=self.num_support
+            # obj_id = 1,
+            max_slices=self.num_support,
+            slice_selection='random' if self.subset == 'train' else 'evenly'
         )
         
         output_dict ={
@@ -100,7 +105,7 @@ class Sarcoma(Dataset):
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, max_slices=16):
+    def load_image_label(self, image_path, label_path, max_slices=16, slice_selection='contiguous'):
         image_3d = nib.load(image_path, mmap=True)
         data_seg_3d = nib.load(label_path, mmap=True)
         image_3d = image_3d.dataobj
@@ -120,9 +125,22 @@ class Sarcoma(Dataset):
         data_seg_3d = data_seg_3d[:, :, pos_slices]
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
-            start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-            image_3d = image_3d[..., start_slice:start_slice+max_slices]
-            data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+            if slice_selection == 'contiguous':
+                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+            elif slice_selection == 'random':
+                slice_indices = np.random.choice(image_3d.shape[-1], size=max_slices, replace=False)
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            elif slice_selection == 'evenly':
+                s = image_3d.shape[-1] // (max_slices + 1)
+                slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            else:
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
+
 
         image_3d = normalization(image_3d)
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
@@ -132,8 +150,10 @@ class Sarcoma(Dataset):
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
+        
+        image_3d = normalize(image_3d, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
         # Convert RGB value to class index
-        data_seg_3d = data_seg_3d / 255
+        data_seg_3d[data_seg_3d == 255] = 1
 
         return image_3d, data_seg_3d

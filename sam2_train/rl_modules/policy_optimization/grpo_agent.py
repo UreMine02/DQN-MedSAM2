@@ -277,7 +277,13 @@ class GRPOAgent(BasePOAgent):
             self.actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
             self.actor.policy_net.load_state_dict(state_dict["policy_net"])
         else:
-            self.actor.load_state_dict(state_dict)
+            temp_state_dict = {}
+            for k, v in state_dict.items():
+                if 'perceiver' in k:
+                    k = k.replace('perceiver', 'qformer')
+                temp_state_dict[k] = v
+            
+            self.actor.load_state_dict(temp_state_dict)
         
     def to_distributed(self, rank):
         self.distributed = True
