@@ -89,8 +89,8 @@ class BTCV(Dataset):
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
                 
-        image_3d = np.asanyarray(image_3d)
-        data_seg_3d = np.asanyarray(data_seg_3d)
+        image_3d = np.asanyarray(image_3d, dtype=np.float32)
+        data_seg_3d = np.asanyarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
