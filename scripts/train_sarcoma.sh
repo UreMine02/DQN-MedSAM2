@@ -5,9 +5,9 @@
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=12:00:00 # time
-#SBATCH -J sarcoma+grpo+icl # job name
+#SBATCH -J sarcoma+grpo+prompt # job name
 #SBATCH -A strategic
-#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/sarcoma+grpo+icl-%j.out"
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/sarcoma+grpo+prompt-%j.out"
 
 # conda activate rlsam2
 # cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2

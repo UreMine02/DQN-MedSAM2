@@ -5,16 +5,16 @@
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=24:00:00 # time
-#SBATCH -J msd_task06+grpo+icl # job name
+#SBATCH -J msd_task06+grpo+prompt # job name
 #SBATCH -A strategic
-#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd_task06+grpo+icl-%j.out"
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd_task06+grpo+prompt-%j.out"
 
 # conda activate rlsam2
 # cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task06+grpo+icl
+EXP=msd_task06+grpo+prompt
 # export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
