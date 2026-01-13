@@ -1,14 +1,13 @@
 import os
 import glob
-import time
 import random
 import nibabel as nib
 import numpy as np
-import pandas as pd
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import normalize 
 
 
 def normalization(image):
@@ -17,80 +16,98 @@ def normalization(image):
     image = ((image - image_min)/(image_max-image_min))*255
     return image
 
-def remove_negative_samples(image, mask):
-    pos_slices = np.sum(mask, axis=(0,1)) > 0
-    return image[:, :, pos_slices], mask[:, :, pos_slices]
+def remove_negative_samples(image_tensor, mask_tensor):
+    pos_slices = np.sum(mask_tensor, axis=(0,1)) > 0
+    return image_tensor[:, :, pos_slices], mask_tensor[:, :, pos_slices]
 
 
-class MSD(Dataset):
-    def __init__(self, args, mode="train"):
-        assert mode in ["train", "test"], f"mode must be either 'train' or 'test', got {mode}"
-        self.subset = "Tr" if mode == 'train' else 'Ts'
+class Sarcoma(Dataset):
+    def __init__(self, args, subset="train"):
         self.root = args.data_path
-        self.mode = mode
-        df = []
+        self.subset = subset
+
+        mass_dir = os.path.join(self.root, "16_NIFTI_Soft-tissue-Sarcoma-Mass/MRI")
+        edema_dir = os.path.join(self.root, "17_NIFTI_Soft-tissue-Sarcoma-Edema/MRI")
         
-        csv_root = "./data/MSD"
-        for csv_path in os.listdir(csv_root):
-            if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
-                continue
-            
-            df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
-        
-        df = pd.concat(df)
-        self.gt_path = np.asarray(df["gt_path"])
-        self.task = np.asarray(df["task"])
-        self.obj_id = np.asarray(df["obj_id"])
-        self.n_pos = np.asarray(df["n_pos"])
+        self.train_split = [
+            "STS_001",  "STS_008",  "STS_015",  "STS_021",  "STS_028",  "STS_033",  "STS_039",  "STS_046",
+            "STS_003",  "STS_010",  "STS_016",  "STS_022",  "STS_029",  "STS_035",  "STS_040",  "STS_047",
+            "STS_004",  "STS_011",  "STS_017",  "STS_023",  "STS_030",  "STS_036",  "STS_041",  "STS_048",
+            "STS_006",  "STS_012",  "STS_018",  "STS_024",  "STS_031",  "STS_037",  "STS_042",  "STS_049",
+            "STS_007",  "STS_013",  "STS_019",  "STS_027",  "STS_032",  "STS_038",  "STS_043",  "STS_051",
+        ]
+
+        self.test_split = [
+            "STS_002",  "STS_009",  "STS_020",  "STS_026",  "STS_044",  "STS_050",
+            "STS_005",  "STS_014",  "STS_025",  "STS_034",  "STS_045",
+        ]
+
+        self.train_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.train_split]
+        self.train_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.train_split]
+
+        self.test_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.test_split]
+        self.test_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.test_split]
         
         self.image_size = args.image_size
+        self.video_length = args.video_length
         self.num_support = args.num_support
-        self.max_slices = args.video_length
         
     def __len__(self):
-        return len(self.gt_path)
+        if self.subset == "train":
+            return len(self.train_mass_list + self.train_edema_list)
+        return len(self.test_mass_list + self.test_edema_list)
     
     def __getitem__(self, index):
-        task = self.task[index]
-        obj_id = self.obj_id[index]
-        support_list = (self.task == self.task[index]) & \
-                        (self.obj_id == self.obj_id[index]) & \
-                        (self.n_pos >= self.num_support)
-        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
-        support_index = np.random.choice(support_list, size=1)[0]
+        mass_list = self.train_mass_list if self.subset == "train" else self.test_mass_list
+        edema_list = self.train_edema_list if self.subset == "train" else self.test_edema_list
 
-        label_path = os.path.join(self.root, self.gt_path[index])
-        image_path = os.path.join(self.root, label_path.replace("label", "image"))
+        if index < len(mass_list):
+            path_list = mass_list
+            support_list = self.train_mass_list
+            name = "Mass"
+        else:
+            path_list = edema_list
+            support_list = self.train_edema_list
+            index = index - len(mass_list)
+            name = "Edema"
 
-        support_label_path = os.path.join(self.root, self.gt_path[support_index])
-        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
+        if self.subset == "train":
+            support_index = random.choice([i for i in range(len(support_list)) if i != index])
+        else:
+            support_index = random.choice([i for i in range(len(support_list))])
+
+        image_path = os.path.join(path_list[index], "img", "image.nii.gz")
+        label_path = os.path.join(path_list[index], "label", f"mask_GTV_{name}.nii.gz")
+
+        support_image_path = os.path.join(support_list[support_index], "img", "image.nii.gz")
+        support_label_path = os.path.join(support_list[support_index], "label", f"mask_GTV_{name}.nii.gz")
         
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            obj_id = obj_id,
-            max_slices=self.max_slices if self.mode == "train" else -1,
+            # obj_id = 1,
+            max_slices=self.video_length if self.subset == "train" else -1,
             slice_selection='contiguous'
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            obj_id = obj_id,
+            # obj_id = 1,
             max_slices=self.num_support,
-            slice_selection='random' if self.mode == 'train' else 'evenly'
+            slice_selection='random' if self.subset == 'train' else 'evenly'
         )
         
-        output_dict = {
+        output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id
+            "task": name, "case": image_path.split("/")[-3]
         }
         
         return output_dict
 
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection=True):
-        image_3d = nib.load(image_path)
-        data_seg_3d = nib.load(label_path)
+    def load_image_label(self, image_path, label_path, max_slices=16, slice_selection='contiguous'):
+        image_3d = nib.load(image_path, mmap=True)
+        data_seg_3d = nib.load(label_path, mmap=True)
         image_3d = image_3d.dataobj
         data_seg_3d = data_seg_3d.dataobj
         
@@ -102,7 +119,6 @@ class MSD(Dataset):
                 
         image_3d = np.asanyarray(image_3d)
         data_seg_3d = np.asanyarray(data_seg_3d)
-        data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
@@ -125,7 +141,8 @@ class MSD(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
-        image_3d = normalization(image_3d)
+
+        # image_3d = normalization(image_3d)
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
@@ -133,5 +150,10 @@ class MSD(Dataset):
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
+        
+        image_3d = normalize(image_3d, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+
+        # Convert RGB value to class index
+        data_seg_3d[data_seg_3d == 255] = 1
 
         return image_3d, data_seg_3d
