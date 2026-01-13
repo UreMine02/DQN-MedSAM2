@@ -24,7 +24,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
     -data_path /data/rlsam2/datasets/nii/Sarcoma \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 5 \
