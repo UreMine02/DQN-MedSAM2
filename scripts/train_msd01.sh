@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task01+ppo
+EXP=msd_task01+grpo+icl
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -31,5 +31,5 @@ python train_3d.py \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 10 \
+    -num_support 3 \
     -distributed

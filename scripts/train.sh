@@ -1,6 +1,6 @@
 #!/bin/bash
 
-EXP=msd_task03+ppo+entropy1e-3+num_support10+clip_grad0.5+norm0.5
+EXP=msd_task03+grpo+icl+entropy1e-3+num_support10+clip_grad0.5+norm0.5
 
 CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -exp_name $EXP \
@@ -16,5 +16,5 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 10 \
+    -num_support 3 \
     -distributed
