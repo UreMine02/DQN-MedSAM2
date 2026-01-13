@@ -15,7 +15,7 @@ conda activate rlsam2
 
 # export CUDA_VISIBLE_DEVICES=1
 
-declare -a ckpt=(      
+declare -a ckpt=(
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_0_dice0.4966.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_1_dice0.5437.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_2_dice0.5349.pth
@@ -25,14 +25,14 @@ declare -a ckpt=(
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_6_dice0.5678.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_7_dice0.5562.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_8_dice0.5187.pth
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_9_dice0.4931.pth 
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_10_dice0.6043.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_11_dice0.5031.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_12_dice0.6191.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_13_dice0.5960.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_14_dice0.5499.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_15_dice0.5804.pth  
-    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_16_dice0.6129.pth  
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_9_dice0.4931.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_10_dice0.6043.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_11_dice0.5031.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_12_dice0.6191.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_13_dice0.5960.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_14_dice0.5499.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_15_dice0.5804.pth
+    /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_16_dice0.6129.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_17_dice0.5901.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_18_dice0.5557.pth
     /data/rlsam2/DQN-MedSAM2/output/btcv+grpo+icl/2026-01-13-12-53-09/epoch_19_dice0.5596.pth
@@ -70,7 +70,7 @@ declare -a ckpt=(
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
