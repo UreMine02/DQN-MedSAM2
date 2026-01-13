@@ -26,12 +26,15 @@ python train_3d.py \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/BTCV \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
-    -val_bg_point 0 \
-    -val_fg_point 0 \
+    -val_bg_point 5 \
+    -val_fg_point 5 \
+    -train_bg_point 5 \
+    -train_fg_point 10 \
     -val_prompt_every -1 \
     -train_num_prompted_frame 2 \
+    -train_only_point \
     -distributed
