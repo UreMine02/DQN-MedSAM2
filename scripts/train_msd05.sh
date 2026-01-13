@@ -25,9 +25,9 @@ python train_3d.py \
     -dataset msd \
     -task Task05 \
     -data_path /data/rlsam2/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 50 \
     -q_updates_per_step 5 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
