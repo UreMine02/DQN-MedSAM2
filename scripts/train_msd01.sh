@@ -9,13 +9,13 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd01-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
 EXP=msd_task01+grpo+icl
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -24,7 +24,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task01 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
+    -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
@@ -32,4 +32,4 @@ python train_3d.py \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 3 \
-    -distributed
+    -wandb_enabled

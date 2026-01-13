@@ -225,6 +225,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             task = packs["task"][0]
+            # cls_id = packs["obj_id"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
             # print(f"  Query Total Slices: {whole_masks_tensor.shape[0]}, Classes: {torch.unique(whole_masks_tensor)}")
