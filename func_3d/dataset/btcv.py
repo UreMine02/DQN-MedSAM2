@@ -107,7 +107,7 @@ class BTCV(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
-                s = image_3d.shape[-1] // (max_slices + 1)
+                s = max(image_3d.shape[-1] // (max_slices + 1), 1)
                 slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
