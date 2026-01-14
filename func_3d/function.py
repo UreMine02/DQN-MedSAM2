@@ -100,38 +100,58 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 prompt_frames = np.random.choice(
                     masks_tensor.shape[0], size=args.train_num_prompted_frame, replace=False)
                 use_point = np.random.choice([False, True]) if not args.train_only_point else True
+                
                 if args.train_only_point:
                     assert args.train_fg_point + args.train_bg_point > 0, "train_only_point set to True, please give number of prompts > 0"
 
                 for frame_idx in prompt_frames:
+                    # print(f"Add prompt at frame {frame_idx}")
                     gt_mask = masks_tensor[frame_idx]
-                    if use_point and args.train_fg_point + args.train_bg_point > 0:
-                        point_inputs = build_point_inputs(
-                            gt_mask=gt_mask,
-                            fg_points=args.train_fg_point,
-                            bg_points=args.train_bg_point,
-                            video_H=train_state["video_height"],
-                            video_W=train_state["video_width"],
-                            image_size=net.image_size,
-                            device=GPUdevice,
-                        )
-                        _, _, _ = net.train_add_new_points(
-                            inference_state=train_state,
-                            frame_idx=frame_idx,
-                            obj_id=obj_id,
-                            points=point_inputs["point_coords"].to(device=GPUdevice),
-                            labels=point_inputs["point_labels"].to(device=GPUdevice),
-                            normalize_coords=False,
-                        )
-                    else:
-                        bbox = masks_to_boxes(gt_mask.unsqueeze(0))
-                        _, _, _ = net.train_add_new_bbox(
-                            inference_state=train_state,
-                            frame_idx=frame_idx,
-                            obj_id=obj_id,
-                            bbox=bbox,
-                            normalize_coords=False,
-                        )
+                    point_inputs = build_point_inputs(
+                        gt_mask=gt_mask,
+                        fg_points=args.train_fg_point,
+                        bg_points=args.train_bg_point,
+                        video_H=train_state["video_height"],
+                        video_W=train_state["video_width"],
+                        image_size=net.image_size,
+                        device=GPUdevice,
+                    )
+                    _, _, _ = net.train_add_new_points(
+                        inference_state=train_state,
+                        frame_idx=frame_idx,
+                        obj_id=obj_id,
+                        points=point_inputs["point_coords"].to(device=GPUdevice),
+                        labels=point_inputs["point_labels"].to(device=GPUdevice),
+                        normalize_coords=False,
+                    )
+                    # if use_point:
+                    #     print("Add training point prompt")
+                    #     point_inputs = build_point_inputs(
+                    #         gt_mask=gt_mask,
+                    #         fg_points=args.train_fg_point,
+                    #         bg_points=args.train_bg_point,
+                    #         video_H=train_state["video_height"],
+                    #         video_W=train_state["video_width"],
+                    #         image_size=net.image_size,
+                    #         device=GPUdevice,
+                    #     )
+                    #     _, _, _ = net.train_add_new_points(
+                    #         inference_state=train_state,
+                    #         frame_idx=frame_idx,
+                    #         obj_id=obj_id,
+                    #         points=point_inputs["point_coords"].to(device=GPUdevice),
+                    #         labels=point_inputs["point_labels"].to(device=GPUdevice),
+                    #         normalize_coords=False,
+                    #     )
+                    # else:
+                    #     bbox = masks_to_boxes(gt_mask.unsqueeze(0))
+                    #     _, _, _ = net.train_add_new_bbox(
+                    #         inference_state=train_state,
+                    #         frame_idx=frame_idx,
+                    #         obj_id=obj_id,
+                    #         bbox=bbox,
+                    #         normalize_coords=False,
+                    #     )
                         
 
                 video_segments = {}  # video_segments contains the per-frame segmentation results
@@ -310,36 +330,54 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                         for frame_idx in range(0, masks_tensor.shape[0], s):
                             gt_mask = masks_tensor[frame_idx]
+                            # print("Point prompt")
+                            point_inputs = build_point_inputs(
+                                gt_mask=gt_mask,
+                                fg_points=args.val_fg_point,
+                                bg_points=args.val_bg_point,
+                                video_H=train_state["video_height"],
+                                video_W=train_state["video_width"],
+                                image_size=net.image_size,
+                                device=GPUdevice,
+                            )
+                            _, _, _ = net.train_add_new_points(
+                                inference_state=train_state,
+                                frame_idx=frame_idx,
+                                obj_id=obj_id,
+                                points=point_inputs["point_coords"].to(device=GPUdevice),
+                                labels=point_inputs["point_labels"].to(device=GPUdevice),
+                                normalize_coords=False,
+                            )
                             
-                            if args.val_fg_point != 0 or args.val_bg_point != 0:
-                                print("Point prompt")
-                                point_inputs = build_point_inputs(
-                                    gt_mask=gt_mask,
-                                    fg_points=args.val_fg_point,
-                                    bg_points=args.val_bg_point,
-                                    video_H=train_state["video_height"],
-                                    video_W=train_state["video_width"],
-                                    image_size=net.image_size,
-                                    device=GPUdevice,
-                                )
-                                _, _, _ = net.train_add_new_points(
-                                    inference_state=train_state,
-                                    frame_idx=frame_idx,
-                                    obj_id=obj_id,
-                                    points=point_inputs["point_coords"].to(device=GPUdevice),
-                                    labels=point_inputs["point_labels"].to(device=GPUdevice),
-                                    normalize_coords=False,
-                                )
-                            else:
-                                print("Box prompt")
-                                bbox = masks_to_boxes(gt_mask.unsqueeze(0))
-                                _, _, _ = net.train_add_new_bbox(
-                                    inference_state=train_state,
-                                    frame_idx=frame_idx,
-                                    obj_id=obj_id,
-                                    bbox=bbox,
-                                    normalize_coords=False,
-                                )
+                            # if args.val_fg_point != 0 or args.val_bg_point != 0:
+                            #     print("Point prompt")
+                            #     point_inputs = build_point_inputs(
+                            #         gt_mask=gt_mask,
+                            #         fg_points=args.val_fg_point,
+                            #         bg_points=args.val_bg_point,
+                            #         video_H=train_state["video_height"],
+                            #         video_W=train_state["video_width"],
+                            #         image_size=net.image_size,
+                            #         device=GPUdevice,
+                            #     )
+                            #     _, _, _ = net.train_add_new_points(
+                            #         inference_state=train_state,
+                            #         frame_idx=frame_idx,
+                            #         obj_id=obj_id,
+                            #         points=point_inputs["point_coords"].to(device=GPUdevice),
+                            #         labels=point_inputs["point_labels"].to(device=GPUdevice),
+                            #         normalize_coords=False,
+                            #     )
+                            # else:
+                            #     print("Box prompt")
+                            #     bbox = masks_to_boxes(gt_mask.unsqueeze(0))
+                            #     _, _, _ = net.train_add_new_bbox(
+                            #         inference_state=train_state,
+                            #         frame_idx=frame_idx,
+                            #         obj_id=obj_id,
+                            #         bbox=bbox,
+                            #         normalize_coords=False,
+                            #     )
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
 
