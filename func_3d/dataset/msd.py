@@ -125,14 +125,14 @@ class MSD(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
-                s = image_3d.shape[-1] // (max_slices + 1)
+                s = max(image_3d.shape[-1] // (max_slices + 1), 1)
                 slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
         
-        # image_3d = normalization(image_3d) # [H, W, D]
+        image_3d = normalization(image_3d) # [H, W, D]
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
@@ -141,6 +141,6 @@ class MSD(Dataset):
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
         
-        image_3d = normalize(image_3d, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+        # image_3d = normalize(image_3d, [0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
 
         return image_3d, data_seg_3d
