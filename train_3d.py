@@ -88,15 +88,15 @@ def train(rank=0, world_size=0):
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
     if args.distributed:
+        net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
-        # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
-    # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
+    scheduler = StepLR(optimizer, step_size=20, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -186,7 +186,7 @@ def train(rank=0, world_size=0):
             # if args.wandb_enabled:
             #     wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
 
-        # scheduler.step()
+        scheduler.step()
 
         if args.save_ckpt:
             if args.distributed and rank == 0:
