@@ -84,7 +84,7 @@ class MSD(Dataset):
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random' if self.mode == 'train' else 'evenly'
+            slice_selection='contiguous' if self.mode == 'train' else 'evenly'
         )
         
         output_dict = {
