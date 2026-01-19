@@ -553,9 +553,9 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
     #     print(f"  Number of slices containing Class {obj_id}: {num_slices_with_obj}")
     
     # Support Processing
-    if obj_id in [4, 12]:
-        # print(f"[EXTRACT SUPPORT - BEFORE RESAMPLING] obj_id={obj_id}")
-        class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
+    # if obj_id in [4, 12]:
+    #     # print(f"[EXTRACT SUPPORT - BEFORE RESAMPLING] obj_id={obj_id}")
+    #     class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
     obj_mask = support_masks_tensor == obj_id
     channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()

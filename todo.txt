@@ -1,16 +1,10 @@
-Double DQN
-Dueling DQN
+sarcoma grpo
+(array([0, 1, 2, 3, 4, 5]), array([11, 10, 12, 10, 19, 10]))
+(array([0, 1, 2, 3, 4, 5]), array([10, 12, 17,  9, 13, 11]))
 
-Policy Gradient
-Actor-Critic
+msd02 grpo
+(array([0, 1, 2, 3, 4, 5]), array([21,  1,  7, 11,  8, 15]))
+(array([0, 1, 2, 3, 4, 5]), array([17,  4,  9, 12,  9, 12]))
 
-tensor([[[0.5486, 0.8167, 0.0024,  ..., 0.2112, 0.4738, 0.1312]]],
-       device='cuda:0', requires_grad=True)
-
-tensor([[[0.5486, 0.8167, 0.0024,  ..., 0.2112, 0.4738, 0.1312]]],
-       device='cuda:0', requires_grad=True)
-
-/data/datasets/MSD/Task02_Heart/imagesTs/la_030.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz
-/data/datasets/MSD/Task02_Heart/imagesTs/la_007.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_007.nii.gz
-/data/datasets/MSD/Task02_Heart/imagesTs/la_011.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_011.nii.gz
-/data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz /data/datasets/MSD/Task02_Heart/imagesTs/la_023.nii.gz
+(array([0, 1, 2, 3, 4, 5]), array([23, 61, 42, 38, 44, 31]))
+(array([0, 1, 2, 3, 4, 5]), array([10, 27, 29, 41, 48, 84]))

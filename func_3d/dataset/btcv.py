@@ -45,6 +45,7 @@ class BTCV(Dataset):
         obj_id = self.obj_id[index]
         support_list = (self.obj_id == obj_id) & \
                         (self.n_pos >= self.num_support)
+        
         support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
         support_index = np.random.choice(support_list, size=1)[0]
 
@@ -57,14 +58,14 @@ class BTCV(Dataset):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            obj_id = obj_id,
+            obj_id=obj_id,
             max_slices=self.max_slices if self.subset == "train" else -1,
             slice_selection='contiguous'
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            obj_id = obj_id,
+            obj_id=obj_id,
             max_slices=self.num_support,
             slice_selection='random' if self.subset == 'train' else 'evenly'
         )

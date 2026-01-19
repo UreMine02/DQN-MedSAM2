@@ -221,6 +221,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     score_per_class = {}
     agent_act = not args.no_agent
     # lossfunc = paper_loss
+    
+    dropped_frames_allres_sim_rank = []
+    dropped_frames_lowres_sim_rank = []
 
     # with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
     for packs in val_loader:
@@ -331,6 +334,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         # pbar.update()
         
     average_score(total_score)
+    
+    print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
+    print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
