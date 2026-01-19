@@ -531,7 +531,8 @@ class SAM2Base(torch.nn.Module):
         output_dict,
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
-        agent_act=True
+        agent_act=True,
+        return_attn=False
     ):
         # print("output_dict", output_dict["non_cond_frame_outputs"].keys())
         """Fuse the current frame's visual feature map with previous memory."""
@@ -546,7 +547,7 @@ class SAM2Base(torch.nn.Module):
             return pix_feat
 
         num_obj_ptr_tokens = 0
-        prev_frame_idx_list = []
+        memory_pos = []
         # Step 1: condition the visual features of the current frame on previous memories
         if not is_init_cond_frame:
             # Retrieve the memories encoded with the maskmem backbone
@@ -598,10 +599,11 @@ class SAM2Base(torch.nn.Module):
                         # frames, we still attend to it as if it's a non-conditioning frame.
                         out = unselected_cond_outputs.get(prev_frame_idx, None)
                     if out is not None:
-                        prev_frame_idx_list.append(prev_frame_idx)
+                        memory_pos.append(prev_frame_idx)
+                        
                     t_pos_and_prevs.append((t_pos, out))
                 
-                # print("FIFO:", prev_frame_idx_list)
+                # print("FIFO:", memory_pos)
             else:
                 # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(
@@ -697,13 +699,54 @@ class SAM2Base(torch.nn.Module):
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
         
-        pix_feat_with_mem = self.memory_attention(
+        pix_feat_with_mem, attn_scores = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
             memory=memory,
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
+            return_attn=return_attn,
         )
+        
+        if return_attn:
+            dropped_frames = [idx for idx in output_dict["prev_frame_idx"] if idx not in memory_pos]
+            if dropped_frames:
+                prev_frame_idx = output_dict["prev_frame_idx"]
+                # prev_memory_attn_scores = output_dict["prev_memory_attn_scores"]
+                # argsort = torch.argsort(prev_memory_attn_scores.cpu(), descending=True)
+                # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+                # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+                # output_dict["dropped_frames_attn_rank"].extend(dropped_rank)
+                
+                curr_feats = output_dict["image_features"][frame_idx]
+                allres_sim_list = []
+                lowres_sim_list = []
+                for prev_idx in output_dict["prev_frame_idx"]:
+                    prev_feats = output_dict["image_features"][prev_idx]
+                    sum_sim = 0
+                    for res in range(len(curr_feats)):
+                        curr_feat = curr_feats[res]
+                        prev_feat = prev_feats[res]
+                        curr_feat = F.normalize(curr_feat, p=2, dim=-1)
+                        prev_feat = F.normalize(prev_feat, p=2, dim=-1)
+                        sim = curr_feat @ prev_feat.t()
+                        if res == len(curr_feats) - 1:
+                            lowres_sim_list.append(sim)
+                        sum_sim += sim
+                    allres_sim_list.append(sum_sim)
+
+                argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=True)
+                rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+                dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+                output_dict["dropped_frames_allres_sim_rank"].extend(dropped_rank)
+                
+                argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=True)
+                rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+                dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+                output_dict["dropped_frames_lowres_sim_rank"].extend(dropped_rank)
+            
+            output_dict["prev_frame_idx"] = memory_pos
+            
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem
@@ -769,6 +812,7 @@ class SAM2Base(torch.nn.Module):
         # The previously predicted SAM mask logits (which can be fed together with new clicks in demo).
         prev_sam_mask_logits=None,
         agent_act=True,
+        return_attn=False
     ):
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
@@ -798,7 +842,8 @@ class SAM2Base(torch.nn.Module):
                 output_dict=output_dict,
                 num_frames=num_frames,
                 track_in_reverse=track_in_reverse,
-                agent_act=agent_act
+                agent_act=agent_act,
+                return_attn=return_attn
             )
             # apply SAM-style segmentation head
             # here we might feed previously predicted low-res SAM mask logits into the SAM mask decoder,

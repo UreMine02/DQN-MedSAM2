@@ -31,10 +31,7 @@ class CrossAttention(nn.Module):
         self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
         self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
 
-        self.to_out = nn.Sequential(
-            nn.Linear(inner_dim, query_dim),
-            nn.Dropout(dropout)
-        )
+        self.to_out = nn.Linear(inner_dim, query_dim)
 
         self.prompt_to_prompt = False
     
@@ -107,18 +104,20 @@ class QFormerBlock(nn.Module):
 #         return spatial_query
 
 class PerceiverResampler(nn.Module):
-    def __init__(self, hidden_dim=256, num_heads=1):
+    def __init__(self, hidden_dim=256, num_heads=1, dropout=0.):
         super().__init__()
-        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
+        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads, dropout=dropout)
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))
+            ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim)),
+            ("dropout", nn.Dropout(dropout))
         ]))
         self.norm2 = nn.LayerNorm(hidden_dim)
         
         self.hidden_dim = hidden_dim
+        self.dropout = dropout
         
     def forward(self, x_f, x):
         """
@@ -128,8 +127,8 @@ class PerceiverResampler(nn.Module):
         :param x: [B,L,D]
         """
         
-        x = x + self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1))
-        x = x + self.mlp(self.norm2(x))
+        x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout)
+        x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout)
         return x
     
 class SpatialSummarizer(nn.Module):
@@ -139,7 +138,7 @@ class SpatialSummarizer(nn.Module):
         self.n_query = n_query
         
         self.qformer = nn.ModuleList(
-            [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads) for _ in range(n_layers)]
+            [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads, dropout=dropout) for _ in range(n_layers)]
         )
         self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
