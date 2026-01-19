@@ -162,7 +162,7 @@ class GRPOAgent(BasePOAgent):
         valid_probs = action_probs.gather(0, valid_actions)
         
         if training:
-            main_action_idx = torch.multinomial(valid_probs, 1)
+            main_action_idx = torch.argmax(valid_probs)
             action_idx = torch.multinomial(action_probs.squeeze(), min(len(valid_actions), num_samples))
             
             return {

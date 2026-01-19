@@ -14,14 +14,14 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    output/msd_task02+grpo+icl/2026-01-19-07-08-54/best.pth
+    output/msd_task02+grpo+icl+train_max_policy/2026-01-19-12-34-55/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 1;
+    for shot in 1 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
@@ -29,7 +29,7 @@ do
             -dataset msd \
             -task Task02 \
             -data_path /data/datasets/nii/MSD \
-            -num_support $shot \
+            -num_support $shot
             # -no_agent
             # -vis
     done
