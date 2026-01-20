@@ -1,24 +1,37 @@
-
-msd02 grpo 5 shot
-(array([0, 1, 2, 3, 4, 5, 6]), array([38, 36, 37, 42, 34, 23, 29]))
-(array([0, 1, 2, 3, 4, 5, 6]), array([38, 39, 37, 34, 32, 37, 22]))
+NOTE: higher rank mean higher metric
 
 msd02 grpo 1 shot
-(array([0, 1, 2, 3, 4]), array([59, 55, 56, 53, 25]))
-(array([0, 1, 2, 3, 4]), array([57, 47, 60, 61, 23]))
+allres_sim_rank (array([0, 1, 2, 3, 4]), array([49, 61, 66, 44, 28]))
+lowres_sim_rank (array([0, 1, 2, 3, 4]), array([53, 56, 67, 44, 28]))
+ious_rank (array([0, 1, 2, 3, 4]), array([50, 42, 62, 69, 25]))
+
+msd02 grpo 5 shot
+allres_sim_rank (array([0, 1, 2, 3, 4, 5, 6]), array([45, 45, 48, 38, 34, 19, 11]))
+lowres_sim_rank (array([0, 1, 2, 3, 4, 5, 6]), array([45, 47, 45, 37, 36, 19, 11]))
+ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([37, 40, 47, 37, 33, 32, 14]))
 
 
 msd02 base 1 shot
-(array([0, 1, 2, 3, 4, 5]), array([23, 61, 42, 38, 44, 31]))
-(array([0, 1, 2, 3, 4, 5]), array([10, 27, 29, 41, 48, 84]))
+allres_sim_rank (array([0, 1, 2, 3, 4]), array([219,  11,   6,   2,   1]))
+lowres_sim_rank (array([0, 1, 2, 3, 4, 5]), array([173,  34,  20,   7,   4,   1]))
+ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([75, 20, 18, 16, 14, 25, 71])) 239
 
 msd02 base 5 shot 
-(array([0, 1, 2, 3, 4, 5]), array([23, 61, 42, 38, 44, 31]))
-(array([0, 1, 2, 3, 4, 5]), array([10, 27, 29, 41, 48, 84]))
+allres_sim_rank (array([0, 1, 2, 3, 4]), array([219,  11,   6,   2,   1]))
+lowres_sim_rank (array([0, 1, 2, 3, 4, 5]), array([173,  34,  20,   7,   4,   1]))
+ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([76, 14, 22, 14, 17, 25, 71]))
 
 
 msd02+no_agent+1shot: 0,8632
 msd02+no_agent+5shot: 0,8735
 
-msd02+no_agent+1shot: 0,8661
-msd02+no_agent+5shot: 0,8815
+msd02+grpo+1shot: 0,8661
+msd02+grpo+5shot: 0,8815
+
+SEGMENTATION LOSS ONLY
+
+msd02+no_agent+1shot: 0.8995
+msd02+no_agent+5shot: 0.9082
+
+msd02+grpo+1shot: 0.9074
+msd02+grpo+5shot: 0.9094

@@ -17,6 +17,27 @@ from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load
 from sam2_train.rl_modules.rl_utils import prepare_rl_state, compute_loss
 from sam2_train.rl_modules.policy_optimization.grpo_agent import GRPOAgent
 
+
+def iou_score(pred, mask, smoothing=1e-6):
+    pred = pred.reshape(-1)
+    mask = mask.reshape(-1)
+    
+    interaction = torch.sum(pred * mask)
+    denominator = torch.count_nonzero(pred + mask)
+
+    iou = (interaction+smoothing)/(denominator+smoothing)
+    return iou
+
+def dice_score(pred, mask, smoothing=1e-6):
+    pred = pred.reshape(-1)
+    mask = mask.reshape(-1)
+    
+    interaction = torch.sum(pred * mask)
+    denominator = torch.sum(pred) + torch.sum(mask)
+
+    dice_score = (2*interaction+smoothing)/(denominator+smoothing)
+    return dice_score
+
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
 
@@ -176,6 +197,10 @@ class SAM2VideoPredictor(SAM2Base):
             "prev_frame_idx": [],
             "dropped_frames_allres_sim_rank": [],
             "dropped_frames_lowres_sim_rank": [],
+            "dropped_frames_ious_rank": [],
+            "dropped_frames_dice_rank": [],
+            "gt_ious": {},
+            "gt_dice": {}
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -270,6 +295,10 @@ class SAM2VideoPredictor(SAM2Base):
             "prev_frame_idx": [],
             "dropped_frames_allres_sim_rank": [],
             "dropped_frames_lowres_sim_rank": [],
+            "dropped_frames_ious_rank": [],
+            "dropped_frames_dice_rank": [],
+            "gt_ious": {},
+            "gt_dice": {}
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -1224,6 +1253,10 @@ class SAM2VideoPredictor(SAM2Base):
             _, video_res_masks = self._get_orig_video_res_output(
                 inference_state, pred_masks
             )
+            
+            # pred = (torch.sigmoid(video_res_masks[0]) > 0.5).float()
+            # output_dict["gt_ious"][frame_idx] = iou_score(pred, inference_state["gt_masks"][frame_idx])
+            # output_dict["gt_dice"][frame_idx] = dice_score(pred, inference_state["gt_masks"][frame_idx])
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks
 
         if train_agent:
@@ -1605,7 +1638,7 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent,
             ) # ask agent
 
-        state.offload_to_cpu()
+        # state.offload_to_cpu()
 
         if train_agent:
             self.agent.init_new_group()
@@ -1689,34 +1722,41 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"].pop(drop_frame)
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
             
-        if not train_agent and drop_frame is not None:
-            curr_feats = output_dict["image_features"][frame_idx]
-            allres_sim_list = []
-            lowres_sim_list = []
-            for prev_idx in prev_frames:
-                prev_feats = output_dict["image_features"][prev_idx]
-                sum_sim = 0
-                for res in range(len(curr_feats)):
-                    curr_feat = curr_feats[res]
-                    prev_feat = prev_feats[res]
-                    curr_feat = F.normalize(curr_feat, p=2, dim=-1)
-                    prev_feat = F.normalize(prev_feat, p=2, dim=-1)
-                    sim = curr_feat @ prev_feat.t()
-                    if res == len(curr_feats) - 1:
-                        lowres_sim_list.append(sim.item())
-                    sum_sim += sim
-                allres_sim_list.append(sum_sim.item())
+        # if not train_agent and drop_frame is not None:
+        #     curr_feats = output_dict["image_features"][frame_idx]
+        #     allres_sim_list = []
+        #     lowres_sim_list = []
+        #     ious_list = []
+        #     for prev_idx in prev_frames:
+        #         prev_feats = output_dict["image_features"][prev_idx]
+        #         sum_sim = 0
+        #         for res in range(len(curr_feats)):
+        #             curr_feat = curr_feats[res]
+        #             prev_feat = prev_feats[res]
+        #             curr_feat = F.normalize(curr_feat, p=2, dim=-1)
+        #             prev_feat = F.normalize(prev_feat, p=2, dim=-1)
+        #             sim = curr_feat @ prev_feat.t()
+        #             if res == len(curr_feats) - 1:
+        #                 lowres_sim_list.append(sim.item())
+        #             sum_sim += sim
+        #         allres_sim_list.append(sum_sim.item())
+        #         ious_list.append(output_dict["gt_ious"][prev_idx])
 
-            # print(allres_sim_list, lowres_sim_list)
-            argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=True)
-            rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-            dropped_rank = rank[prev_frames.index(drop_frame)].item()
-            output_dict["dropped_frames_allres_sim_rank"].append(dropped_rank)
+        #     # print(allres_sim_list, lowres_sim_list)
+        #     argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=False)
+        #     rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+        #     dropped_rank = rank[prev_frames.index(drop_frame)].item()
+        #     output_dict["dropped_frames_allres_sim_rank"].append(dropped_rank)
             
-            argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=True)
-            rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-            dropped_rank = rank[prev_frames.index(drop_frame)].item()
-            output_dict["dropped_frames_lowres_sim_rank"].append(dropped_rank)
+        #     argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=False)
+        #     rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+        #     dropped_rank = rank[prev_frames.index(drop_frame)].item()
+        #     output_dict["dropped_frames_lowres_sim_rank"].append(dropped_rank)
+            
+        #     argsort = torch.argsort(torch.Tensor(ious_list), descending=False)
+        #     rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+        #     dropped_rank = rank[prev_frames.index(drop_frame)].item()
+        #     output_dict["dropped_frames_ious_rank"].append(dropped_rank)
 
         if not train_agent:
             print(f"[Q] frame {frame_idx-1} "
