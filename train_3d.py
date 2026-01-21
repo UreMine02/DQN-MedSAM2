@@ -64,14 +64,16 @@ def train(rank=0, world_size=0):
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
-            
-    for name, param in net.named_parameters():        
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        else:
-            param.requires_grad_(True)
+
+    # if not using agent, fallback to SAM2 fullfinetuning
+    if not args.no_agent:
+        for name, param in net.named_parameters():        
+            if "image_encoder" in name:
+                param.requires_grad_(False)
+            elif "sam_prompt_encoder" in name:
+                param.requires_grad_(False)
+            else:
+                param.requires_grad_(True)
         
     agent_n_params = 0
     if agent is not None:
