@@ -13,7 +13,7 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 3 \
