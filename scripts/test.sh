@@ -16,11 +16,13 @@
 declare -a ckpt=(
     # output/msd_task02+grpo+icl+train_max_policy/2026-01-19-12-34-55/best.pth
     # output/msd_task02+no_agent+icl/2026-01-19-14-26-46/epoch_49_dice0.8807.pth
-    output/msd_task02+no_agent+icl+segmentation_loss_only/2026-01-19-20-13-15/best.pth
+    # output/msd_task02+no_agent+icl+segmentation_loss_only/2026-01-19-20-13-15/best.pth
     # output/msd_task02+grpo+icl+segmentation_loss_only/2026-01-19-21-14-00/best.pth
+    # output/sarcoma+grpo+icl/2026-01-21-13-06-51/best.pth
+    output/sarcoma+grpo+icl+entrop1e-3/2026-01-21-18-03-09/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
@@ -29,11 +31,11 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
+            -dataset sarcoma \
             -task Task02 \
-            -data_path /data/datasets/nii/MSD \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
-            -no_agent
+            # -no_agent
             # -vis
     done
 done

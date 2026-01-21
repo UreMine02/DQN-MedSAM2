@@ -222,7 +222,7 @@ class BasePolicyNetwork(nn.Module):
         actions_probs = torch.softmax(actions_logits, dim=1)
 
         # if not training:
-        #     print(actions_logits.squeeze())
+            # print(actions_logits.squeeze())
         #     print(actions_probs.squeeze())
 
         return actions_probs.squeeze(-1)
