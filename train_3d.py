@@ -64,14 +64,15 @@ def train(rank=0, world_size=0):
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
-            
-    for name, param in net.named_parameters():        
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        else:
-            param.requires_grad_(True)
+    
+    if not args.no_agent:
+        for name, param in net.named_parameters():        
+            if "image_encoder" in name:
+                param.requires_grad_(False)
+            elif "sam_prompt_encoder" in name:
+                param.requires_grad_(False)
+            else:
+                param.requires_grad_(True)
         
     agent_n_params = 0
     if agent is not None:
@@ -179,7 +180,7 @@ def train(rank=0, world_size=0):
                 iou, dice = iou.item(), dice.item()
                 print(f"val/IOU: {iou}, val/dice : {dice}")
 
-            if dice > best_dice:
+            if dice > best_dice and rank==0:
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
