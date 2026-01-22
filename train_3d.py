@@ -180,7 +180,7 @@ def train(rank=0, world_size=0):
                 iou, dice = iou.item(), dice.item()
                 print(f"val/IOU: {iou}, val/dice : {dice}")
 
-            if dice > best_dice:
+            if dice > best_dice and rank==0:
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
