@@ -200,7 +200,9 @@ class SAM2VideoPredictor(SAM2Base):
             "dropped_frames_ious_rank": [],
             "dropped_frames_dice_rank": [],
             "gt_ious": {},
-            "gt_dice": {}
+            "gt_dice": {},
+            "most_allres_sim_prev_frame": {},
+            "most_lowres_sim_prev_frame": {}
         }
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
