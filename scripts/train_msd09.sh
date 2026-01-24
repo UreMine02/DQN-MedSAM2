@@ -4,9 +4,8 @@
 #SBATCH -n 32 # num cpus
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
-#SBATCH --time=2-00:00:00 # time
+#SBATCH --time=4:00:00 # time
 #SBATCH -J msd09 # job name
-#SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd09-%j.out"
 
 conda activate rlsam2
@@ -14,7 +13,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task09+grpo
+EXP=msd_task09+grpo+icl
 
 python train_3d.py \
     -exp_name $EXP \
@@ -27,7 +26,7 @@ python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 3 \
