@@ -126,7 +126,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # Calculate the loss
                     obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                     iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                    # pred = (torch.sigmoid(pred) > 0.5).float()
                     pred_mask = (torch.sigmoid(pred) > 0.5).float()
                     iou_gt = iou_score(pred_mask, mask)
                     dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
@@ -148,12 +147,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 optimizer.zero_grad()
                 avg_loss.backward()
-                # grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
                 metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                # metric_logger.update(grad_norm=grad_total_norm)
+                metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
                 if agent is not None:
