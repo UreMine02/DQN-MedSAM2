@@ -24,7 +24,7 @@ NO_OBJ_SCORE = -1024.0
 def iou_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)
     mask = mask.reshape(-1)
-    
+
     interaction = torch.sum(pred * mask)
     denominator = torch.count_nonzero(pred + mask)
 
@@ -384,11 +384,11 @@ class SAM2Base(torch.nn.Module):
                 )
             # convert masks from possibly bfloat16 (or float16) to float32
             # (older PyTorch versions before 2.1 don't support `interpolate` on bf16)
-            
+
             # print('backbone_features', backbone_features.size())
             # print('low_res_multimasks', low_res_multimasks.size())
             # print('multimask_output', multimask_output)
-            
+
             # if i < self.num_iterative_loop - 1:
             #     backbone_features = self.backboneUpdate(backbone_features, low_res_multimasks)
                 # print('backbone_features_after', backbone_features.size())
@@ -404,10 +404,10 @@ class SAM2Base(torch.nn.Module):
             size=(self.image_size, self.image_size),
             mode="bilinear",
             align_corners=False,
-        ) # torch.Size([1, 1, 1024, 1024]) 
+        ) # torch.Size([1, 1, 1024, 1024])
         # low_res_mask [1, 1, 256, 256] -> X [1, 256, 64, 64] -> embedding (token) + image embedding [1,256,64,64]->[1,256,64x64] -> attention -> high_res_mask
-        # low_res_mask -> interpolate 
-        sam_output_token = sam_output_tokens[:, 0]  
+        # low_res_mask -> interpolate
+        sam_output_token = sam_output_tokens[:, 0]
         if multimask_output:
             # take the best mask prediction (with the highest IoU estimation)
             best_iou_inds = torch.argmax(ious, dim=-1)
@@ -423,7 +423,7 @@ class SAM2Base(torch.nn.Module):
         # print('best iou', best_iou)
 
 
-           
+
         # Extract object pointer from the SAM output token (with occlusion handling)
         obj_ptr = self.obj_ptr_proj(sam_output_token) # torch.Size([1, 256])
         if self.pred_obj_scores:
@@ -507,7 +507,7 @@ class SAM2Base(torch.nn.Module):
         if self.use_high_res_features_in_sam:
             # precompute projected level 0 and level 1 features in SAM decoder
             # to avoid running it again on every SAM click
-            backbone_out["backbone_fpn"][0] = self.sam_mask_decoder.conv_s0( 
+            backbone_out["backbone_fpn"][0] = self.sam_mask_decoder.conv_s0(
                 backbone_out["backbone_fpn"][0]
             )
             backbone_out["backbone_fpn"][1] = self.sam_mask_decoder.conv_s1(
@@ -576,7 +576,7 @@ class SAM2Base(torch.nn.Module):
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
             # We also allow taking the memory frame non-consecutively (with r>1), in which case
             # we take (self.num_maskmem - 2) frames among every r-th frames plus the last frame.
-            
+
             if not agent_act:
                 r = self.memory_temporal_stride_for_eval
                 for t_pos in range(1, self.num_maskmem):
@@ -610,9 +610,9 @@ class SAM2Base(torch.nn.Module):
                         out = unselected_cond_outputs.get(prev_frame_idx, None)
                     if out is not None:
                         memory_pos.append(prev_frame_idx)
-                        
+
                     t_pos_and_prevs.append((t_pos, out))
-                
+
                 # print("FIFO:", memory_pos)
             else:
                 # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
@@ -664,7 +664,7 @@ class SAM2Base(torch.nn.Module):
                     )
                     if out is not None:
                         pos_and_ptrs.append((t_diff, out["obj_ptr"]))
-                
+
                 # If we have at least one object pointer, add them to the across attention
                 if len(pos_and_ptrs) > 0:
                     pos_list, ptrs_list = zip(*pos_and_ptrs)
@@ -708,7 +708,7 @@ class SAM2Base(torch.nn.Module):
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
-        
+
         pix_feat_with_mem, attn_scores = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
@@ -717,61 +717,66 @@ class SAM2Base(torch.nn.Module):
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             return_attn=False,
         )
-        return_attn = False
+
+        return_attn = True
         if return_attn:
-            dropped_frames = [idx for idx in output_dict["prev_frame_idx"] if idx not in memory_pos]
-            if dropped_frames:
-                prev_frame_idx = output_dict["prev_frame_idx"] + [frame_idx - 1]
+            # dropped_frames = [idx for idx in output_dict["prev_frame_idx"] if idx not in memory_pos]
+            # if dropped_frames:
+                # prev_frame_idx = output_dict["prev_frame_idx"] + [frame_idx - 1]
                 # print(prev_frame_idx)
                 # prev_memory_attn_scores = output_dict["prev_memory_attn_scores"]
                 # argsort = torch.argsort(prev_memory_attn_scores.cpu(), descending=True)
                 # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
                 # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
                 # output_dict["dropped_frames_attn_rank"].extend(dropped_rank)
-                
-                curr_feats = output_dict["image_features"][frame_idx]
-                prev_idx_list = []
-                allres_sim_list = []
-                lowres_sim_list = []
-                ious_list = []
-                dice_list = []
-                for prev_idx, prev_feats in output_dict["image_features"].items():
-                    # prev_feats = output_dict["image_features"][prev_idx]
-                    prev_idx_list.append(prev_idx)
-                    sum_sim = 0
-                    for res in range(len(curr_feats)):
-                        curr_feat = curr_feats[res]
-                        prev_feat = prev_feats[res]
-                        curr_feat = F.normalize(curr_feat, p=2, dim=-1)
-                        prev_feat = F.normalize(prev_feat, p=2, dim=-1)
-                        sim = curr_feat @ prev_feat.t()
-                        if res == len(curr_feats) - 1:
-                            lowres_sim_list.append(sim)
-                        sum_sim += sim
-                    allres_sim_list.append(sum_sim)
-                    # ious_list.append(output_dict["gt_ious"][prev_idx])
-                    # dice_list.append(output_dict["gt_dice"][prev_idx])
 
-                # argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=False)
-                # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                # output_dict["dropped_frames_allres_sim_rank"].extend(dropped_rank)
-                
-                # argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=False)
-                # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                # output_dict["dropped_frames_lowres_sim_rank"].extend(dropped_rank)
-                
-                output_dict["most_allres_sim_prev_frame"] = prev_idx_list[torch.argmax(torch.Tensor(allres_sim_list))]
-                output_dict["most_lowres_sim_prev_frame"] = prev_idx_list[torch.argmax(torch.Tensor(lowres_sim_list))]
-                
-                # argsort = torch.argsort(torch.Tensor(ious_list), descending=False)
-                # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                # output_dict["dropped_frames_ious_rank"].extend(dropped_rank)
-                
+            curr_feats = output_dict["image_features"][frame_idx]
+            prev_idx_list = []
+            allres_sim_list = []
+            lowres_sim_list = []
+            ious_list = []
+            dice_list = []
+            for prev_idx, prev_feats in output_dict["image_features"].items():
+                # prev_feats = output_dict["image_features"][prev_idx]
+                if prev_idx == frame_idx:
+                    continue
+
+                prev_idx_list.append(prev_idx)
+                sum_sim = 0
+                for res in range(len(curr_feats)):
+                    curr_feat = curr_feats[res]
+                    prev_feat = prev_feats[res]
+                    curr_feat = F.normalize(curr_feat, p=2, dim=-1)
+                    prev_feat = F.normalize(prev_feat, p=2, dim=-1)
+                    sim = curr_feat @ prev_feat.t()
+                    if res == len(curr_feats) - 1:
+                        lowres_sim_list.append(sim)
+                    sum_sim += sim
+                allres_sim_list.append(sum_sim)
+                # ious_list.append(output_dict["gt_ious"][prev_idx])
+                # dice_list.append(output_dict["gt_dice"][prev_idx])
+
+            # argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=False)
+            # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+            # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+            # output_dict["dropped_frames_allres_sim_rank"].extend(dropped_rank)
+
+            # argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=False)
+            # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+            # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+            # output_dict["dropped_frames_lowres_sim_rank"].extend(dropped_rank)
+
+            if len(allres_sim_list) > 0:
+                output_dict["most_allres_sim_prev_frame"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(allres_sim_list))]
+                output_dict["most_lowres_sim_prev_frame"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(lowres_sim_list))]
+
+            # argsort = torch.argsort(torch.Tensor(ious_list), descending=False)
+            # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+            # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
+            # output_dict["dropped_frames_ious_rank"].extend(dropped_rank)
+
             output_dict["prev_frame_idx"] = memory_pos
-            
+
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem
@@ -950,5 +955,4 @@ class SAM2Base(torch.nn.Module):
         pred_masks = torch.where(keep, pred_masks, torch.clamp(pred_masks, max=-10.0))
         return pred_masks
 
-    
-        
+

@@ -194,6 +194,7 @@ class SAM2VideoPredictor(SAM2Base):
             "await_outputs": {},
             "prev_memory_attn_scores": {},
             "image_features": {},
+            "masked_image_features": {},
             "prev_frame_idx": [],
             "dropped_frames_allres_sim_rank": [],
             "dropped_frames_lowres_sim_rank": [],
@@ -294,6 +295,7 @@ class SAM2VideoPredictor(SAM2Base):
             "await_outputs": {},
             "prev_memory_attn_scores": {},
             "image_features": {},
+            "masked_image_features": {},
             "prev_frame_idx": [],
             "dropped_frames_allres_sim_rank": [],
             "dropped_frames_lowres_sim_rank": [],
@@ -1389,7 +1391,14 @@ class SAM2VideoPredictor(SAM2Base):
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
         
         if "image_features" in output_dict:
-            output_dict["image_features"][frame_idx] = [feat.mean(dim=0) for feat in current_vision_feats]
+            output_dict["image_features"][frame_idx] = []
+            output_dict["masked_image_features"][frame_idx] = []
+            for i, size in enumerate(feat_sizes):
+                gt_mask = inference_state["gt_masks"][[frame_idx]].float()
+                lowres_mask = F.interpolate(gt_mask.unsqueeze(1), size=size, mode="nearest").squeeze(1)
+                lowres_mask = lowres_mask.reshape(-1, 1, 1)
+                output_dict["image_features"][frame_idx].append(current_vision_feats[i].mean(dim=0))
+                output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask).mean(dim=0))
 
         storage_device = inference_state["device"]
 
@@ -1760,11 +1769,11 @@ class SAM2VideoPredictor(SAM2Base):
         #     dropped_rank = rank[prev_frames.index(drop_frame)].item()
         #     output_dict["dropped_frames_ious_rank"].append(dropped_rank)
 
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} "
-                  f"action {action} "
-                  f"drop_frame {drop_frame} "
-                  f"bank_size {bank_size} ")
+        # if not train_agent:
+        #     print(f"[Q] frame {frame_idx-1} "
+        #           f"action {action} "
+        #           f"drop_frame {drop_frame} "
+        #           f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

@@ -40,9 +40,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
-    
+
     net.train()
-        
+
     video_length = args.video_length
     train_agent = not args.no_agent
     agent_act = not args.no_agent
@@ -65,9 +65,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         task = packs["task"][0]
-        
+
         obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
-        instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0} 
+        instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
         for obj_id in obj_list:
             pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
                                     obj_id=obj_id, video_length=args.video_length, num_support=args.num_support)
@@ -76,7 +76,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 continue
             # torch.cuda.empty_cache()
             if obj_id not in dice_loss_per_class.keys():
-                dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0} 
+                dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0}
             imgs_tensor = pack['image']
             masks_tensor = pack['label']
 
@@ -88,12 +88,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
                 print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 continue
-            
+
             train_state = net.train_init_state(
                 args=args,
                 imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
             )
-            
+
             with torch.cuda.amp.autocast():
                 for frame_idx in range(support_masks_tensor.shape[0]):
                     mask = support_masks_tensor[frame_idx]
@@ -112,9 +112,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
                         for i, out_obj_id in enumerate(out_obj_ids)
                     }
-                
+
                 # Record the loss in this step
-                class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0} 
+                class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
 
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
@@ -136,12 +136,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                     dice_loss_per_class[obj_id]["num_step"] += 1
-                
+
                 # Average loss of this class
                 average_loss(class_loss)
                 avg_loss = class_loss["total_loss"]
                 # avg_loss = class_loss["dice_loss"] + class_loss["focal_loss"]
-                
+
                 to_reduce = {k: class_loss[k] for k in class_loss.keys() if k != "num_step"}
                 losses_reduced = reduce_dict(to_reduce)
                 loss_value = sum(losses_reduced.values()).item()
@@ -150,11 +150,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 avg_loss.backward()
                 # grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                 optimizer.step()
-                
+
                 metric_logger.update(loss=loss_value, **losses_reduced)
                 metric_logger.update(lr=optimizer.param_groups[0]["lr"])
                 # metric_logger.update(grad_norm=grad_total_norm)
-                
+
                 agent = getattr(net, "agent", None)
                 if agent is not None:
                     q_updates_per_step = getattr(args, "q_updates_per_step", 0)
@@ -168,23 +168,23 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             metric_logger.update(critic_gradnorm=agent_step_loss["critic_gradnorm"].item())
                             agent_loss["critic_loss"] += agent_step_loss["critic_loss"]
                         agent_step += 1
-                            
+
                 # Add the loss of the class to the instance
                 update_loss(
-                    instance_loss, 
+                    instance_loss,
                     class_loss["focal_loss"].item(),
                     class_loss["dice_loss"].item(),
                     class_loss["mae_loss"].item(),
                     class_loss["bce_loss"].item()
                 )
                 instance_loss["num_step"] += 1
-        
+
         average_loss(instance_loss)
 
-        update_loss(total_loss, 
-            instance_loss["focal_loss"], 
-            instance_loss["dice_loss"], 
-            instance_loss["mae_loss"], 
+        update_loss(total_loss,
+            instance_loss["focal_loss"],
+            instance_loss["dice_loss"],
+            instance_loss["mae_loss"],
             instance_loss["bce_loss"]
         )
         total_loss["num_step"] += 1
@@ -192,7 +192,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
-    
+
     if agent_step > 0:
         avg_agent_loss = {}
         avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
@@ -202,7 +202,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             "actor_loss": 0,
             "critic_loss": 0,
         }
-    
+
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
@@ -215,16 +215,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     # eval mode
     net.eval()
     n_val = len(val_loader)
-    
+
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
     score_per_class = {}
     agent_act = not args.no_agent
     # lossfunc = paper_loss
-    
+
     dropped_frames_allres_sim_rank = []
     dropped_frames_lowres_sim_rank = []
     dropped_frames_ious_rank = []
     dropped_frames_dice_rank = []
+
+    most_allres_sim = {}
+    most_lowres_sim = {}
+    most_masked_allres_sim = {}
+    most_masked_lowres_sim = {}
+    most_iou_sim = {}
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
         for packs in val_loader:
@@ -233,6 +239,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             task = packs["task"][0]
+            name = packs["name"][0]
             # cls_id = packs["obj_id"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
@@ -255,7 +262,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         "dice": torch.FloatTensor([]).to(device=GPUdevice),
                         "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
                     }
-                    
+
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
 
@@ -273,12 +280,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
                     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                     continue
-        
+
                 train_state = net.val_init_state(
                     args=args,
                     imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
                 )
-                
+
                 with torch.no_grad():
                     with torch.cuda.amp.autocast():
                         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -291,19 +298,19 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             )
 
                         video_segments = {}  # video_segments contains the per-frame segmentation results
-                    
+
                         for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act):
                             video_segments[out_frame_idx] = {
                                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                                 "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
                                 for i, out_obj_id in enumerate(out_obj_ids)
                             }
-                
+
                 dropped_frames_allres_sim_rank.extend(train_state["output_dict"]["dropped_frames_allres_sim_rank"])
                 dropped_frames_lowres_sim_rank.extend(train_state["output_dict"]["dropped_frames_lowres_sim_rank"])
                 dropped_frames_ious_rank.extend(train_state["output_dict"]["dropped_frames_ious_rank"])
                 dropped_frames_dice_rank.extend(train_state["output_dict"]["dropped_frames_dice_rank"])
-                            
+
                 # Record the loss in this step
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
@@ -319,7 +326,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         ) = eval_seg(pred, mask)
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
-                        
+
                         score_dict = score_per_class[f"{task}_{obj_id}"]
 
                         score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
@@ -327,7 +334,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
-                        
+
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
                         save_prefix = f"{save_dir}/vis/{packs['case']}_{obj_id}_idx{frame_idx}_"
@@ -342,53 +349,161 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             save_as=save_prefix + "mask.png",
                             cmap="jet"
                         )
-                    
+
                 average_score(class_score)
                 update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
 
                 instance_score["num_step"] += 1
+
+                # # ABLATION STUDY
+                # most_allres_sim[f"{name}_{obj_id}"] = {}
+                # most_lowres_sim[f"{name}_{obj_id}"] = {}
+                # most_masked_allres_sim[f"{name}_{obj_id}"] = {}
+                # most_masked_lowres_sim[f"{name}_{obj_id}"] = {}
+                # most_iou_sim[f"{name}_{obj_id}"] = {}
+                # for frame_idx in (train_state["output_dict"]["image_features"].keys()):
+                #     curr_feats = train_state["output_dict"]["image_features"][frame_idx]
+                #     curr_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
+                #     curr_gt = train_state["gt_masks"][frame_idx].float()
+
+                #     prev_idx_list = []
+                #     allres_sim_list = []
+                #     lowres_sim_list = []
+                #     masked_allres_sim_list = []
+                #     masked_lowres_sim_list = []
+                #     gt_iou_list = []
+                #     for prev_idx in reversed(train_state["output_dict"]["image_features"].keys()):
+                #         if prev_idx >= frame_idx:
+                #             continue
+                        
+                #         prev_feats = train_state["output_dict"]["image_features"][prev_idx]
+                #         prev_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
+                #         prev_gt = train_state["gt_masks"][prev_idx].float()
+                #         iou = iou_score(prev_gt, curr_gt)
+
+                #         sum_sim, sum_masked_sim = 0, 0
+                #         for res in range(len(curr_feats)):
+                #             curr_feat = curr_feats[res]
+                #             prev_feat = prev_feats[res]
+                #             curr_masked_feat = curr_masked_feats[res]
+                #             prev_masked_feat = prev_masked_feats[res]
+                #             curr_feat = F.normalize(curr_feat, p=2, dim=-1)
+                #             prev_feat = F.normalize(prev_feat, p=2, dim=-1)
+                #             curr_masked_feat = F.normalize(curr_masked_feat, p=2, dim=-1)
+                #             prev_masked_feat = F.normalize(prev_masked_feat, p=2, dim=-1)
+                            
+                #             sim = curr_feat @ prev_feat.t()
+                #             masked_sim = curr_masked_feat @ prev_masked_feat.t()
+                            
+                #             if res == len(curr_feats) - 1:
+                #                 lowres_sim_list.append(sim)
+                #                 masked_lowres_sim_list.append(masked_sim)
+                                
+                #             sum_sim += sim
+                #             sum_masked_sim += masked_sim
+
+                #         allres_sim_list.append(sum_sim)
+                #         masked_allres_sim_list.append(sum_masked_sim)
+                #         prev_idx_list.append(prev_idx)
+                #         gt_iou_list.append(iou)
+
+
+                #     if len(allres_sim_list) > 0:
+                #         most_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(allres_sim_list))]
+                #         most_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(lowres_sim_list))]
+                #         most_iou_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(gt_iou_list))]
+                #         most_masked_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(masked_allres_sim_list))]
+                #         most_masked_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(masked_lowres_sim_list))]
+                        
+                    # print(most_allres_sim)
 
             average_score(instance_score)
             # print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
             total_score["num_step"] += 1
             pbar.update()
-        
+
     average_score(total_score)
-    
-    print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
-    print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
-    print(np.unique(dropped_frames_ious_rank, return_counts=True))
-    print(np.unique(dropped_frames_dice_rank, return_counts=True))
+
+    # print(most_allres_sim)
+    # print(most_lowres_sim)
+    # print(most_iou_sim)
+
+    # allres_true, allres_false = 0, 0
+    # lowres_true, lowres_false = 0, 0
+    # masked_allres_true, masked_allres_false = 0, 0
+    # masked_lowres_true, masked_lowres_false = 0, 0
+    # iou_true, iou_false = 0, 0
+    # for case in most_allres_sim.keys():
+    #     for frame, prev_frame in most_allres_sim[case].items():
+    #         if prev_frame < frame - 3:
+    #             allres_true += 1
+    #         else:
+    #             allres_false += 1
+
+    #     for frame, prev_frame in most_lowres_sim[case].items():
+    #         if prev_frame < frame - 3:
+    #             lowres_true += 1
+    #         else:
+    #             lowres_false += 1
+                
+    #     for frame, prev_frame in most_iou_sim[case].items():
+    #         if prev_frame < frame - 3:
+    #             iou_true += 1
+    #         else:
+    #             iou_false += 1
+                
+    #     for frame, prev_frame in most_masked_allres_sim[case].items():
+    #         if prev_frame < frame - 3:
+    #             masked_allres_true += 1
+    #         else:
+    #             masked_allres_false += 1
+                
+    #     for frame, prev_frame in most_masked_lowres_sim[case].items():
+    #         if prev_frame < frame - 3:
+    #             masked_lowres_true += 1
+    #         else:
+    #             masked_lowres_false += 1
+
+    # print(allres_true, allres_false)
+    # print(lowres_true, lowres_false)
+    # print(masked_allres_true, masked_allres_false)
+    # print(masked_lowres_true, masked_lowres_false)
+    # print(iou_true, iou_false)
+
+    # print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
+    # print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
+    # print(np.unique(dropped_frames_ious_rank, return_counts=True))
+    # print(np.unique(dropped_frames_dice_rank, return_counts=True))
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),
         "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
     }
-    
+
     table_data = []
-    
+
     for name, metrics_dict in score_per_class.items():
         miou = metrics_dict["iou"].mean(dim=0, keepdim=True)
         mdice = metrics_dict["dice"].mean(dim=0, keepdim=True)
         mfb_iou = metrics_dict["fb_iou"].mean(dim=0, keepdim=True)
-        
+
         table_data.append((
-            name, 
-            miou.item(), 
-            mdice.item(), 
+            name,
+            miou.item(),
+            mdice.item(),
             mfb_iou.item(),
         ))
-        
+
         avg["iou"] = torch.cat([avg["iou"], miou])
         avg["dice"] = torch.cat([avg["dice"], mdice])
         avg["fb_iou"] = torch.cat([avg["fb_iou"], mfb_iou])
-        
+
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()
     avg["fb_iou"] = avg["fb_iou"].mean()
-            
+
     table_data.append((
         "Average",
         avg["iou"].item(),
