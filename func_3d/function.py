@@ -10,6 +10,7 @@ import torchshow as ts
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
+import pandas as pd
 
 import cfg
 from conf import settings
@@ -509,6 +510,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     
     # HYPOTHESIS TESTING
     if args.ablation:
+        data = []
         for obj_id in total_global_allres_sim.keys():
             print(obj_id, vol_avg_dice[obj_id])
             print("global_allres_sim", total_global_allres_sim[obj_id])
@@ -520,6 +522,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             print("local_masked_allres_sim", total_local_masked_allres_sim[obj_id])
             print("local_masked_lowres_sim", total_local_masked_lowres_sim[obj_id])
             print("iou_sim", total_iou_sim[obj_id])
+            data.append((
+                vol_avg_dice[obj_id],
+                total_global_allres_sim[obj_id],
+                total_global_lowres_sim[obj_id],
+                total_global_masked_allres_sim[obj_id],
+                total_global_masked_lowres_sim[obj_id],
+                total_local_allres_sim[obj_id],
+                total_local_lowres_sim[obj_id],
+                total_local_masked_allres_sim[obj_id],
+                total_local_masked_lowres_sim[obj_id],
+            ))
+        columns = [
+            "vol_avg_dice",
+            "global_allres_sim",
+            "global_lowres_sim",
+            "global_masked_allres_sim",
+            "global_masked_lowres_sim",
+            "local_allres_sim",
+            "local_lowres_sim",
+            "local_masked_allres_sim",
+            "local_masked_lowres_sim",
+        ]
+        df = pd.DataFrame(data=data, columns=columns)
+        df.to_csv("msd03_ablation.csv")
+            
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
