@@ -523,6 +523,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             print("local_masked_lowres_sim", total_local_masked_lowres_sim[obj_id])
             print("iou_sim", total_iou_sim[obj_id])
             data.append((
+                obj_id,
                 vol_avg_dice[obj_id],
                 total_global_allres_sim[obj_id],
                 total_global_lowres_sim[obj_id],
@@ -534,6 +535,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 total_local_masked_lowres_sim[obj_id],
             ))
         columns = [
+            "obj_id",
             "vol_avg_dice",
             "global_allres_sim",
             "global_lowres_sim",
