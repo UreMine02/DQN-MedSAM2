@@ -38,7 +38,6 @@ do
             -data_path /data/rlsam2/datasets/nii/MSD \
             -num_support $shot \
             -no_agent \
-            -ablation \
             -vis
     done
 done

@@ -504,48 +504,49 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     average_score(total_score)
     
     # HYPOTHESIS TESTING
-    global_allres, global_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
-    global_masked_allres, global_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
-    local_allres, local_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
-    local_masked_allres, local_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
-    iou = [[0, 0], [0, 0]]
-    for case in most_global_allres_sim.keys():
-        for frame, prev_frame in most_global_allres_sim[case].items():
-            global_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+    if args.ablation:
+        global_allres, global_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+        global_masked_allres, global_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+        local_allres, local_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+        local_masked_allres, local_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+        iou = [[0, 0], [0, 0]]
+        for case in most_global_allres_sim.keys():
+            for frame, prev_frame in most_global_allres_sim[case].items():
+                global_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
-        for frame, prev_frame in most_global_lowres_sim[case].items():
-            global_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_global_masked_allres_sim[case].items():
-            global_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_global_masked_lowres_sim[case].items():
-            global_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_local_allres_sim[case].items():
-            local_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+            for frame, prev_frame in most_global_lowres_sim[case].items():
+                global_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_global_masked_allres_sim[case].items():
+                global_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_global_masked_lowres_sim[case].items():
+                global_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_local_allres_sim[case].items():
+                local_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
-        for frame, prev_frame in most_local_lowres_sim[case].items():
-            local_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_local_masked_allres_sim[case].items():
-            local_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_local_masked_lowres_sim[case].items():
-            local_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
-                
-        for frame, prev_frame in most_iou_sim[case].items():
-            iou[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+            for frame, prev_frame in most_local_lowres_sim[case].items():
+                local_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_local_masked_allres_sim[case].items():
+                local_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_local_masked_lowres_sim[case].items():
+                local_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
+                    
+            for frame, prev_frame in most_iou_sim[case].items():
+                iou[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
-    print(global_allres)
-    print(global_masked_allres)
-    print(global_lowres)
-    print(global_masked_lowres)
-    print(local_allres)
-    print(local_masked_allres)
-    print(local_lowres)
-    print(local_masked_lowres)
-    print(iou)
+        print(global_allres)
+        print(global_masked_allres)
+        print(global_lowres)
+        print(global_masked_lowres)
+        print(local_allres)
+        print(local_masked_allres)
+        print(local_lowres)
+        print(local_masked_lowres)
+        print(iou)
 
     # print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
     # print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
