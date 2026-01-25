@@ -193,7 +193,7 @@ class BasePolicyNetwork(nn.Module):
 
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.action_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, 1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
         )
         # self.action_proj = nn.Sequential(
         #     nn.LayerNorm(self.hidden_dim),
