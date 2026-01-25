@@ -49,3 +49,49 @@ local_masked_lowres
 
 iou
 [[1170, 23], [3895, 9]]
+
+/data/datasets/nii/MSD/Task01_BrainTumour/labelsTs/BRATS_116.nii.gz 3.0 13 30
+
+btcv_2
+global_allres_sim [684, 3]
+global_lowres_sim [639, 48]
+global_masked_allres_sim [393, 294]
+global_masked_lowres_sim [300, 387]
+local_allres_sim [687, 0]
+local_lowres_sim [687, 0]
+local_masked_allres_sim [557, 130]
+local_masked_lowres_sim [552, 135]
+iou_sim [600, 87]
+
+btcv_3
+global_allres_sim [692, 3]
+global_lowres_sim [653, 42]
+global_masked_allres_sim [359, 336]
+global_masked_lowres_sim [259, 436]
+local_allres_sim [695, 0]
+local_lowres_sim [695, 0]
+local_masked_allres_sim [526, 169]
+local_masked_lowres_sim [521, 174]
+iou_sim [587, 108]
+
+msd03
+global_allres_sim [4780, 17]
+global_lowres_sim [4658, 139]
+global_masked_allres_sim [3638, 1159]
+global_masked_lowres_sim [3351, 1446]
+local_allres_sim [4797, 0]
+local_lowres_sim [4794, 3]
+local_masked_allres_sim [4334, 463]
+local_masked_lowres_sim [4392, 405]
+iou_sim [4350, 447]
+
+msd09
+global_allres_sim [161, 9]
+global_lowres_sim [159, 11]
+global_masked_allres_sim [133, 37]
+global_masked_lowres_sim [107, 63]
+local_allres_sim [169, 1]
+local_lowres_sim [168, 2]
+local_masked_allres_sim [147, 23]
+local_masked_lowres_sim [148, 22]
+iou_sim [161, 9]

@@ -29,10 +29,18 @@ class BTCV(Dataset):
         csv_root = "./data/BTCV"
         suffix = "Tr" if subset == "train" else "Ts"
         
-        df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
+        df = []
+        df.append(pd.read_csv(os.path.join(csv_root, f"labelsTr.csv")))
+        df.append(pd.read_csv(os.path.join(csv_root, f"labelsTs.csv")))
+        df = pd.concat(df)
+        
         self.gt_path = np.asarray(df["gt_path"])
         self.obj_id = np.asarray(df["obj_id"])
         self.n_pos = np.asarray(df["n_pos"])
+        
+        # self.gt_path = self.gt_path[np.where(self.obj_id == 2)]
+        # self.n_pos = self.n_pos[np.where(self.obj_id == 2)]
+        # self.obj_id = self.obj_id[np.where(self.obj_id == 2)]
         
         self.image_size = args.image_size
         self.num_support = args.num_support
@@ -73,7 +81,7 @@ class BTCV(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": "btcv", "obj_id": obj_id, "case": os.path.splitext(os.path.basename(image_path))[0]
+            "task": "btcv", "obj_id": obj_id, "name": os.path.splitext(os.path.basename(image_path))[0]
         }
         
         return output_dict
