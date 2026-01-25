@@ -311,10 +311,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 for i, out_obj_id in enumerate(out_obj_ids)
                             }
 
-                dropped_frames_allres_sim_rank.extend(train_state["output_dict"]["dropped_frames_allres_sim_rank"])
-                dropped_frames_lowres_sim_rank.extend(train_state["output_dict"]["dropped_frames_lowres_sim_rank"])
-                dropped_frames_ious_rank.extend(train_state["output_dict"]["dropped_frames_ious_rank"])
-                dropped_frames_dice_rank.extend(train_state["output_dict"]["dropped_frames_dice_rank"])
+                # dropped_frames_allres_sim_rank.extend(train_state["output_dict"]["dropped_frames_allres_sim_rank"])
+                # dropped_frames_lowres_sim_rank.extend(train_state["output_dict"]["dropped_frames_lowres_sim_rank"])
+                # dropped_frames_ious_rank.extend(train_state["output_dict"]["dropped_frames_ious_rank"])
+                # dropped_frames_dice_rank.extend(train_state["output_dict"]["dropped_frames_dice_rank"])
 
                 # Record the loss in this step
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
