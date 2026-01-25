@@ -390,7 +390,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         local_masked_allres_sim_list = []
                         local_masked_lowres_sim_list = []
                         gt_iou_list = []
-                        for prev_idx in train_state["output_dict"]["image_features"].keys():
+                        for prev_idx in reversed(train_state["output_dict"]["image_features"].keys()):
                             if prev_idx >= frame_idx:
                                 continue
                             
@@ -502,31 +502,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     iou = [[0, 0], [0, 0]]
     for case in most_global_allres_sim.keys():
         for frame, prev_frame in most_global_allres_sim[case].items():
-            global_allres[n_frame[case] >= 100][prev_frame < frame - 3]
+            global_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
 
         for frame, prev_frame in most_global_lowres_sim[case].items():
-            global_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+            global_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_global_masked_allres_sim[case].items():
-            global_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3]
+            global_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_global_masked_lowres_sim[case].items():
-            global_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+            global_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_allres_sim[case].items():
-            local_allres[n_frame[case] >= 100][prev_frame < frame - 3]
+            local_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
 
         for frame, prev_frame in most_local_lowres_sim[case].items():
-            local_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+            local_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_masked_allres_sim[case].items():
-            local_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3]
+            local_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_masked_lowres_sim[case].items():
-            local_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+            local_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_iou_sim[case].items():
-            iou[n_frame[case] > 100][prev_frame < frame - 3]
+            iou[n_frame[case] > 100][prev_frame < frame - 3] += 1
 
     print(global_allres)
     print(global_masked_allres)

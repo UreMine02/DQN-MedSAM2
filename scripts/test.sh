@@ -18,6 +18,8 @@ ckpt=(
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/best.pth
 
     # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
+
+    # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task09+grpo+icl/2026-01-23-10-47-46/epoch_39_dice0.9158.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1

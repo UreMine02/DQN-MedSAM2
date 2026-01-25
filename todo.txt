@@ -23,4 +23,29 @@ global masked allres sim    490             61
 global masked lowres sim    464             87
 gt iou                      0               551
 
+global_allres
+[[95, 1098], [63, 3841]]
 
+global_masked_allres
+[[224, 969], [315, 3589]]
+
+global_lowres
+[[92, 1101], [63, 3841]]
+
+global_masked_lowres
+[[181, 1012], [216, 3688]]
+
+local_allres
+[[1192, 1], [3377, 527]]
+
+local_masked_allres
+[[1107, 86], [3774, 130]]
+
+local_lowres
+[[965, 228], [2093, 1811]]
+
+local_masked_lowres
+[[959, 234], [3562, 342]]
+
+iou
+[[1170, 23], [3895, 9]]
