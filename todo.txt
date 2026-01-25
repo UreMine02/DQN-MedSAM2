@@ -1,37 +1,26 @@
-NOTE: higher rank mean higher metric
-
-msd02 grpo 1 shot
-allres_sim_rank (array([0, 1, 2, 3, 4]), array([49, 61, 66, 44, 28]))
-lowres_sim_rank (array([0, 1, 2, 3, 4]), array([53, 56, 67, 44, 28]))
-ious_rank (array([0, 1, 2, 3, 4]), array([50, 42, 62, 69, 25]))
-
-msd02 grpo 5 shot
-allres_sim_rank (array([0, 1, 2, 3, 4, 5, 6]), array([45, 45, 48, 38, 34, 19, 11]))
-lowres_sim_rank (array([0, 1, 2, 3, 4, 5, 6]), array([45, 47, 45, 37, 36, 19, 11]))
-ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([37, 40, 47, 37, 33, 32, 14]))
-
-
-msd02 base 1 shot
-allres_sim_rank (array([0, 1, 2, 3, 4]), array([219,  11,   6,   2,   1]))
-lowres_sim_rank (array([0, 1, 2, 3, 4, 5]), array([173,  34,  20,   7,   4,   1]))
-ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([75, 20, 18, 16, 14, 25, 71])) 239
-
-msd02 base 5 shot 
-allres_sim_rank (array([0, 1, 2, 3, 4]), array([219,  11,   6,   2,   1]))
-lowres_sim_rank (array([0, 1, 2, 3, 4, 5]), array([173,  34,  20,   7,   4,   1]))
-ious_rank (array([0, 1, 2, 3, 4, 5, 6]), array([76, 14, 22, 14, 17, 25, 71]))
+msd task03
+                            outside_bank    inside_bank
+local image allres sim      484             4613
+local image lowres sim      1091            4006
+local masked allres sim     168             4929
+local masked lowres sim     389             4708
+global image allres sim     4939            158
+global image lowres sim     4942            155
+global masked allres sim    4558            539
+global masked lowres sim    4700            397
+gt iou                      22              5075
 
 
-msd02+no_agent+1shot: 0,8632
-msd02+no_agent+5shot: 0,8735
+sarcoma
+                            outside_bank    inside_bank
+local image allres sim      0               551
+local image lowres sim      0               551
+local masked allres sim     31              520
+local masked lowres sim     34              517
+global image allres sim     511             40
+global image lowres sim     513             38
+global masked allres sim    490             61
+global masked lowres sim    464             87
+gt iou                      0               551
 
-msd02+grpo+1shot: 0,8661
-msd02+grpo+5shot: 0,8815
 
-SEGMENTATION LOSS ONLY
-
-msd02+no_agent+1shot: 0.8995
-msd02+no_agent+5shot: 0.9082
-
-msd02+grpo+1shot: 0.9074
-msd02+grpo+5shot: 0.9094

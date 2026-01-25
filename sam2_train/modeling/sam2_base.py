@@ -718,7 +718,7 @@ class SAM2Base(torch.nn.Module):
             return_attn=False,
         )
 
-        return_attn = True
+        return_attn = False
         if return_attn:
             # dropped_frames = [idx for idx in output_dict["prev_frame_idx"] if idx not in memory_pos]
             # if dropped_frames:

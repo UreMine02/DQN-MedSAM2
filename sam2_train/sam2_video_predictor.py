@@ -1397,8 +1397,9 @@ class SAM2VideoPredictor(SAM2Base):
                 gt_mask = inference_state["gt_masks"][[frame_idx]].float()
                 lowres_mask = F.interpolate(gt_mask.unsqueeze(1), size=size, mode="nearest").squeeze(1)
                 lowres_mask = lowres_mask.reshape(-1, 1, 1)
-                output_dict["image_features"][frame_idx].append(current_vision_feats[i].mean(dim=0))
-                output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask).mean(dim=0))
+                # [H*W, B, C]
+                output_dict["image_features"][frame_idx].append(current_vision_feats[i])
+                output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask)) 
 
         storage_device = inference_state["device"]
 

@@ -225,11 +225,16 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     dropped_frames_ious_rank = []
     dropped_frames_dice_rank = []
 
-    most_allres_sim = {}
-    most_lowres_sim = {}
-    most_masked_allres_sim = {}
-    most_masked_lowres_sim = {}
+    most_global_allres_sim = {}
+    most_global_lowres_sim = {}
+    most_global_masked_allres_sim = {}
+    most_global_masked_lowres_sim = {}
+    most_local_allres_sim = {}
+    most_local_lowres_sim = {}
+    most_local_masked_allres_sim = {}
+    most_local_masked_lowres_sim = {}
     most_iou_sim = {}
+    n_frame = {}
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
         for packs in val_loader:
@@ -239,6 +244,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             task = packs["task"][0]
             name = packs["name"][0]
+            
             # cls_id = packs["obj_id"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
@@ -354,65 +360,129 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 instance_score["num_step"] += 1
 
-                # # ABLATION STUDY
-                # most_allres_sim[f"{name}_{obj_id}"] = {}
-                # most_lowres_sim[f"{name}_{obj_id}"] = {}
-                # most_masked_allres_sim[f"{name}_{obj_id}"] = {}
-                # most_masked_lowres_sim[f"{name}_{obj_id}"] = {}
-                # most_iou_sim[f"{name}_{obj_id}"] = {}
-                # for frame_idx in (train_state["output_dict"]["image_features"].keys()):
-                #     curr_feats = train_state["output_dict"]["image_features"][frame_idx]
-                #     curr_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
-                #     curr_gt = train_state["gt_masks"][frame_idx].float()
+                # ABLATION STUDY
+                most_global_allres_sim[f"{name}_{obj_id}"] = {}
+                most_global_lowres_sim[f"{name}_{obj_id}"] = {}
+                most_global_masked_allres_sim[f"{name}_{obj_id}"] = {}
+                most_global_masked_lowres_sim[f"{name}_{obj_id}"] = {}
+                most_local_allres_sim[f"{name}_{obj_id}"] = {}
+                most_local_lowres_sim[f"{name}_{obj_id}"] = {}
+                most_local_masked_allres_sim[f"{name}_{obj_id}"] = {}
+                most_local_masked_lowres_sim[f"{name}_{obj_id}"] = {}
+                most_iou_sim[f"{name}_{obj_id}"] = {}
+                n_frame[f"{name}_{obj_id}"] = len(train_state["output_dict"]["image_features"].keys())
+                
+                for frame_idx in train_state["output_dict"]["image_features"].keys():
+                    curr_local_feats = train_state["output_dict"]["image_features"][frame_idx]
+                    curr_local_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
+                    curr_global_feats = [feat.mean(0) for feat in curr_local_feats]
+                    curr_global_masked_feats = [feat.mean(0) for feat in curr_local_masked_feats]
+                    curr_gt = train_state["gt_masks"][frame_idx].float()
 
-                #     prev_idx_list = []
-                #     allres_sim_list = []
-                #     lowres_sim_list = []
-                #     masked_allres_sim_list = []
-                #     masked_lowres_sim_list = []
-                #     gt_iou_list = []
-                #     for prev_idx in reversed(train_state["output_dict"]["image_features"].keys()):
-                #         if prev_idx >= frame_idx:
-                #             continue
+                    prev_idx_list = []
+                    global_allres_sim_list = []
+                    global_lowres_sim_list = []
+                    global_masked_allres_sim_list = []
+                    global_masked_lowres_sim_list = []
+                    local_allres_sim_list = []
+                    local_lowres_sim_list = []
+                    local_masked_allres_sim_list = []
+                    local_masked_lowres_sim_list = []
+                    gt_iou_list = []
+                    for prev_idx in train_state["output_dict"]["image_features"].keys():
+                        if prev_idx >= frame_idx:
+                            continue
                         
-                #         prev_feats = train_state["output_dict"]["image_features"][prev_idx]
-                #         prev_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
-                #         prev_gt = train_state["gt_masks"][prev_idx].float()
-                #         iou = iou_score(prev_gt, curr_gt)
+                        prev_local_feats = train_state["output_dict"]["image_features"][prev_idx]
+                        prev_local_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
+                        prev_global_feats = [feat.mean(0) for feat in prev_local_feats]
+                        prev_global_masked_feats = [feat.mean(0) for feat in prev_local_masked_feats]
+                        prev_gt = train_state["gt_masks"][prev_idx].float()
+                        iou = iou_score(prev_gt, curr_gt)
 
-                #         sum_sim, sum_masked_sim = 0, 0
-                #         for res in range(len(curr_feats)):
-                #             curr_feat = curr_feats[res]
-                #             prev_feat = prev_feats[res]
-                #             curr_masked_feat = curr_masked_feats[res]
-                #             prev_masked_feat = prev_masked_feats[res]
-                #             curr_feat = F.normalize(curr_feat, p=2, dim=-1)
-                #             prev_feat = F.normalize(prev_feat, p=2, dim=-1)
-                #             curr_masked_feat = F.normalize(curr_masked_feat, p=2, dim=-1)
-                #             prev_masked_feat = F.normalize(prev_masked_feat, p=2, dim=-1)
+                        sum_global_sim, sum_global_masked_sim, sum_local_sim, sum_local_masked_sim  = 0, 0, 0 ,0
+                        for res in range(len(curr_global_feats)):
+                            curr_local_feat = curr_local_feats[res]
+                            curr_global_feat = curr_global_feats[res]
+                            prev_local_feat = prev_local_feats[res]
+                            prev_global_feat = prev_global_feats[res]
+                            curr_local_masked_feat = curr_local_masked_feats[res]
+                            curr_global_masked_feat = curr_global_masked_feats[res]
+                            prev_local_masked_feat = prev_local_masked_feats[res]
+                            prev_global_masked_feat = prev_global_masked_feats[res]
                             
-                #             sim = curr_feat @ prev_feat.t()
-                #             masked_sim = curr_masked_feat @ prev_masked_feat.t()
+                            curr_local_feat = F.normalize(curr_local_feat, p=2, dim=-1)
+                            curr_global_feat = F.normalize(curr_global_feat, p=2, dim=-1)
+                            prev_local_feat = F.normalize(prev_local_feat, p=2, dim=-1)
+                            prev_global_feat = F.normalize(prev_global_feat, p=2, dim=-1)
+                            curr_local_masked_feat = F.normalize(curr_local_masked_feat, p=2, dim=-1)
+                            curr_global_masked_feat = F.normalize(curr_global_masked_feat, p=2, dim=-1)
+                            prev_local_masked_feat = F.normalize(prev_local_masked_feat, p=2, dim=-1)
+                            prev_global_masked_feat = F.normalize(prev_global_masked_feat, p=2, dim=-1)
                             
-                #             if res == len(curr_feats) - 1:
-                #                 lowres_sim_list.append(sim)
-                #                 masked_lowres_sim_list.append(masked_sim)
+                            local_sim = curr_local_feat @ prev_local_feat.transpose(-2, -1)
+                            local_masked_sim = curr_local_masked_feat @ prev_local_masked_feat.transpose(-2, -1)
+                            global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
+                            global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
+                            
+                            local_sim = local_sim.mean()
+                            local_masked_sim = local_masked_sim.mean()
+                            
+                            if res == len(curr_global_feats) - 1:
+                                local_lowres_sim_list.append(local_sim)
+                                local_masked_lowres_sim_list.append(local_masked_sim)
+                                global_lowres_sim_list.append(global_sim)
+                                global_masked_lowres_sim_list.append(global_masked_sim)
                                 
-                #             sum_sim += sim
-                #             sum_masked_sim += masked_sim
+                            sum_global_sim += global_sim 
+                            sum_global_masked_sim += global_masked_sim 
+                            sum_local_sim += local_sim 
+                            sum_local_masked_sim += local_masked_sim 
 
-                #         allres_sim_list.append(sum_sim)
-                #         masked_allres_sim_list.append(sum_masked_sim)
-                #         prev_idx_list.append(prev_idx)
-                #         gt_iou_list.append(iou)
+                        global_allres_sim_list.append(sum_global_sim)
+                        global_masked_allres_sim_list.append(sum_global_masked_sim)
+                        local_allres_sim_list.append(sum_local_sim)
+                        local_masked_allres_sim_list.append(sum_local_masked_sim)
+                        prev_idx_list.append(prev_idx)
+                        gt_iou_list.append(iou)
 
-
-                #     if len(allres_sim_list) > 0:
-                #         most_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(allres_sim_list))]
-                #         most_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(lowres_sim_list))]
-                #         most_iou_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(gt_iou_list))]
-                #         most_masked_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(masked_allres_sim_list))]
-                #         most_masked_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(masked_lowres_sim_list))]
+                    
+                    if len(global_allres_sim_list) > 0:
+                        global_allres_sim_list = torch.Tensor(global_allres_sim_list)
+                        global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
+                        global_masked_allres_sim_list = torch.Tensor(global_masked_allres_sim_list)
+                        global_masked_lowres_sim_list = torch.Tensor(global_masked_lowres_sim_list)
+                        local_allres_sim_list = torch.Tensor(local_allres_sim_list)
+                        local_lowres_sim_list = torch.Tensor(local_lowres_sim_list)
+                        local_masked_allres_sim_list = torch.Tensor(local_masked_allres_sim_list)
+                        local_masked_lowres_sim_list = torch.Tensor(local_masked_lowres_sim_list)
+                        
+                        global_allres_sim_list = (global_allres_sim_list - global_allres_sim_list.min()) / \
+                            (global_allres_sim_list.max() - global_allres_sim_list.min())
+                        global_lowres_sim_list = (global_lowres_sim_list - global_lowres_sim_list.min()) / \
+                            (global_lowres_sim_list.max() - global_lowres_sim_list.min())
+                        global_masked_allres_sim_list = (global_masked_allres_sim_list - global_masked_allres_sim_list.min()) / \
+                            (global_masked_allres_sim_list.max() - global_masked_allres_sim_list.min())
+                        global_masked_lowres_sim_list = (global_masked_lowres_sim_list - global_masked_lowres_sim_list.min()) / \
+                            (global_masked_lowres_sim_list.max() - global_masked_lowres_sim_list.min())
+                        local_allres_sim_list = (local_allres_sim_list - local_allres_sim_list.min()) / \
+                            (local_allres_sim_list.max() - local_allres_sim_list.min())
+                        local_lowres_sim_list = (local_lowres_sim_list - local_lowres_sim_list.min()) / \
+                            (local_lowres_sim_list.max() - local_lowres_sim_list.min())
+                        local_masked_allres_sim_list = (local_masked_allres_sim_list - local_masked_allres_sim_list.min()) / \
+                            (local_masked_allres_sim_list.max() - local_masked_allres_sim_list.min())
+                        local_masked_lowres_sim_list = (local_masked_lowres_sim_list - local_masked_lowres_sim_list.min()) / \
+                            (local_masked_lowres_sim_list.max() - local_masked_lowres_sim_list.min())
+                        
+                        most_global_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(global_allres_sim_list)]
+                        most_global_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(global_lowres_sim_list)]
+                        most_global_masked_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(global_masked_allres_sim_list)]
+                        most_global_masked_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(global_masked_lowres_sim_list)]
+                        most_local_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_allres_sim_list)]
+                        most_local_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_lowres_sim_list)]
+                        most_local_masked_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_masked_allres_sim_list)]
+                        most_local_masked_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_masked_lowres_sim_list)]
+                        most_iou_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(gt_iou_list))]
                         
                     # print(most_allres_sim)
 
@@ -423,52 +493,49 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             pbar.update()
 
     average_score(total_score)
+    
+    global_allres, global_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+    global_masked_allres, global_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+    local_allres, local_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+    local_masked_allres, local_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
+    iou = [[0, 0], [0, 0]]
+    for case in most_global_allres_sim.keys():
+        for frame, prev_frame in most_global_allres_sim[case].items():
+            global_allres[n_frame[case] >= 100][prev_frame < frame - 3]
 
-    # print(most_allres_sim)
-    # print(most_lowres_sim)
-    # print(most_iou_sim)
-
-    # allres_true, allres_false = 0, 0
-    # lowres_true, lowres_false = 0, 0
-    # masked_allres_true, masked_allres_false = 0, 0
-    # masked_lowres_true, masked_lowres_false = 0, 0
-    # iou_true, iou_false = 0, 0
-    # for case in most_allres_sim.keys():
-    #     for frame, prev_frame in most_allres_sim[case].items():
-    #         if prev_frame < frame - 3:
-    #             allres_true += 1
-    #         else:
-    #             allres_false += 1
-
-    #     for frame, prev_frame in most_lowres_sim[case].items():
-    #         if prev_frame < frame - 3:
-    #             lowres_true += 1
-    #         else:
-    #             lowres_false += 1
+        for frame, prev_frame in most_global_lowres_sim[case].items():
+            global_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
                 
-    #     for frame, prev_frame in most_iou_sim[case].items():
-    #         if prev_frame < frame - 3:
-    #             iou_true += 1
-    #         else:
-    #             iou_false += 1
+        for frame, prev_frame in most_global_masked_allres_sim[case].items():
+            global_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3]
                 
-    #     for frame, prev_frame in most_masked_allres_sim[case].items():
-    #         if prev_frame < frame - 3:
-    #             masked_allres_true += 1
-    #         else:
-    #             masked_allres_false += 1
+        for frame, prev_frame in most_global_masked_lowres_sim[case].items():
+            global_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
                 
-    #     for frame, prev_frame in most_masked_lowres_sim[case].items():
-    #         if prev_frame < frame - 3:
-    #             masked_lowres_true += 1
-    #         else:
-    #             masked_lowres_false += 1
+        for frame, prev_frame in most_local_allres_sim[case].items():
+            local_allres[n_frame[case] >= 100][prev_frame < frame - 3]
 
-    # print(allres_true, allres_false)
-    # print(lowres_true, lowres_false)
-    # print(masked_allres_true, masked_allres_false)
-    # print(masked_lowres_true, masked_lowres_false)
-    # print(iou_true, iou_false)
+        for frame, prev_frame in most_local_lowres_sim[case].items():
+            local_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+                
+        for frame, prev_frame in most_local_masked_allres_sim[case].items():
+            local_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3]
+                
+        for frame, prev_frame in most_local_masked_lowres_sim[case].items():
+            local_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3]
+                
+        for frame, prev_frame in most_iou_sim[case].items():
+            iou[n_frame[case] > 100][prev_frame < frame - 3]
+
+    print(global_allres)
+    print(global_masked_allres)
+    print(global_lowres)
+    print(global_masked_lowres)
+    print(local_allres)
+    print(local_masked_allres)
+    print(local_lowres)
+    print(local_masked_lowres)
+    print(iou)
 
     # print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
     # print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
