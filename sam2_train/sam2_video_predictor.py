@@ -192,19 +192,22 @@ class SAM2VideoPredictor(SAM2Base):
             "cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "non_cond_frame_outputs": {},  # dict containing {frame_idx: <out>}
             "await_outputs": {},
-            "prev_memory_attn_scores": {},
-            "image_features": {},
-            "masked_image_features": {},
-            "prev_frame_idx": [],
-            "dropped_frames_allres_sim_rank": [],
-            "dropped_frames_lowres_sim_rank": [],
-            "dropped_frames_ious_rank": [],
-            "dropped_frames_dice_rank": [],
-            "gt_ious": {},
-            "gt_dice": {},
-            "most_allres_sim_prev_frame": {},
-            "most_lowres_sim_prev_frame": {}
         }
+        if args.ablation:
+            inference_state["output_dict"].update({
+                "prev_memory_attn_scores": {},
+                "image_features": {},
+                "masked_image_features": {},
+                "prev_frame_idx": [],
+                "dropped_frames_allres_sim_rank": [],
+                "dropped_frames_lowres_sim_rank": [],
+                "dropped_frames_ious_rank": [],
+                "dropped_frames_dice_rank": [],
+                "gt_ious": {},
+                "gt_dice": {},
+                "most_allres_sim_prev_frame": {},
+                "most_lowres_sim_prev_frame": {}
+            })
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
         # A temporary storage to hold new outputs when user interact with a frame
@@ -1399,7 +1402,7 @@ class SAM2VideoPredictor(SAM2Base):
                 lowres_mask = lowres_mask.reshape(-1, 1, 1)
                 # [H*W, B, C]
                 output_dict["image_features"][frame_idx].append(current_vision_feats[i])
-                output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask)) 
+                output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask))
 
         storage_device = inference_state["device"]
 

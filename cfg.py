@@ -39,6 +39,7 @@ def parse_args():
     parser.add_argument('-q_updates_per_step', type=int, default=1, help='number of agent updates per training step')
     parser.add_argument('-rl_config', type=str, default='normal_agent.yaml', help='number of agent updates per training step')
     parser.add_argument('-no_agent', action="store_true", help="Not using agent, fallback to default SAM2")
+    parser.add_argument('-ablation', action="store_true", help="Not using agent, fallback to default SAM2")
     opt = parser.parse_args()
 
     return opt
