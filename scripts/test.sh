@@ -14,10 +14,10 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
+    # output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/best.pth
 
-    # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
+    output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
 
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_29_dice0.5645.pth
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task08+grpo+icl/2026-01-23-10-45-02/epoch_20_dice0.3753.pth
@@ -38,6 +38,7 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -no_agent \
-            -ablation
+            -ablation \
+            -vis
     done
 done
