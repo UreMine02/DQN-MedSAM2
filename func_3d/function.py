@@ -371,14 +371,18 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     most_local_masked_allres_sim[f"{name}_{obj_id}"] = {}
                     most_local_masked_lowres_sim[f"{name}_{obj_id}"] = {}
                     most_iou_sim[f"{name}_{obj_id}"] = {}
-                    n_frame[f"{name}_{obj_id}"] = len(train_state["output_dict"]["image_features"].keys())
+                    # n_frame[f"{name}_{obj_id}"] = len(train_state["output_dict"]["image_features"].keys())
+                    
+                    size = []
                     
                     for frame_idx in train_state["output_dict"]["image_features"].keys():
+                        curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
                         curr_local_feats = train_state["output_dict"]["image_features"][frame_idx]
                         curr_local_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
                         curr_global_feats = [feat.mean(0) for feat in curr_local_feats]
                         curr_global_masked_feats = [feat.mean(0) for feat in curr_local_masked_feats]
-                        curr_gt = train_state["gt_masks"][frame_idx].float()
+                        
+                        size.append(curr_gt.sum())
 
                         prev_idx_list = []
                         global_allres_sim_list = []
@@ -484,7 +488,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             most_local_masked_allres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_masked_allres_sim_list)]
                             most_local_masked_lowres_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(local_masked_lowres_sim_list)]
                             most_iou_sim[f"{name}_{obj_id}"][frame_idx] = prev_idx_list[torch.argmax(torch.Tensor(gt_iou_list))]
-                            
+                        
+                    size = torch.tensor(size)
+                    size = size[torch.where(size > 0)]
+                    n_frame[f"{name}_{obj_id}"] = torch.std(size)
+                    # print(name, torch.std(size))
                         # print(most_allres_sim)
 
             average_score(instance_score)
@@ -502,31 +510,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     iou = [[0, 0], [0, 0]]
     for case in most_global_allres_sim.keys():
         for frame, prev_frame in most_global_allres_sim[case].items():
-            global_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            global_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
         for frame, prev_frame in most_global_lowres_sim[case].items():
-            global_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            global_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_global_masked_allres_sim[case].items():
-            global_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            global_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_global_masked_lowres_sim[case].items():
-            global_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            global_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_allres_sim[case].items():
-            local_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            local_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
         for frame, prev_frame in most_local_lowres_sim[case].items():
-            local_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            local_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_masked_allres_sim[case].items():
-            local_masked_allres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            local_masked_allres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_local_masked_lowres_sim[case].items():
-            local_masked_lowres[n_frame[case] >= 100][prev_frame < frame - 3] += 1
+            local_masked_lowres[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
                 
         for frame, prev_frame in most_iou_sim[case].items():
-            iou[n_frame[case] > 100][prev_frame < frame - 3] += 1
+            iou[n_frame[case] >= 10.000][prev_frame < frame - 3] += 1
 
     print(global_allres)
     print(global_masked_allres)

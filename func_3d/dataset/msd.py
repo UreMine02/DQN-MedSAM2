@@ -33,7 +33,7 @@ class MSD(Dataset):
         
         csv_root = "./data/MSD"
         for csv_path in os.listdir(csv_root):
-            if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
+            if not csv_path.startswith(args.task):
                 continue
             
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
@@ -47,12 +47,6 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
-        
-        # self.transform = transforms.Compose([
-        #     transforms.Resize(size=(self.image_size, self.image_size)),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        # ])
         
     def __len__(self):
         return len(self.gt_path)
@@ -84,7 +78,7 @@ class MSD(Dataset):
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random' # if self.mode == 'train' else 'evenly'
+            slice_selection='random' if self.mode == 'train' else 'evenly'
         )
         
         output_dict = {
