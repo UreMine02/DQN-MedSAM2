@@ -66,7 +66,7 @@ declare -a ckpt=(
     /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task01+grpo+icl/2026-01-19-16-37-50/epoch_49_dice0.4743.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+# export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
