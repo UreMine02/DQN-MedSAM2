@@ -360,7 +360,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 instance_score["num_step"] += 1
 
-                # ABLATION STUDY
+                # HYPOTHESIS TESTING
                 if args.ablation:
                     most_global_allres_sim[f"{name}_{obj_id}"] = {}
                     most_global_lowres_sim[f"{name}_{obj_id}"] = {}
@@ -503,6 +503,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
     average_score(total_score)
     
+    # HYPOTHESIS TESTING
     global_allres, global_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
     global_masked_allres, global_masked_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
     local_allres, local_lowres = [[0, 0], [0, 0]], [[0, 0], [0, 0]]
