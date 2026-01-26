@@ -42,7 +42,7 @@ def min_max_scaling(a):
 def check(a, s=6):
     min_inbank = a[-s:].min()
     max_outbank = a[:-s].max()
-    return min_inbank < max_outbank
+    return (min_inbank < max_outbank).item()
 
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
