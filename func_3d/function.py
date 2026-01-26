@@ -458,28 +458,28 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
                                 global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
                                 
-                                curr_lesion_pos = torch.where(curr_gt.flatten() > 0)
-                                curr_lesion_feat = curr_local_masked_feat[curr_lesion_pos, 0].squeeze()
-                                prev_lesion_pos = torch.where(prev_gt.flatten() > 0)
-                                prev_lesion_feat = prev_local_masked_feat[prev_lesion_pos, 0].squeeze()
-                                lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
+                                # curr_lesion_pos = torch.where(curr_gt.flatten() > 0)
+                                # curr_lesion_feat = curr_local_masked_feat[curr_lesion_pos, 0].squeeze()
+                                # prev_lesion_pos = torch.where(prev_gt.flatten() > 0)
+                                # prev_lesion_feat = prev_local_masked_feat[prev_lesion_pos, 0].squeeze()
+                                # lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
 
                                 local_sim = local_sim.mean()
                                 local_masked_sim = local_masked_sim.mean()
-                                lesion_sim = lesion_sim.mean()
+                                # lesion_sim = lesion_sim.mean()
 
                                 if res == len(curr_global_feats) - 1:
                                     local_lowres_sim_list.append(local_sim)
                                     local_masked_lowres_sim_list.append(local_masked_sim)
                                     global_lowres_sim_list.append(global_sim)
                                     global_masked_lowres_sim_list.append(global_masked_sim)
-                                    lesion_lowres_sim_list.append(lesion_sim)
+                                    # lesion_lowres_sim_list.append(lesion_sim)
 
                                 sum_global_sim += global_sim
                                 sum_global_masked_sim += global_masked_sim
                                 sum_local_sim += local_sim
                                 sum_local_masked_sim += local_masked_sim
-                                sum_lesion_sim += lesion_sim
+                                # sum_lesion_sim += lesion_sim
 
                             global_allres_sim_list.append(sum_global_sim)
                             global_masked_allres_sim_list.append(sum_global_masked_sim)
@@ -542,18 +542,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     if args.ablation:
         data = []
         for obj_id in total_global_allres_sim.keys():
-            print(obj_id, vol_avg_dice[obj_id])
-            print("global_allres_sim", total_global_allres_sim[obj_id])
-            print("global_lowres_sim", total_global_lowres_sim[obj_id])
-            print("global_masked_allres_sim", total_global_masked_allres_sim[obj_id])
-            print("global_masked_lowres_sim", total_global_masked_lowres_sim[obj_id])
-            print("local_allres_sim", total_local_allres_sim[obj_id])
-            print("local_lowres_sim", total_local_lowres_sim[obj_id])
-            print("local_masked_allres_sim", total_local_masked_allres_sim[obj_id])
-            print("local_masked_lowres_sim", total_local_masked_lowres_sim[obj_id])
-            print("lesion_allres_sim", total_lesion_allres_sim[obj_id])
-            print("lesion_lowres_sim", total_lesion_lowres_sim[obj_id])
-            print("iou_sim", total_iou_sim[obj_id])
             data.append((
                 obj_id,
                 vol_avg_dice[obj_id],
@@ -565,8 +553,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 total_local_lowres_sim[obj_id],
                 total_local_masked_allres_sim[obj_id],
                 total_local_masked_lowres_sim[obj_id],
-                total_lesion_allres_sim[obj_id],
-                total_lesion_lowres_sim[obj_id],
+                # total_lesion_allres_sim[obj_id],
+                # total_lesion_lowres_sim[obj_id],
             ))
         columns = [
             "obj_id",
@@ -579,11 +567,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             "local_lowres_sim",
             "local_masked_allres_sim",
             "local_masked_lowres_sim",
-            "lesion_allres_sim",
-            "lesion_lowres_sim",
+            # "lesion_allres_sim",
+            # "lesion_lowres_sim",
         ]
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_csv("msd01_ablation.csv")
+        df.to_csv(f"{args.dataset}_{args.task}_ablation.csv")
 
 
     avg = {
