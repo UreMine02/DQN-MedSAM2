@@ -2,6 +2,7 @@
     Yunli Qi
 """
 
+import os
 import copy
 import torch
 import torch.nn as nn
@@ -577,7 +578,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             "lesion_lowres_sim",
         ]
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_csv("msd03_ablation.csv")
+        df.to_csv("msd01_ablation.csv")
 
 
     avg = {
