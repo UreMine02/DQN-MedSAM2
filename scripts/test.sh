@@ -35,9 +35,9 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
+            -dataset btcv \
             -task Task03 \
-            -data_path /data/rlsam2/datasets/nii/MSD \
+            -data_path /data/rlsam2/datasets/nii/BTCV \
             -num_support $shot \
             -no_agent \
             -ablation
