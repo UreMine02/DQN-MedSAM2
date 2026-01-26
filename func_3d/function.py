@@ -242,6 +242,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     total_local_lowres_sim = {}
     total_local_masked_allres_sim = {}
     total_local_masked_lowres_sim = {}
+    total_lesion_allres_sim = {}
+    total_lesion_lowres_sim = {}
     total_iou_sim = {}
     vol_avg_dice = {}
 
@@ -253,7 +255,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             task = packs["task"][0]
             name = packs["name"][0]
-            
+
             # cls_id = packs["obj_id"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
@@ -328,7 +330,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 # Record the loss in this step
                 if args.ablation:
                     vol_avg_dice[f"{name}_{obj_id}"] = []
-                    
+
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
@@ -349,7 +351,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
                         score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
-                        
+
                         # Record the loss in this step
                         if args.ablation:
                             vol_avg_dice[f"{name}_{obj_id}"].append(dice)
@@ -389,15 +391,17 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     total_local_lowres_sim[f"{name}_{obj_id}"] = [0,0]
                     total_local_masked_allres_sim[f"{name}_{obj_id}"] = [0,0]
                     total_local_masked_lowres_sim[f"{name}_{obj_id}"] = [0,0]
+                    total_lesion_allres_sim[f"{name}_{obj_id}"] = [0,0]
+                    total_lesion_lowres_sim[f"{name}_{obj_id}"] = [0,0]
                     total_iou_sim[f"{name}_{obj_id}"] = [0,0]
-                    
+
                     for frame_idx in train_state["output_dict"]["image_features"].keys():
                         curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
                         curr_local_feats = train_state["output_dict"]["image_features"][frame_idx]
                         curr_local_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
                         curr_global_feats = [feat.mean(0) for feat in curr_local_feats]
                         curr_global_masked_feats = [feat.mean(0) for feat in curr_local_masked_feats]
-                        
+
                         prev_idx_list = []
                         global_allres_sim_list = []
                         global_lowres_sim_list = []
@@ -407,11 +411,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         local_lowres_sim_list = []
                         local_masked_allres_sim_list = []
                         local_masked_lowres_sim_list = []
+                        lesion_allres_sim_list = []
+                        lesion_lowres_sim_list = []
                         gt_iou_list = []
                         for prev_idx in train_state["output_dict"]["image_features"].keys():
                             if prev_idx >= frame_idx:
                                 continue
-                            
+
                             prev_local_feats = train_state["output_dict"]["image_features"][prev_idx]
                             prev_local_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
                             prev_global_feats = [feat.mean(0) for feat in prev_local_feats]
@@ -419,7 +425,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             prev_gt = train_state["gt_masks"][prev_idx].float()
                             iou = iou_score(prev_gt, curr_gt)
 
-                            sum_global_sim, sum_global_masked_sim, sum_local_sim, sum_local_masked_sim  = 0, 0, 0 ,0
+                            sum_global_sim, 
+                            sum_global_masked_sim, 
+                            sum_local_sim,
+                            sum_local_masked_sim, 
+                            sum_lesion_sim = 0, 0, 0 ,0, 0
+                            
                             for res in range(len(curr_global_feats)):
                                 curr_local_feat = curr_local_feats[res]
                                 curr_global_feat = curr_global_feats[res]
@@ -429,7 +440,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 curr_global_masked_feat = curr_global_masked_feats[res]
                                 prev_local_masked_feat = prev_local_masked_feats[res]
                                 prev_global_masked_feat = prev_global_masked_feats[res]
-                                
+
                                 curr_local_feat = F.normalize(curr_local_feat, p=2, dim=-1)
                                 curr_global_feat = F.normalize(curr_global_feat, p=2, dim=-1)
                                 prev_local_feat = F.normalize(prev_local_feat, p=2, dim=-1)
@@ -438,34 +449,38 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 curr_global_masked_feat = F.normalize(curr_global_masked_feat, p=2, dim=-1)
                                 prev_local_masked_feat = F.normalize(prev_local_masked_feat, p=2, dim=-1)
                                 prev_global_masked_feat = F.normalize(prev_global_masked_feat, p=2, dim=-1)
-                                
+
                                 local_sim = curr_local_feat @ prev_local_feat.transpose(-2, -1)
                                 local_masked_sim = curr_local_masked_feat @ prev_local_masked_feat.transpose(-2, -1)
                                 global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
                                 global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
-                                
+                                lesion_sim = curr_local_masked_feat.squeeze() @ prev_local_masked_feat.squeeze().transpose(-2, -1)
+
                                 local_sim = local_sim.mean()
                                 local_masked_sim = local_masked_sim.mean()
-                                
+
                                 if res == len(curr_global_feats) - 1:
                                     local_lowres_sim_list.append(local_sim)
                                     local_masked_lowres_sim_list.append(local_masked_sim)
                                     global_lowres_sim_list.append(global_sim)
                                     global_masked_lowres_sim_list.append(global_masked_sim)
-                                    
-                                sum_global_sim += global_sim 
-                                sum_global_masked_sim += global_masked_sim 
-                                sum_local_sim += local_sim 
-                                sum_local_masked_sim += local_masked_sim 
+                                    lesion_lowres_sim_list.append(lesion_sim)
+
+                                sum_global_sim += global_sim
+                                sum_global_masked_sim += global_masked_sim
+                                sum_local_sim += local_sim
+                                sum_local_masked_sim += local_masked_sim
+                                sum_lesion_sim += lesion_sim
 
                             global_allres_sim_list.append(sum_global_sim)
                             global_masked_allres_sim_list.append(sum_global_masked_sim)
                             local_allres_sim_list.append(sum_local_sim)
                             local_masked_allres_sim_list.append(sum_local_masked_sim)
+                            lesion_allres_sim_list.append(sum_lesion_sim)
                             prev_idx_list.append(prev_idx)
                             gt_iou_list.append(iou)
 
-                        
+
                         if len(global_allres_sim_list) > 6:
                             global_allres_sim_list = torch.Tensor(global_allres_sim_list)
                             global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
@@ -475,7 +490,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             local_lowres_sim_list = torch.Tensor(local_lowres_sim_list)
                             local_masked_allres_sim_list = torch.Tensor(local_masked_allres_sim_list)
                             local_masked_lowres_sim_list = torch.Tensor(local_masked_lowres_sim_list)
-                            
+                            lesion_allres_sim_list = torch.Tensor(lesion_allres_sim_list)
+                            lesion_lowres_sim_list = torch.Tensor(lesion_lowres_sim_list)
+
                             global_allres_sim_list = min_max_scaling(global_allres_sim_list)
                             global_lowres_sim_list = min_max_scaling(global_lowres_sim_list)
                             global_masked_allres_sim_list = min_max_scaling(global_masked_allres_sim_list)
@@ -484,7 +501,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             local_lowres_sim_list = min_max_scaling(local_lowres_sim_list)
                             local_masked_allres_sim_list = min_max_scaling(local_masked_allres_sim_list)
                             local_masked_lowres_sim_list = min_max_scaling(local_masked_lowres_sim_list)
-                            
+                            lesion_allres_sim_list = min_max_scaling(lesion_allres_sim_list)
+                            lesion_lowres_sim_list = min_max_scaling(lesion_lowres_sim_list)
+
                             total_global_allres_sim[f"{name}_{obj_id}"][check(global_allres_sim_list)] += 1
                             total_global_lowres_sim[f"{name}_{obj_id}"][check(global_lowres_sim_list)] += 1
                             total_global_masked_allres_sim[f"{name}_{obj_id}"][check(global_masked_allres_sim_list)] += 1
@@ -493,8 +512,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             total_local_lowres_sim[f"{name}_{obj_id}"][check(local_lowres_sim_list)] += 1
                             total_local_masked_allres_sim[f"{name}_{obj_id}"][check(local_masked_allres_sim_list)] += 1
                             total_local_masked_lowres_sim[f"{name}_{obj_id}"][check(local_masked_lowres_sim_list)] += 1
+                            total_lesion_allres_sim[f"{name}_{obj_id}"][check(lesion_allres_sim_list)] += 1
+                            total_lesion_lowres_sim[f"{name}_{obj_id}"][check(lesion_lowres_sim_list)] += 1
                             total_iou_sim[f"{name}_{obj_id}"][check(torch.tensor(gt_iou_list))] += 1
-                        
+
                     # size = torch.tensor(size)
                     # size = size[torch.where(size > 0)]
                     # n_frame[f"{name}_{obj_id}"] = torch.std(size)
@@ -507,7 +528,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             pbar.update()
 
     average_score(total_score)
-    
+
     # HYPOTHESIS TESTING
     if args.ablation:
         data = []
@@ -521,6 +542,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             print("local_lowres_sim", total_local_lowres_sim[obj_id])
             print("local_masked_allres_sim", total_local_masked_allres_sim[obj_id])
             print("local_masked_lowres_sim", total_local_masked_lowres_sim[obj_id])
+            print("lesion_allres_sim", total_lesion_allres_sim[obj_id])
+            print("lesion_lowres_sim", total_lesion_lowres_sim[obj_id])
             print("iou_sim", total_iou_sim[obj_id])
             data.append((
                 obj_id,
@@ -533,6 +556,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 total_local_lowres_sim[obj_id],
                 total_local_masked_allres_sim[obj_id],
                 total_local_masked_lowres_sim[obj_id],
+                total_lesion_allres_sim[obj_id],
+                total_lesion_lowres_sim[obj_id],
             ))
         columns = [
             "obj_id",
@@ -545,10 +570,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             "local_lowres_sim",
             "local_masked_allres_sim",
             "local_masked_lowres_sim",
+            "lesion_allres_sim",
+            "lesion_lowres_sim",
         ]
         df = pd.DataFrame(data=data, columns=columns)
         df.to_csv("msd03_ablation.csv")
-            
+
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
