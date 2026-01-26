@@ -14,7 +14,7 @@
 # conda activate rlsam2
 
 ckpt=(
-    /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task01+grpo+icl/2026-01-19-16-37-50/epoch_20_dice0.4905.pth
+    /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task01+grpo+icl/2026-01-19-16-37-50/epoch_21_dice0.4791.pth
 )
 
 for pretrain in ${ckpt[@]};
