@@ -84,7 +84,7 @@ class MSD(Dataset):
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random' if self.mode == 'train' else 'evenly'
+            slice_selection='random'
         )
         
         output_dict = {
@@ -121,7 +121,8 @@ class MSD(Dataset):
                 image_3d = image_3d[..., start_slice:start_slice+max_slices]
                 data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
             elif slice_selection == 'random':
-                slice_indices = np.random.choice(image_3d.shape[-1], size=max_slices, replace=False)
+                n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
+                slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
