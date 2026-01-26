@@ -425,11 +425,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             prev_gt = train_state["gt_masks"][prev_idx].float()
                             iou = iou_score(prev_gt, curr_gt)
 
-                            sum_global_sim, 
-                            sum_global_masked_sim, 
-                            sum_local_sim,
-                            sum_local_masked_sim, 
-                            sum_lesion_sim = 0, 0, 0 ,0, 0
+                            (
+                                sum_global_sim, 
+                                sum_global_masked_sim, 
+                                sum_local_sim,
+                                sum_local_masked_sim, 
+                                sum_lesion_sim
+                            ) = 0, 0, 0 ,0, 0
                             
                             for res in range(len(curr_global_feats)):
                                 curr_local_feat = curr_local_feats[res]
