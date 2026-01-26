@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task05+grpo+icl
+EXP=msd_task05+grpo+icl+support5
 
 python train_3d.py \
     -exp_name $EXP \
@@ -24,11 +24,11 @@ python train_3d.py \
     -dataset msd \
     -task Task05 \
     -data_path /data/rlsam2/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 10 \
+    -num_support 5 \
     -distributed
