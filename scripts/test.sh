@@ -36,7 +36,7 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task Task01 \
+            -task Task03 \
             -data_path /data/rlsam2/datasets/nii/MSD \
             -num_support $shot \
             -no_agent \

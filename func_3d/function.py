@@ -457,7 +457,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 local_masked_sim = curr_local_masked_feat @ prev_local_masked_feat.transpose(-2, -1)
                                 global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
                                 global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
-                                lesion_sim = curr_local_masked_feat.squeeze() @ prev_local_masked_feat.squeeze().transpose(-2, -1)
+                                
+                                curr_lesion_pos = torch.where(curr_gt.flatten() > 0)
+                                curr_lesion_feat = curr_local_masked_feat[curr_lesion_pos, 0].squeeze()
+                                prev_lesion_pos = torch.where(prev_gt.flatten() > 0)
+                                prev_lesion_feat = prev_local_masked_feat[prev_lesion_pos, 0].squeeze()
+                                lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
 
                                 local_sim = local_sim.mean()
                                 local_masked_sim = local_masked_sim.mean()
