@@ -460,6 +460,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                                 local_sim = local_sim.mean()
                                 local_masked_sim = local_masked_sim.mean()
+                                lesion_sim = lesion_sim.mean()
 
                                 if res == len(curr_global_feats) - 1:
                                     local_lowres_sim_list.append(local_sim)

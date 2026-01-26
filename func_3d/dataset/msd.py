@@ -33,7 +33,7 @@ class MSD(Dataset):
         
         csv_root = "./data/MSD"
         for csv_path in os.listdir(csv_root):
-            if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
+            if not csv_path.startswith(args.task):# or not csv_path.endswith(f"{self.subset}.csv"):
                 continue
             
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
