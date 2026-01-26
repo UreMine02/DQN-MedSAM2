@@ -352,6 +352,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
                         score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
+                        
+                        video_segments[frame_idx]["dice"] = dice.item()
 
                         # Record the loss in this step
                         if args.ablation:
@@ -384,17 +386,17 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 # HYPOTHESIS TESTING
                 if args.ablation:
-                    total_global_allres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_global_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_global_masked_allres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_global_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_local_allres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_local_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_local_masked_allres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_local_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_lesion_allres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_lesion_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                    total_iou_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_global_allres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_global_lowres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_global_masked_allres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_global_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_local_allres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_local_lowres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_local_masked_allres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_local_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_lesion_allres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_lesion_lowres_sim[f"{name}_{cls_id}"] = [0,0]
+                    # total_iou_sim[f"{name}_{cls_id}"] = [0,0]
 
                     for frame_idx in train_state["output_dict"]["image_features"].keys():
                         curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
@@ -505,41 +507,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             local_masked_lowres_sim_list = torch.Tensor(local_masked_lowres_sim_list)
                             lesion_allres_sim_list = torch.Tensor(lesion_allres_sim_list)
                             lesion_lowres_sim_list = torch.Tensor(lesion_lowres_sim_list)
+                            gt_iou_list = torch.Tensor(gt_iou_list)
 
-                            global_allres_sim_list = min_max_scaling(global_allres_sim_list)
-                            global_lowres_sim_list = min_max_scaling(global_lowres_sim_list)
-                            global_masked_allres_sim_list = min_max_scaling(global_masked_allres_sim_list)
-                            global_masked_lowres_sim_list = min_max_scaling(global_masked_lowres_sim_list)
-                            local_allres_sim_list = min_max_scaling(local_allres_sim_list)
-                            local_lowres_sim_list = min_max_scaling(local_lowres_sim_list)
-                            local_masked_allres_sim_list = min_max_scaling(local_masked_allres_sim_list)
-                            local_masked_lowres_sim_list = min_max_scaling(local_masked_lowres_sim_list)
-                            lesion_allres_sim_list = min_max_scaling(lesion_allres_sim_list)
-                            lesion_lowres_sim_list = min_max_scaling(lesion_lowres_sim_list)
-
-                            total_global_allres_sim[f"{name}_{cls_id}"][check(global_allres_sim_list)] += 1
-                            total_global_lowres_sim[f"{name}_{cls_id}"][check(global_lowres_sim_list)] += 1
-                            total_global_masked_allres_sim[f"{name}_{cls_id}"][check(global_masked_allres_sim_list)] += 1
-                            total_global_masked_lowres_sim[f"{name}_{cls_id}"][check(global_masked_lowres_sim_list)] += 1
-                            total_local_allres_sim[f"{name}_{cls_id}"][check(local_allres_sim_list)] += 1
-                            total_local_lowres_sim[f"{name}_{cls_id}"][check(local_lowres_sim_list)] += 1
-                            total_local_masked_allres_sim[f"{name}_{cls_id}"][check(local_masked_allres_sim_list)] += 1
-                            total_local_masked_lowres_sim[f"{name}_{cls_id}"][check(local_masked_lowres_sim_list)] += 1
-                            total_lesion_allres_sim[f"{name}_{cls_id}"][check(lesion_allres_sim_list)] += 1
-                            total_lesion_lowres_sim[f"{name}_{cls_id}"][check(lesion_lowres_sim_list)] += 1
-                            total_iou_sim[f"{name}_{cls_id}"][check(torch.tensor(gt_iou_list))] += 1
+                            # total_global_allres_sim[f"{name}_{cls_id}"][check(global_allres_sim_list)] += 1
+                            # total_global_lowres_sim[f"{name}_{cls_id}"][check(global_lowres_sim_list)] += 1
+                            # total_global_masked_allres_sim[f"{name}_{cls_id}"][check(global_masked_allres_sim_list)] += 1
+                            # total_global_masked_lowres_sim[f"{name}_{cls_id}"][check(global_masked_lowres_sim_list)] += 1
+                            # total_local_allres_sim[f"{name}_{cls_id}"][check(local_allres_sim_list)] += 1
+                            # total_local_lowres_sim[f"{name}_{cls_id}"][check(local_lowres_sim_list)] += 1
+                            # total_local_masked_allres_sim[f"{name}_{cls_id}"][check(local_masked_allres_sim_list)] += 1
+                            # total_local_masked_lowres_sim[f"{name}_{cls_id}"][check(local_masked_lowres_sim_list)] += 1
+                            # total_lesion_allres_sim[f"{name}_{cls_id}"][check(lesion_allres_sim_list)] += 1
+                            # total_lesion_lowres_sim[f"{name}_{cls_id}"][check(lesion_lowres_sim_list)] += 1
+                            # total_iou_sim[f"{name}_{cls_id}"][check(torch.tensor(gt_iou_list))] += 1
                             
-                            # total_global_allres_sim[f"{name}_{cls_id}"] = global_allres_sim_list
-                            # total_global_lowres_sim[f"{name}_{cls_id}"] = global_lowres_sim_list
-                            # total_global_masked_allres_sim[f"{name}_{cls_id}"] = global_masked_allres_sim_list
-                            # total_global_masked_lowres_sim[f"{name}_{cls_id}"] = global_masked_lowres_sim_list
-                            # total_local_allres_sim[f"{name}_{cls_id}"] = local_allres_sim_list
-                            # total_local_lowres_sim[f"{name}_{cls_id}"] = local_lowres_sim_list
-                            # total_local_masked_allres_sim[f"{name}_{cls_id}"] = local_masked_allres_sim_list
-                            # total_local_masked_lowres_sim[f"{name}_{cls_id}"] = local_masked_lowres_sim_list
-                            # total_lesion_allres_sim[f"{name}_{cls_id}"] = lesion_allres_sim_list
-                            # total_lesion_lowres_sim[f"{name}_{cls_id}"] = lesion_lowres_sim_list
-                            # total_iou_sim[f"{name}_{cls_id}"] = torch.tensor(gt_iou_list)
+                            total_global_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_lesion_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_lesion_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
+                            total_iou_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(gt_iou_list), "dice": video_segments[frame_idx]["dice"]}
 
             average_score(instance_score)
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
@@ -554,7 +546,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         for obj_id in total_global_allres_sim.keys():
             data.append((
                 obj_id,
-                vol_avg_dice[obj_id],
+                # vol_avg_dice[obj_id],
                 total_global_allres_sim[obj_id],
                 total_global_lowres_sim[obj_id],
                 total_global_masked_allres_sim[obj_id],
@@ -568,7 +560,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             ))
         columns = [
             "obj_id",
-            "vol_avg_dice",
+            # "vol_avg_dice",
             "global_allres_sim",
             "global_lowres_sim",
             "global_masked_allres_sim",
