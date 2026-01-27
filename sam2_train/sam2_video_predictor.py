@@ -206,7 +206,8 @@ class SAM2VideoPredictor(SAM2Base):
                 "gt_ious": {},
                 "gt_dice": {},
                 "most_allres_sim_prev_frame": {},
-                "most_lowres_sim_prev_frame": {}
+                "most_lowres_sim_prev_frame": {},
+                "attn_frames": {}
             })
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -1393,7 +1394,7 @@ class SAM2VideoPredictor(SAM2Base):
             feat_sizes,
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
         
-        if "image_features" in output_dict:
+        if "image_features" in output_dict.keys():
             output_dict["image_features"][frame_idx] = []
             output_dict["masked_image_features"][frame_idx] = []
             for i, size in enumerate(feat_sizes):
@@ -1428,6 +1429,9 @@ class SAM2VideoPredictor(SAM2Base):
                 train_agent,
                 **track_step_kwargs
             )
+            
+        if "image_features" in output_dict:
+            output_dict["attn_frames"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys())
 
         # point and mask should not appear as input simultaneously on the same frame
         assert point_inputs is None or mask_inputs is None

@@ -39,9 +39,13 @@ metric_values = []
 def min_max_scaling(a):
     return (a - a.min()) / (a.max() - a.min() + 1e-8)
 
-def check(a, s=6):
-    min_inbank = a[-s:].min()
-    max_outbank = a[:-s].max()
+def check(a, bank):
+    in_bank = torch.zeros_like(a, dtype=torch.bool)
+    out_bank = torch.ones_like(a, dtype=torch.bool)
+    in_bank[bank] = True
+    out_bank[bank] = False 
+    min_inbank = a[in_bank].min()
+    max_outbank = a[out_bank].max()
     return (min_inbank < max_outbank).cpu().item()
 
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
@@ -521,17 +525,20 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             # total_lesion_lowres_sim[f"{name}_{cls_id}"][check(lesion_lowres_sim_list)] += 1
                             # total_iou_sim[f"{name}_{cls_id}"][check(torch.tensor(gt_iou_list))] += 1
                             
-                            total_global_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_global_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_global_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_local_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_local_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_local_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_local_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_lesion_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_allres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_lesion_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_lowres_sim_list), "dice": video_segments[frame_idx]["dice"]}
-                            total_iou_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(gt_iou_list), "dice": video_segments[frame_idx]["dice"]}
+                            inbank_frames = [i for i in range(frame_idx-3, frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
+                            indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
+                            
+                            total_global_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_global_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_masked_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_local_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_lesion_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_lesion_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                            total_iou_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(gt_iou_list, indices), "dice": video_segments[frame_idx]["dice"]}
 
             average_score(instance_score)
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
@@ -557,6 +564,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 total_local_masked_lowres_sim[obj_id],
                 total_lesion_allres_sim[obj_id],
                 total_lesion_lowres_sim[obj_id],
+                total_iou_sim[obj_id]
             ))
         columns = [
             "obj_id",
@@ -571,6 +579,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             "local_masked_lowres_sim",
             "lesion_allres_sim",
             "lesion_lowres_sim",
+            "gt_iou"
         ]
         df = pd.DataFrame(data=data, columns=columns)
         df.to_csv(f"{args.dataset}_{args.task}_ablation.csv")
