@@ -15,7 +15,7 @@
 
 ckpt=(
     # output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
-    output/msd_task03+no_agent+icl/2026-01-27-22-07-05/best.pth
+    output/msd_task03+no_agent+icl/2026-01-27-22-07-05/epoch_4_dice0.6530.pth
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
