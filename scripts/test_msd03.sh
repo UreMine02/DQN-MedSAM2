@@ -14,63 +14,63 @@
 # conda activate rlsam2
 
 ckpt=(
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_0_dice0.3498.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_1_dice0.4387.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_2_dice0.4585.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_3_dice0.4316.pth
-    # # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_4_dice0.3112.pth
-    # # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_5_dice0.2528.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_6_dice0.4338.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_7_dice0.5266.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_8_dice0.4497.pth
-    # # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_9_dice0.3389.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_10_dice0.4886.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_11_dice0.5672.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_12_dice0.4913.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_13_dice0.5037.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_14_dice0.4846.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_15_dice0.4690.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_16_dice0.5466.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_17_dice0.5207.pth
-    # # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_18_dice0.3142.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_19_dice0.5732.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_20_dice0.4972.pth
-    output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_21_dice0.6166.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_22_dice0.4777.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_23_dice0.5392.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_24_dice0.4190.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_25_dice0.5249.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_26_dice0.4008.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_27_dice0.4962.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_28_dice0.4499.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_29_dice0.5484.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_30_dice0.4637.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_31_dice0.5437.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_32_dice0.5268.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_33_dice0.5021.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_34_dice0.5368.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_35_dice0.5356.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_36_dice0.5641.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_37_dice0.4449.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_38_dice0.5673.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_39_dice0.5617.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_40_dice0.5286.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_41_dice0.5292.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_42_dice0.5381.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_43_dice0.5630.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_44_dice0.5842.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_45_dice0.5515.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_46_dice0.4962.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_47_dice0.5230.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_48_dice0.5354.pth
-    # output/dpc/msd_task03+grpo+icl/2026-01-23-15-39-00/epoch_49_dice0.5462.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_0_dice0.3722.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_1_dice0.3936.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_2_dice0.4665.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_3_dice0.4505.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_4_dice0.4693.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_5_dice0.4629.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_6_dice0.4830.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_7_dice0.4636.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_8_dice0.4932.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_9_dice0.4660.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_10_dice0.5118.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_11_dice0.4940.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_12_dice0.4337.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_13_dice0.5418.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_14_dice0.4955.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_15_dice0.4757.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_16_dice0.4677.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_17_dice0.5989.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_18_dice0.4867.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_19_dice0.4599.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_20_dice0.5416.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_21_dice0.5191.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_22_dice0.5165.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_23_dice0.5507.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_24_dice0.5597.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_25_dice0.5447.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_26_dice0.5175.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_27_dice0.5626.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_28_dice0.5850.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_29_dice0.5476.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_30_dice0.5424.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_31_dice0.5560.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_32_dice0.5745.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_33_dice0.5410.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_34_dice0.5095.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_35_dice0.5819.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_36_dice0.5784.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_37_dice0.5184.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_38_dice0.5682.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_39_dice0.5744.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_40_dice0.4709.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_41_dice0.5370.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_42_dice0.5813.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_43_dice0.5734.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_44_dice0.4951.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_45_dice0.5870.pth
+    output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_46_dice0.6098.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_47_dice0.5604.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_48_dice0.5889.pth
+    # output/dpc/msd_task03+grpo+icl/2026-01-22-08-26-55/epoch_49_dice0.5787.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
