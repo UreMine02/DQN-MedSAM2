@@ -42,7 +42,7 @@ def min_max_scaling(a):
 def check(a, s=6):
     min_inbank = a[-s:].min()
     max_outbank = a[:-s].max()
-    return (min_inbank < max_outbank).item()
+    return (min_inbank < max_outbank).cpu().item()
 
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
@@ -353,7 +353,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                         
-                        video_segments[frame_idx]["dice"] = dice.item()
+                        video_segments[frame_idx]["dice"] = dice.detach().cpu().item()
 
                         # Record the loss in this step
                         if args.ablation:

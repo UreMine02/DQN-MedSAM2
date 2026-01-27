@@ -10,4 +10,3 @@ rlsam2.sh
 *.out
 *.log
 *_ablation.csv
-*.ipynb

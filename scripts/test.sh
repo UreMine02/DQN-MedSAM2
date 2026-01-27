@@ -14,8 +14,8 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
-    # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/best.pth
+    # output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
+    output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
     # ./checkpoints/sam2_hiera_tiny.pt
@@ -26,18 +26,18 @@ ckpt=(
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task09+grpo+icl/2026-01-23-10-47-46/epoch_39_dice0.9158.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task Task03 \
-            -data_path /data/datasets/nii/MSD \
+            -dataset sarcoma \
+            -task "" \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -no_agent \
             -ablation
