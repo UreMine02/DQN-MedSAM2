@@ -1680,41 +1680,12 @@ class SAM2VideoPredictor(SAM2Base):
             drop_frame = action_frame_map[action]
             output_dict["non_cond_frame_outputs"].pop(drop_frame)
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            
-        if not train_agent and drop_frame is not None:
-            curr_feats = output_dict["image_features"][frame_idx]
-            allres_sim_list = []
-            lowres_sim_list = []
-            for prev_idx in prev_frames:
-                prev_feats = output_dict["image_features"][prev_idx]
-                sum_sim = 0
-                for res in range(len(curr_feats)):
-                    curr_feat = curr_feats[res]
-                    prev_feat = prev_feats[res]
-                    curr_feat = F.normalize(curr_feat, p=2, dim=-1)
-                    prev_feat = F.normalize(prev_feat, p=2, dim=-1)
-                    sim = curr_feat @ prev_feat.t()
-                    if res == len(curr_feats) - 1:
-                        lowres_sim_list.append(sim.item())
-                    sum_sim += sim
-                allres_sim_list.append(sum_sim.item())
 
-            # print(allres_sim_list, lowres_sim_list)
-            argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=True)
-            rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-            dropped_rank = rank[prev_frames.index(drop_frame)].item()
-            output_dict["dropped_frames_allres_sim_rank"].append(dropped_rank)
-            
-            argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=True)
-            rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-            dropped_rank = rank[prev_frames.index(drop_frame)].item()
-            output_dict["dropped_frames_lowres_sim_rank"].append(dropped_rank)
-
-        # if not train_agent:
-        #     print(f"[Q] frame {frame_idx-1} "
-        #           f"action {action} "
-        #           f"drop_frame {drop_frame} "
-        #           f"bank_size {bank_size} ")
+        if not train_agent:
+            print(f"[Q] frame {frame_idx-1} "
+                  f"action {action} "
+                  f"drop_frame {drop_frame} "
+                  f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
