@@ -14,8 +14,8 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
-    # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
+    # output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
+    output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
     # ./checkpoints/sam2_hiera_tiny.pt
@@ -40,7 +40,7 @@ do
             -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -no_agent \
-            -ablation
-            # -vis
+            -ablation \
+            -vis
     done
 done
