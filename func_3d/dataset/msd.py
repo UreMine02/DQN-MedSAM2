@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-from torchvision import transforms
+from torchvision.transforms.functional import normalize
 
 
 def normalization(image):
@@ -47,12 +47,6 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
-        
-        # self.transform = transforms.Compose([
-        #     transforms.Resize(size=(self.image_size, self.image_size)),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        # ])
         
     def __len__(self):
         return len(self.gt_path)
@@ -107,8 +101,8 @@ class MSD(Dataset):
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
                 
-        image_3d = np.asanyarray(image_3d, dtype=np.float32)
-        data_seg_3d = np.asanyarray(data_seg_3d, dtype=np.float32)
+        image_3d = np.asarray(image_3d, dtype=np.float32)
+        data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
@@ -133,7 +127,7 @@ class MSD(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
         
-        image_3d = normalization(image_3d) # [H, W, D]
+        # image_3d = normalization(image_3d) # [H, W, D]
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
@@ -143,6 +137,6 @@ class MSD(Dataset):
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
         
         # print(image_3d.shape)
-        # image_3d = transforms.functional.normalize(image_3d, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        image_3d = normalize(image_3d, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
         return image_3d, data_seg_3d
