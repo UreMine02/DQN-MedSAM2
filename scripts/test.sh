@@ -30,14 +30,14 @@ export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task Task03 \
-            -data_path /data/datasets/nii/MSD \
+            -dataset sarcoma \
+            -task "" \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -no_agent \
             -ablation
