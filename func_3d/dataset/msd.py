@@ -78,7 +78,7 @@ class MSD(Dataset):
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random'
+            slice_selection='random' if self.subset == 'train' else 'evenly'
         )
         
         output_dict = {
@@ -127,7 +127,6 @@ class MSD(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
         
-        # image_3d = normalization(image_3d) # [H, W, D]
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 

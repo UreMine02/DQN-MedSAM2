@@ -126,7 +126,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # Calculate the loss
                     obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                     iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                    iou_gt = iou_score(pred, mask)
+                    pred_mask = (torch.sigmoid(pred) > 0.5).float()
+                    iou_gt = iou_score(pred_mask, mask)
                     dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                     class_loss["num_step"] += 1
                     # Update the loss of the class
@@ -145,14 +146,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 optimizer.zero_grad()
                 avg_loss.backward()
-                # if not args.no_agent:
-                #     grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
                 metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                # if not args.no_agent:
-                #     metric_logger.update(grad_norm=grad_total_norm)
+                metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
                 if agent is not None:
@@ -296,9 +295,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                                 for i, out_obj_id in enumerate(out_obj_ids)
                             }
 
-                dropped_frames_allres_sim_rank.extend(train_state["output_dict"]["dropped_frames_allres_sim_rank"])
-                dropped_frames_lowres_sim_rank.extend(train_state["output_dict"]["dropped_frames_lowres_sim_rank"])
-
                 # Record the loss in this step
                 class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
                 for frame_idx in video_segments.keys():
@@ -350,10 +346,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             pbar.update()
 
     average_score(total_score)
-
-    print(np.unique(dropped_frames_allres_sim_rank, return_counts=True))
-    print(np.unique(dropped_frames_lowres_sim_rank, return_counts=True))
-
+    
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),

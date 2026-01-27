@@ -707,45 +707,6 @@ class SAM2Base(torch.nn.Module):
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             return_attn=return_attn,
         )
-        
-        if return_attn:
-            dropped_frames = [idx for idx in output_dict["prev_frame_idx"] if idx not in memory_pos]
-            if dropped_frames:
-                prev_frame_idx = output_dict["prev_frame_idx"]
-                # prev_memory_attn_scores = output_dict["prev_memory_attn_scores"]
-                # argsort = torch.argsort(prev_memory_attn_scores.cpu(), descending=True)
-                # rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                # dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                # output_dict["dropped_frames_attn_rank"].extend(dropped_rank)
-                
-                curr_feats = output_dict["image_features"][frame_idx]
-                allres_sim_list = []
-                lowres_sim_list = []
-                for prev_idx in output_dict["prev_frame_idx"]:
-                    prev_feats = output_dict["image_features"][prev_idx]
-                    sum_sim = 0
-                    for res in range(len(curr_feats)):
-                        curr_feat = curr_feats[res]
-                        prev_feat = prev_feats[res]
-                        curr_feat = F.normalize(curr_feat, p=2, dim=-1)
-                        prev_feat = F.normalize(prev_feat, p=2, dim=-1)
-                        sim = curr_feat @ prev_feat.t()
-                        if res == len(curr_feats) - 1:
-                            lowres_sim_list.append(sim)
-                        sum_sim += sim
-                    allres_sim_list.append(sum_sim)
-
-                argsort = torch.argsort(torch.Tensor(allres_sim_list), descending=True)
-                rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                output_dict["dropped_frames_allres_sim_rank"].extend(dropped_rank)
-                
-                argsort = torch.argsort(torch.Tensor(lowres_sim_list), descending=True)
-                rank = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                dropped_rank = [rank[prev_frame_idx.index(frame)].item() for frame in dropped_frames]
-                output_dict["dropped_frames_lowres_sim_rank"].extend(dropped_rank)
-            
-            output_dict["prev_frame_idx"] = memory_pos
             
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
