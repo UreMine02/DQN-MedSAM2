@@ -613,7 +613,7 @@ class SAM2Base(torch.nn.Module):
 
                     t_pos_and_prevs.append((t_pos, out))
 
-                # print("FIFO:", memory_pos)
+                # print(frame_idx, "FIFO:", memory_pos)
             else:
                 # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(

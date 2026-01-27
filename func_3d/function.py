@@ -478,11 +478,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                             local_sim = local_sim.mean()
                             local_masked_sim = local_masked_sim.mean()
-                            lesion_sim = lesion_sim.mean()
+                            lesion_sim = lesion_sim.max(dim=1)[0].mean()
                             
-                            # torch.set_printoptions(precision=10)
-                            # print(frame_idx, prev_idx, lesion_sim)
-
                             if res == len(curr_global_feats) - 1:
                                 local_lowres_sim_list.append(local_sim)
                                 local_masked_lowres_sim_list.append(local_masked_sim)
@@ -517,8 +514,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         lesion_allres_sim_list = torch.Tensor(lesion_allres_sim_list)
                         lesion_lowres_sim_list = torch.Tensor(lesion_lowres_sim_list)
                         gt_iou_list = torch.Tensor(gt_iou_list)
-                        
-                        # print(lesion_allres_sim_list)
 
                         # total_global_allres_sim[f"{name}_{cls_id}"][check(global_allres_sim_list)] += 1
                         # total_global_lowres_sim[f"{name}_{cls_id}"][check(global_lowres_sim_list)] += 1
