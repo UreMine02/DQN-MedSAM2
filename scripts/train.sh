@@ -13,5 +13,4 @@ CUDA_VISIBLE_DEVICES=0 python train_3d.py \
     -lr 5e-5 \
     -val_freq 1 \
     -ep 10 \
-    -num_support 5 \
-    -distributed
+    -num_support 5

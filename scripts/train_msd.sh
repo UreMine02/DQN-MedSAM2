@@ -27,5 +27,4 @@ python train_3d.py \
     -val_freq 1 \
     -ep 10 \
     -num_support 5 \
-    -no_agent \
-    -distributed
+    -no_agent

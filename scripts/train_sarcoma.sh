@@ -30,5 +30,4 @@ python train_3d.py \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
-    -num_support 5 \
-    -distributed
+    -num_support 5
