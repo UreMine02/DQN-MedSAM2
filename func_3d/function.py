@@ -505,7 +505,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         gt_iou_list.append(iou)
                         
                     num_maskmem = 6
-                    if len(global_allres_sim_list) > num_maskmem:
+                    inbank_frames = [i for i in range(max(0, frame_idx-num_maskmem), frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
+                    indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
+                    if len(indices) > 0:
                         global_allres_sim_list = torch.Tensor(global_allres_sim_list)
                         global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
                         global_masked_allres_sim_list = torch.Tensor(global_masked_allres_sim_list)
@@ -529,9 +531,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         # total_lesion_allres_sim[f"{name}_{cls_id}"][check(lesion_allres_sim_list)] += 1
                         # total_lesion_lowres_sim[f"{name}_{cls_id}"][check(lesion_lowres_sim_list)] += 1
                         # total_iou_sim[f"{name}_{cls_id}"][check(torch.tensor(gt_iou_list))] += 1
-                        
-                        inbank_frames = [i for i in range(frame_idx-num_maskmem, frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
-                        indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
                         
                         total_global_allres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_allres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
                         total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
@@ -587,7 +586,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             "gt_iou"
         ]
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_csv(f"{args.dataset}_{args.task}_ablation.csv")
+        df.to_csv(f"{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
 
     avg = {

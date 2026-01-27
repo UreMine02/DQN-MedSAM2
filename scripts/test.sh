@@ -15,7 +15,7 @@
 
 ckpt=(
     # output/dpc/msd_task03+no_agent+icl/epoch_5_dice0.1750.pth
-    output/msd_task03+no_agent+icl/2026-01-27-22-07-05/epoch_4_dice0.6530.pth
+    # output/msd_task03+no_agent+icl/2026-01-27-22-07-05/epoch_4_dice0.6530.pth
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task03+no_agent+icl/2026-01-23-10-03-30/epoch_5_dice0.1750.pth
@@ -25,6 +25,9 @@ ckpt=(
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_29_dice0.5645.pth
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task08+grpo+icl/2026-01-23-10-45-02/epoch_20_dice0.3753.pth
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task09+grpo+icl/2026-01-23-10-47-46/epoch_39_dice0.9158.pth
+
+    # output/dpc/msd_task07+grpo+icl/2026-01-28-00-18-39/best.pth
+    output/dpc/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_7_dice0.5675.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -37,10 +40,9 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task Task03 \
+            -task Task07 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -no_agent \
             -ablation
             # -vis
     done
