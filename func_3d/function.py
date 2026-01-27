@@ -145,14 +145,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 optimizer.zero_grad()
                 avg_loss.backward()
-                # if not args.no_agent:
-                #     grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.5)
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
                 metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                # if not args.no_agent:
-                #     metric_logger.update(grad_norm=grad_total_norm)
+                metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
                 if agent is not None:
