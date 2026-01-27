@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task01+no_agent+icl
+EXP=msd_task01+no_agent+icl+no_grad_clipping
 # export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
