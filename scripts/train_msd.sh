@@ -22,12 +22,10 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
-    -lr 1e-4 \
+    -data_path /data/rlsam2/datasets/nii/MSD \
+    -lr 5e-5 \
     -val_freq 1 \
-    -ep 50 \
-    -q_updates_per_step 2 \
-    -lazy_penalty -0.1 \
-    -invalid_penalty -0.1 \
-    -num_support 3 \
+    -ep 10 \
+    -num_support 5 \
+    -no_agent \
     -distributed

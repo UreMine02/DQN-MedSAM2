@@ -61,7 +61,7 @@ python train_3d.py \
 -data_path=/workspace/fred/medical_image/btcv \
 -distributed=False\
 -gpu_device=0\
--wandb_enabled=True
+-distributed=True
 ```
 
 

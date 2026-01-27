@@ -29,7 +29,7 @@ def parse_args():
     parser.add_argument('-data_path', type=str, default='/mnt/12T/cuong/AAAI/Combined_Dataset', help='The path of segmentation data'),
     parser.add_argument('-num_support', type=int, default=10, help='saving trained checkpoints')
     parser.add_argument('-save_ckpt', type=bool, default=True, help='enable wandb')
-    parser.add_argument('-wandb_enabled', action="store_true", help='enable wandb')
+    parser.add_argument('-distributed', action="store_true", help='enable wandb')
     parser.add_argument('-checkpoint_path', type=str, default="/mnt/12T/cuong/medsam2-icl/checkpoint", help='checkpoint root path')
     parser.add_argument('-truncated_test_frame', type=bool, default=False, help='checkpoint root path')
     parser.add_argument('-task', type=str, default='', help='msd task, leave default for all tasks')

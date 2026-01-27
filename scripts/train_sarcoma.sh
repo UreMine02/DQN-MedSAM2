@@ -24,11 +24,11 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
     -data_path /data/datasets/Sarcoma \
-    -lr 1e-4 \
+    -lr 5e-5 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 10 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
-    -num_support 3 \
-    -wandb_enabled
+    -num_support 5 \
+    -distributed
