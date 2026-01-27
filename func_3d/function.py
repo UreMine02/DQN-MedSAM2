@@ -507,7 +507,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     num_maskmem = 6
                     inbank_frames = [i for i in range(max(0, frame_idx-num_maskmem), frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
                     indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
-                    if len(indices) > 0:
+                    if len(indices) > 0 and len(global_allres_sim_list) > len(indices):
                         global_allres_sim_list = torch.Tensor(global_allres_sim_list)
                         global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
                         global_masked_allres_sim_list = torch.Tensor(global_masked_allres_sim_list)

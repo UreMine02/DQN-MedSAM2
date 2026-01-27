@@ -27,7 +27,8 @@ ckpt=(
     # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task09+grpo+icl/2026-01-23-10-47-46/epoch_39_dice0.9158.pth
 
     # output/dpc/msd_task07+grpo+icl/2026-01-28-00-18-39/best.pth
-    output/dpc/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_7_dice0.5675.pth
+    output/msd_task02/2026-01-28-04-47-14/best.pth
+    # output/dpc/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_7_dice0.5675.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -40,9 +41,10 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task Task07 \
+            -task Task02 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
+            -no_agent \
             -ablation
             # -vis
     done
