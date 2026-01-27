@@ -475,7 +475,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             curr_lesion_feat = curr_local_masked_feat[curr_pos].squeeze(1)
                             prev_lesion_feat = prev_local_masked_feat[prev_pos].squeeze(1)
                             lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
-
+                            print(lesion_sim)
                             local_sim = local_sim.mean()
                             local_masked_sim = local_masked_sim.mean()
                             lesion_sim = lesion_sim.max(dim=1)[0].mean()
