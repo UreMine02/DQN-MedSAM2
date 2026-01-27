@@ -30,7 +30,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 1;
+    for shot in 3;
     do
         python eval_3d.py \
             -pretrain $pretrain \
