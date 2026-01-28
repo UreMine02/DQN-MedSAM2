@@ -37,11 +37,11 @@ ckpt=(
     output/msd_task02+grpo+icl+agent_only/2026-01-28-14-50-10/epoch_9_dice0.9099.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 1;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
