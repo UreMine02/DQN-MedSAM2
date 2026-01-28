@@ -379,18 +379,19 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             if args.ablation:
                 for frame_idx in train_state["output_dict"]["dice_drop"].keys():
                     dice_drop = list(train_state["output_dict"]["dice_drop"][frame_idx].values())
-                    # print(frame_idx, train_state["output_dict"]["dice_drop"][frame_idx], train_state["output_dict"]["drop_frame"][frame_idx])
-                    if len(dice_drop) < 6:
+                    
+                    if train_state["output_dict"]["drop_frame"][frame_idx] < 0:
                         continue
                     
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"] = {}
                     argsort = torch.argsort(torch.Tensor(dice_drop), descending=True)
                     ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                    dropped_rank = ranking[0].item()
+                    dropped_rank = ranking[train_state["output_dict"]["drop_frame"][frame_idx]].item()
                     
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[0]
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[train_state["output_dict"]["drop_frame"][frame_idx]]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["miss"] = video_segments[frame_idx]["dice"]
                 
                 # for frame_idx in train_state["output_dict"]["image_features"].keys():
                 #     curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)

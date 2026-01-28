@@ -30,11 +30,11 @@ ckpt=(
     # output/msd_task02/2026-01-28-04-47-14/best.pth
     # output/dpc/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_7_dice0.5675.pth
 
-    # output/sarcoma+grpo+icl+entrop1e-3/2026-01-21-18-03-09/best.pth
+    output/sarcoma+grpo+icl+entrop1e-3/2026-01-21-18-03-09/best.pth
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task02+no_agent+icl+correct_iou/2026-01-19-19-23-17/best.pth
-    output/msd_task02+grpo+icl+agent_only/2026-01-28-14-50-10/epoch_9_dice0.9099.pth
+    # output/msd_task02+grpo+icl+agent_only/2026-01-28-14-50-10/epoch_9_dice0.9099.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -46,9 +46,9 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task Task02 \
-            -data_path /data/datasets/nii/MSD \
+            -dataset sarcoma \
+            -task "" \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -ablation
     done

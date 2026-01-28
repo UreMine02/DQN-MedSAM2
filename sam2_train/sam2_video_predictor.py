@@ -1431,6 +1431,7 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_feats,
                 current_vision_pos_embeds,
                 output_dict,
+                agent_act=agent_act,
                 **track_step_kwargs
             )
 
@@ -1446,10 +1447,11 @@ class SAM2VideoPredictor(SAM2Base):
                 train_agent,
                 **track_step_kwargs
             )
-        elif "image_features" in output_dict.keys():
-            output_dict["drop_frame"][frame_idx] = -1 if frame_idx - self.num_maskmem < 0 else frame_idx - self.num_maskmem
+        elif frame_idx == 0 and "image_features" in output_dict.keys():
+            output_dict["drop_frame"][frame_idx] = -1
+        
+        if "image_features" in output_dict.keys():
             output_dict["attn_frames"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys())
-
 
         # point and mask should not appear as input simultaneously on the same frame
         assert point_inputs is None or mask_inputs is None
@@ -1469,7 +1471,6 @@ class SAM2VideoPredictor(SAM2Base):
             agent_act=agent_act,
             return_attn=not agent_act
         )
-
         # optionally offload the output to CPU memory to save GPU space
         maskmem_features = current_out["maskmem_features"]
         if maskmem_features is not None:
@@ -1651,7 +1652,7 @@ class SAM2VideoPredictor(SAM2Base):
             gt_masks = gt_masks.to(torch.float32)
 
             loss_before = compute_loss(pred_masks, gt_masks, inference_state)
-
+        
         state, action_frame_map = prepare_rl_state(
             current_vision_feats,
             current_vision_pos_embeds,
@@ -1745,7 +1746,6 @@ class SAM2VideoPredictor(SAM2Base):
         drop_frame = None
         reward = 0.0
         action = action_out['main_action']
-        print(action_frame_map)
         if "drop_frame" in output_dict.keys():
             output_dict["drop_frame"][frame_idx] = -1
             
@@ -1759,20 +1759,16 @@ class SAM2VideoPredictor(SAM2Base):
         else:
             # Add the new frame and skip a specific frame
             drop_frame = action_frame_map[action]
-            print(output_dict["non_cond_frame_outputs"].keys(), drop_frame)
+            if "drop_frame" in output_dict.keys():
+                output_dict["drop_frame"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys()).index(drop_frame)
             output_dict["non_cond_frame_outputs"].pop(drop_frame)
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            
-            if "drop_frame" in output_dict.keys():
-                output_dict["drop_frame"][frame_idx] = drop_frame
 
         if not train_agent:
             print(f"[Q] frame {frame_idx-1} "
                   f"action {action} "
                   f"drop_frame {drop_frame} "
                   f"bank_size {bank_size} ")
-            
-        print("final", output_dict["non_cond_frame_outputs"].keys(), drop_frame)
 
     def agent_update_first_stage(
         self,
@@ -1905,6 +1901,7 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_feats,
         current_vision_pos_embeds,
         output_dict,
+        agent_act,
         **kwargs):
         
         video_H = inference_state["video_height"]
@@ -1973,9 +1970,12 @@ class SAM2VideoPredictor(SAM2Base):
             
             output_dict["dice_drop"][frame_idx][prev_frame_idx] = (dice_after - dice_before).item()
 
-        if len(output_dict["dice_drop"][frame_idx]) == self.num_maskmem - 1:
-            drop_frame = list(output_dict["non_cond_frame_outputs"].keys())[0]
-            output_dict["non_cond_frame_outputs"].pop(drop_frame)
+        if not agent_act:
+            output_dict["drop_frame"][frame_idx] = -1
+            if len(output_dict["dice_drop"][frame_idx]) == self.num_maskmem - 1:
+                drop_frame = list(output_dict["non_cond_frame_outputs"].keys())[0]
+                output_dict["non_cond_frame_outputs"].pop(drop_frame)
+                output_dict["drop_frame"][frame_idx] = 0
 
-        if frame_idx > 0:
-            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            if frame_idx > 0:
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
