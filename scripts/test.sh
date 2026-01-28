@@ -43,9 +43,9 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset sarcoma \
-            -task "" \
-            -data_path /data/datasets/nii/Sarcoma \
+            -dataset msd \
+            -task Task07 \
+            -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -no_agent \
             -ablation

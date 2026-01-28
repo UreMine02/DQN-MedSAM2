@@ -587,6 +587,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         ]
         df = pd.DataFrame(data=data, columns=columns)
         df.to_csv(f"{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
+        print(f"Ablation save to {args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
 
     avg = {
