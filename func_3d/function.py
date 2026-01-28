@@ -250,7 +250,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     total_lesion_highres_sim = {}
     total_lesion_lowres_sim = {}
     total_iou_sim = {}
-    vol_avg_dice = {}
+    
+    ablation_data = {}
 
     metric_logger = MetricLogger(delimiter="  ")
     header = 'Testing: '
@@ -322,21 +323,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
-                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act):
+                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act, ablation=args.ablation):
                         video_segments[out_frame_idx] = {
                             out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                             "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
                             for i, out_obj_id in enumerate(out_obj_ids)
                         }
-
-            # dropped_frames_highres_sim_rank.extend(train_state["output_dict"]["dropped_frames_highres_sim_rank"])
-            # dropped_frames_lowres_sim_rank.extend(train_state["output_dict"]["dropped_frames_lowres_sim_rank"])
-            # dropped_frames_ious_rank.extend(train_state["output_dict"]["dropped_frames_ious_rank"])
-            # dropped_frames_dice_rank.extend(train_state["output_dict"]["dropped_frames_dice_rank"])
-
-            # Record the loss in this step
-            if args.ablation:
-                vol_avg_dice[f"{name}_{cls_id}"] = []
 
             class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
             for frame_idx in video_segments.keys():
@@ -360,10 +352,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     
                     video_segments[frame_idx]["dice"] = dice.detach().cpu().item()
-
-                    # Record the loss in this step
-                    if args.ablation:
-                        vol_avg_dice[f"{name}_{cls_id}"].append(dice)
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice)
 
@@ -382,9 +370,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         cmap="jet"
                     )
 
-            if args.ablation:
-                vol_avg_dice[f"{name}_{cls_id}"] = torch.mean(torch.tensor(vol_avg_dice[f"{name}_{cls_id}"]))
-
             average_score(class_score)
             update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
 
@@ -392,164 +377,136 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             # HYPOTHESIS TESTING
             if args.ablation:
-                # total_global_highres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_global_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_global_masked_highres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_global_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_local_highres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_local_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_local_masked_highres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_local_masked_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_lesion_highres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_lesion_lowres_sim[f"{name}_{cls_id}"] = [0,0]
-                # total_iou_sim[f"{name}_{cls_id}"] = [0,0]
+                for frame_idx in train_state["output_dict"]["dice_drop"].keys():
+                    dice_drop = list(train_state["output_dict"]["dice_drop"][frame_idx].values())
+                    # print(frame_idx, train_state["output_dict"]["dice_drop"][frame_idx], train_state["output_dict"]["drop_frame"][frame_idx])
+                    if len(dice_drop) < 6:
+                        continue
+                    
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"] = {}
+                    argsort = torch.argsort(torch.Tensor(dice_drop), descending=True)
+                    ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+                    dropped_rank = ranking[0].item()
+                    
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[0]
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
+                
+                # for frame_idx in train_state["output_dict"]["image_features"].keys():
+                #     curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
+                #     curr_local_feats = train_state["output_dict"]["image_features"][frame_idx]
+                #     curr_local_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
+                #     curr_global_feats = [feat.mean(0) for feat in curr_local_feats]
+                #     curr_global_masked_feats = [feat.mean(0) for feat in curr_local_masked_feats]
 
-                for frame_idx in train_state["output_dict"]["image_features"].keys():
-                    curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
-                    curr_local_feats = train_state["output_dict"]["image_features"][frame_idx]
-                    curr_local_masked_feats = train_state["output_dict"]["masked_image_features"][frame_idx]
-                    curr_global_feats = [feat.mean(0) for feat in curr_local_feats]
-                    curr_global_masked_feats = [feat.mean(0) for feat in curr_local_masked_feats]
+                #     prev_idx_list = []
+                #     global_highres_sim_list = []
+                #     global_lowres_sim_list = []
+                #     global_masked_highres_sim_list = []
+                #     global_masked_lowres_sim_list = []
+                #     local_highres_sim_list = []
+                #     local_lowres_sim_list = []
+                #     local_masked_highres_sim_list = []
+                #     local_masked_lowres_sim_list = []
+                #     lesion_highres_sim_list = []
+                #     lesion_lowres_sim_list = []
+                #     gt_iou_list = []
+                #     for prev_idx in train_state["output_dict"]["image_features"].keys():
+                #         if prev_idx >= frame_idx:
+                #             continue
+                        
+                #         prev_gt = train_state["gt_masks"][prev_idx].float().to(GPUdevice, non_blocking=True)
+                #         prev_local_feats = train_state["output_dict"]["image_features"][prev_idx]
+                #         prev_local_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
+                #         prev_global_feats = [feat.mean(0) for feat in prev_local_feats]
+                #         prev_global_masked_feats = [feat.mean(0) for feat in prev_local_masked_feats]
+                        
+                #         iou = iou_score(prev_gt, curr_gt)
+                        
+                #         for res in range(len(curr_global_feats)):
+                #             curr_local_feat = curr_local_feats[res]
+                #             curr_global_feat = curr_global_feats[res]
+                #             prev_local_feat = prev_local_feats[res]
+                #             prev_global_feat = prev_global_feats[res]
+                #             curr_local_masked_feat = curr_local_masked_feats[res]
+                #             curr_global_masked_feat = curr_global_masked_feats[res]
+                #             prev_local_masked_feat = prev_local_masked_feats[res]
+                #             prev_global_masked_feat = prev_global_masked_feats[res]
 
-                    prev_idx_list = []
-                    global_highres_sim_list = []
-                    global_lowres_sim_list = []
-                    global_masked_highres_sim_list = []
-                    global_masked_lowres_sim_list = []
-                    local_highres_sim_list = []
-                    local_lowres_sim_list = []
-                    local_masked_highres_sim_list = []
-                    local_masked_lowres_sim_list = []
-                    lesion_highres_sim_list = []
-                    lesion_lowres_sim_list = []
-                    gt_iou_list = []
-                    for prev_idx in train_state["output_dict"]["image_features"].keys():
-                        if prev_idx >= frame_idx:
-                            continue
-                        
-                        prev_gt = train_state["gt_masks"][prev_idx].float().to(GPUdevice, non_blocking=True)
-                        prev_local_feats = train_state["output_dict"]["image_features"][prev_idx]
-                        prev_local_masked_feats = train_state["output_dict"]["masked_image_features"][prev_idx]
-                        prev_global_feats = [feat.mean(0) for feat in prev_local_feats]
-                        prev_global_masked_feats = [feat.mean(0) for feat in prev_local_masked_feats]
-                        
-                        iou = iou_score(prev_gt, curr_gt)
-                        
-                        (
-                            sum_global_sim, 
-                            sum_global_masked_sim, 
-                            sum_local_sim,
-                            sum_local_masked_sim, 
-                            sum_lesion_sim
-                        ) = 0, 0, 0 ,0, 0
-                        
-                        for res in range(len(curr_global_feats)):
-                            curr_local_feat = curr_local_feats[res]
-                            curr_global_feat = curr_global_feats[res]
-                            prev_local_feat = prev_local_feats[res]
-                            prev_global_feat = prev_global_feats[res]
-                            curr_local_masked_feat = curr_local_masked_feats[res]
-                            curr_global_masked_feat = curr_global_masked_feats[res]
-                            prev_local_masked_feat = prev_local_masked_feats[res]
-                            prev_global_masked_feat = prev_global_masked_feats[res]
+                #             curr_local_feat = F.normalize(curr_local_feat, p=2, dim=-1)
+                #             curr_global_feat = F.normalize(curr_global_feat, p=2, dim=-1)
+                #             prev_local_feat = F.normalize(prev_local_feat, p=2, dim=-1)
+                #             prev_global_feat = F.normalize(prev_global_feat, p=2, dim=-1)
+                #             curr_local_masked_feat = F.normalize(curr_local_masked_feat, p=2, dim=-1)
+                #             curr_global_masked_feat = F.normalize(curr_global_masked_feat, p=2, dim=-1)
+                #             prev_local_masked_feat = F.normalize(prev_local_masked_feat, p=2, dim=-1)
+                #             prev_global_masked_feat = F.normalize(prev_global_masked_feat, p=2, dim=-1)
 
-                            curr_local_feat = F.normalize(curr_local_feat, p=2, dim=-1)
-                            curr_global_feat = F.normalize(curr_global_feat, p=2, dim=-1)
-                            prev_local_feat = F.normalize(prev_local_feat, p=2, dim=-1)
-                            prev_global_feat = F.normalize(prev_global_feat, p=2, dim=-1)
-                            curr_local_masked_feat = F.normalize(curr_local_masked_feat, p=2, dim=-1)
-                            curr_global_masked_feat = F.normalize(curr_global_masked_feat, p=2, dim=-1)
-                            prev_local_masked_feat = F.normalize(prev_local_masked_feat, p=2, dim=-1)
-                            prev_global_masked_feat = F.normalize(prev_global_masked_feat, p=2, dim=-1)
-
-                            local_sim = curr_local_feat @ prev_local_feat.transpose(-2, -1)
-                            local_masked_sim = curr_local_masked_feat @ prev_local_masked_feat.transpose(-2, -1)
-                            global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
-                            global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
+                #             local_sim = curr_local_feat @ prev_local_feat.transpose(-2, -1)
+                #             local_masked_sim = curr_local_masked_feat @ prev_local_masked_feat.transpose(-2, -1)
+                #             global_sim = curr_global_feat @ prev_global_feat.transpose(-2, -1)
+                #             global_masked_sim = curr_global_masked_feat @ prev_global_masked_feat.transpose(-2, -1)
                             
-                            s = int(np.sqrt(curr_local_masked_feat.shape[0]))
-                            curr_lowres_gt = F.interpolate(curr_gt.unsqueeze(0).unsqueeze(1), size=(s,s), mode="nearest")
-                            prev_lowres_gt = F.interpolate(prev_gt.unsqueeze(0).unsqueeze(1), size=(s,s), mode="nearest")
-                            curr_pos = torch.where(curr_lowres_gt.flatten() > 0)
-                            prev_pos = torch.where(prev_lowres_gt.flatten() > 0)
-                            curr_lesion_feat = curr_local_masked_feat[curr_pos].squeeze(1)
-                            prev_lesion_feat = prev_local_masked_feat[prev_pos].squeeze(1)
-                            lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
+                #             s = int(np.sqrt(curr_local_masked_feat.shape[0]))
+                #             curr_lowres_gt = F.interpolate(curr_gt.unsqueeze(0).unsqueeze(1), size=(s,s), mode="nearest")
+                #             prev_lowres_gt = F.interpolate(prev_gt.unsqueeze(0).unsqueeze(1), size=(s,s), mode="nearest")
+                #             curr_pos = torch.where(curr_lowres_gt.flatten() > 0)
+                #             prev_pos = torch.where(prev_lowres_gt.flatten() > 0)
+                #             curr_lesion_feat = curr_local_masked_feat[curr_pos].squeeze(1)
+                #             prev_lesion_feat = prev_local_masked_feat[prev_pos].squeeze(1)
+                #             lesion_sim = curr_lesion_feat @ prev_lesion_feat.transpose(-2, -1)
                             
-                            local_sim = local_sim.mean()
-                            local_masked_sim = local_masked_sim.mean()
-                            if len(curr_pos[0]) > 0 and len(prev_pos[0]) > 0:
-                                lesion_sim = lesion_sim.max(dim=1)[0].mean()
-                            else:
-                                lesion_sim = 0
+                #             local_sim = local_sim.mean()
+                #             local_masked_sim = local_masked_sim.mean()
+                #             if len(curr_pos[0]) > 0 and len(prev_pos[0]) > 0:
+                #                 lesion_sim = lesion_sim.max(dim=1)[0].mean()
+                #             else:
+                #                 lesion_sim = 0
                                 
-                            if res == 0:
-                                local_highres_sim_list.append(local_sim)
-                                local_masked_highres_sim_list.append(local_masked_sim)
-                                global_highres_sim_list.append(global_sim)
-                                global_masked_highres_sim_list.append(global_masked_sim)
-                                lesion_highres_sim_list.append(lesion_sim)
+                #             if res == 0:
+                #                 local_highres_sim_list.append(local_sim)
+                #                 local_masked_highres_sim_list.append(local_masked_sim)
+                #                 global_highres_sim_list.append(global_sim)
+                #                 global_masked_highres_sim_list.append(global_masked_sim)
+                #                 lesion_highres_sim_list.append(lesion_sim)
                             
-                            if res == len(curr_global_feats) - 1:
-                                local_lowres_sim_list.append(local_sim)
-                                local_masked_lowres_sim_list.append(local_masked_sim)
-                                global_lowres_sim_list.append(global_sim)
-                                global_masked_lowres_sim_list.append(global_masked_sim)
-                                lesion_lowres_sim_list.append(lesion_sim)
+                #             if res == len(curr_global_feats) - 1:
+                #                 local_lowres_sim_list.append(local_sim)
+                #                 local_masked_lowres_sim_list.append(local_masked_sim)
+                #                 global_lowres_sim_list.append(global_sim)
+                #                 global_masked_lowres_sim_list.append(global_masked_sim)
+                #                 lesion_lowres_sim_list.append(lesion_sim)
 
-                            # sum_global_sim += global_sim
-                            # sum_global_masked_sim += global_masked_sim
-                            # sum_local_sim += local_sim
-                            # sum_local_masked_sim += local_masked_sim
-                            # sum_lesion_sim += lesion_sim
-
-                        # global_highres_sim_list.append(sum_global_sim)
-                        # global_masked_highres_sim_list.append(sum_global_masked_sim)
-                        # local_highres_sim_list.append(sum_local_sim)
-                        # local_masked_highres_sim_list.append(sum_local_masked_sim)
-                        # lesion_highres_sim_list.append(sum_lesion_sim)
-                        prev_idx_list.append(prev_idx)
-                        gt_iou_list.append(iou)
+                #         prev_idx_list.append(prev_idx)
+                #         gt_iou_list.append(iou)
                         
-                    num_maskmem = 6
-                    inbank_frames = [i for i in range(max(0, frame_idx-num_maskmem), frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
-                    indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
-                    if len(indices) > 0 and len(global_highres_sim_list) > len(indices):
-                        global_highres_sim_list = torch.Tensor(global_highres_sim_list)
-                        global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
-                        global_masked_highres_sim_list = torch.Tensor(global_masked_highres_sim_list)
-                        global_masked_lowres_sim_list = torch.Tensor(global_masked_lowres_sim_list)
-                        local_highres_sim_list = torch.Tensor(local_highres_sim_list)
-                        local_lowres_sim_list = torch.Tensor(local_lowres_sim_list)
-                        local_masked_highres_sim_list = torch.Tensor(local_masked_highres_sim_list)
-                        local_masked_lowres_sim_list = torch.Tensor(local_masked_lowres_sim_list)
-                        lesion_highres_sim_list = torch.Tensor(lesion_highres_sim_list)
-                        lesion_lowres_sim_list = torch.Tensor(lesion_lowres_sim_list)
-                        gt_iou_list = torch.Tensor(gt_iou_list)
-
-                        # total_global_highres_sim[f"{name}_{cls_id}"][check(global_highres_sim_list)] += 1
-                        # total_global_lowres_sim[f"{name}_{cls_id}"][check(global_lowres_sim_list)] += 1
-                        # total_global_masked_highres_sim[f"{name}_{cls_id}"][check(global_masked_highres_sim_list)] += 1
-                        # total_global_masked_lowres_sim[f"{name}_{cls_id}"][check(global_masked_lowres_sim_list)] += 1
-                        # total_local_highres_sim[f"{name}_{cls_id}"][check(local_highres_sim_list)] += 1
-                        # total_local_lowres_sim[f"{name}_{cls_id}"][check(local_lowres_sim_list)] += 1
-                        # total_local_masked_highres_sim[f"{name}_{cls_id}"][check(local_masked_highres_sim_list)] += 1
-                        # total_local_masked_lowres_sim[f"{name}_{cls_id}"][check(local_masked_lowres_sim_list)] += 1
-                        # total_lesion_highres_sim[f"{name}_{cls_id}"][check(lesion_highres_sim_list)] += 1
-                        # total_lesion_lowres_sim[f"{name}_{cls_id}"][check(lesion_lowres_sim_list)] += 1
-                        # total_iou_sim[f"{name}_{cls_id}"][check(torch.tensor(gt_iou_list))] += 1
+                #     num_maskmem = 6
+                #     inbank_frames = [i for i in range(max(0, frame_idx-num_maskmem), frame_idx)] if args.no_agent else train_state["output_dict"]["attn_frames"][frame_idx]
+                #     indices = [prev_idx_list.index(attn_idx) for attn_idx in inbank_frames]
+                #     if len(indices) > 0 and len(global_highres_sim_list) > len(indices):
+                #         global_highres_sim_list = torch.Tensor(global_highres_sim_list)
+                #         global_lowres_sim_list = torch.Tensor(global_lowres_sim_list)
+                #         global_masked_highres_sim_list = torch.Tensor(global_masked_highres_sim_list)
+                #         global_masked_lowres_sim_list = torch.Tensor(global_masked_lowres_sim_list)
+                #         local_highres_sim_list = torch.Tensor(local_highres_sim_list)
+                #         local_lowres_sim_list = torch.Tensor(local_lowres_sim_list)
+                #         local_masked_highres_sim_list = torch.Tensor(local_masked_highres_sim_list)
+                #         local_masked_lowres_sim_list = torch.Tensor(local_masked_lowres_sim_list)
+                #         lesion_highres_sim_list = torch.Tensor(lesion_highres_sim_list)
+                #         lesion_lowres_sim_list = torch.Tensor(lesion_lowres_sim_list)
+                #         gt_iou_list = torch.Tensor(gt_iou_list)
                         
-                        total_global_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_global_masked_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_global_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_local_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_local_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_local_masked_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_local_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_lesion_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_lesion_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
-                        total_iou_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(gt_iou_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_global_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_global_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_global_masked_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_global_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(global_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_local_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_local_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_local_masked_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_local_masked_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(local_masked_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_lesion_highres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_highres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_lesion_lowres_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(lesion_lowres_sim_list, indices), "dice": video_segments[frame_idx]["dice"]}
+                #         total_iou_sim[f"{name}_{cls_id}_{frame_idx}"] = { "miss": check(gt_iou_list, indices), "dice": video_segments[frame_idx]["dice"]}
 
         average_score(instance_score)
         update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
@@ -560,38 +517,54 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
     # HYPOTHESIS TESTING
     if args.ablation:
+        # data = []
+        # for obj_id in total_global_highres_sim.keys():
+        #     data.append((
+        #         obj_id,
+        #         # vol_avg_dice[obj_id],
+        #         total_global_highres_sim[obj_id],
+        #         total_global_lowres_sim[obj_id],
+        #         total_global_masked_highres_sim[obj_id],
+        #         total_global_masked_lowres_sim[obj_id],
+        #         total_local_highres_sim[obj_id],
+        #         total_local_lowres_sim[obj_id],
+        #         total_local_masked_highres_sim[obj_id],
+        #         total_local_masked_lowres_sim[obj_id],
+        #         total_lesion_highres_sim[obj_id],
+        #         total_lesion_lowres_sim[obj_id],
+        #         total_iou_sim[obj_id]
+        #     ))
+        # columns = [
+        #     "obj_id",
+        #     # "vol_avg_dice",
+        #     "global_highres_sim",
+        #     "global_lowres_sim",
+        #     "global_masked_highres_sim",
+        #     "global_masked_lowres_sim",
+        #     "local_highres_sim",
+        #     "local_lowres_sim",
+        #     "local_masked_highres_sim",
+        #     "local_masked_lowres_sim",
+        #     "lesion_highres_sim",
+        #     "lesion_lowres_sim",
+        #     "gt_iou"
+        # ]
+        
         data = []
-        for obj_id in total_global_highres_sim.keys():
+        for obj_id in ablation_data.keys():
             data.append((
                 obj_id,
-                # vol_avg_dice[obj_id],
-                total_global_highres_sim[obj_id],
-                total_global_lowres_sim[obj_id],
-                total_global_masked_highres_sim[obj_id],
-                total_global_masked_lowres_sim[obj_id],
-                total_local_highres_sim[obj_id],
-                total_local_lowres_sim[obj_id],
-                total_local_masked_highres_sim[obj_id],
-                total_local_masked_lowres_sim[obj_id],
-                total_lesion_highres_sim[obj_id],
-                total_lesion_lowres_sim[obj_id],
-                total_iou_sim[obj_id]
+                ablation_data[obj_id]["delta"],
+                ablation_data[obj_id]["rank"],
+                ablation_data[obj_id]["dice"],
             ))
         columns = [
             "obj_id",
-            # "vol_avg_dice",
-            "global_highres_sim",
-            "global_lowres_sim",
-            "global_masked_highres_sim",
-            "global_masked_lowres_sim",
-            "local_highres_sim",
-            "local_lowres_sim",
-            "local_masked_highres_sim",
-            "local_masked_lowres_sim",
-            "lesion_highres_sim",
-            "lesion_lowres_sim",
-            "gt_iou"
+            "delta",
+            "rank",
+            "dice",
         ]
+        
         df = pd.DataFrame(data=data, columns=columns)
         df.to_csv(f"{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
         print(f"Ablation save to {args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")

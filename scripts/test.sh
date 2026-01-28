@@ -50,7 +50,6 @@ do
             -task Task02 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -ablation \
-            -vis
+            -ablation
     done
 done
