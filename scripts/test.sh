@@ -37,7 +37,7 @@ ckpt=(
     output/msd_task02+grpo+icl+agent_only/2026-01-28-14-50-10/epoch_9_dice0.9099.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
@@ -50,7 +50,7 @@ do
             -task Task02 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -ablation
-            # -vis
+            -ablation \
+            -vis
     done
 done

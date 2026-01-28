@@ -54,6 +54,8 @@ def train(rank=0, world_size=0):
         elif "q_agent" in weights.keys() and not args.no_agent:
             net.agent.load_state_dict(weights["q_agent"])
             print("Loaded DQN weights")
+        elif not args.no_agent:
+            raise ValueError("Agent weights not found!!!")
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])
@@ -66,8 +68,6 @@ def train(rank=0, world_size=0):
         torch.backends.cudnn.allow_tf32 = True
 
     nice_train_loader, nice_test_loader = get_dataloader(args)
-    
-    # randperm = torch.randperm(6)
     
     net.eval()
 
@@ -89,7 +89,7 @@ def main():
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed) 
-    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = False
     args = cfg.parse_args()
     if args.distributed:
