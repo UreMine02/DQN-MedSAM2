@@ -28,7 +28,7 @@ python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
-    -q_updates_per_step 2 \
+    -q_updates_per_step 1 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
     -num_support 5 \
