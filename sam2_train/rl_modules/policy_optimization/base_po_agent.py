@@ -208,12 +208,12 @@ class BasePolicyNetwork(nn.Module):
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
         )
-        self.bias = nn.Parameter(torch.Tensor([1, 0] + [0] * num_maskmem))
+        # self.bias = nn.Parameter(torch.Tensor([1, 0] + [0] * num_maskmem))
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
         B = image_spatial_query.shape[0]
         non_drop_embed = self.non_drop_embed.expand(B, 1, self.hidden_dim)
-        bias = self.bias.unsqueeze(-1)
+        # bias = self.bias.unsqueeze(-1)
 
         action_query = torch.cat([non_drop_embed, curr_mem_feat, non_cond_bank_feat], dim=1)
         action_context = torch.cat([cond_bank_feat, image_spatial_query], dim=1)
@@ -221,7 +221,7 @@ class BasePolicyNetwork(nn.Module):
         for layer in self.action_decoder:
             action_query = layer(x_f=action_context, x=action_query)
 
-        actions_logits = self.action_proj(action_query) + bias
+        actions_logits = self.action_proj(action_query) #+ bias
         actions_probs = torch.softmax(actions_logits, dim=1)
 
         # # if not training:
