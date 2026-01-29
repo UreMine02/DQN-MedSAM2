@@ -378,20 +378,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             # HYPOTHESIS TESTING
             if args.ablation:
                 for frame_idx in train_state["output_dict"]["dice_drop"].keys():
-                    dice_drop = list(train_state["output_dict"]["dice_drop"][frame_idx].values())
+                    dice_drop = np.asarray(list(train_state["output_dict"]["dice_drop"][frame_idx].values()))
                     
                     if train_state["output_dict"]["drop_frame"][frame_idx] < 0:
                         continue
                     
+                    drop_frame = train_state["output_dict"]["drop_frame"][frame_idx]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"] = {}
                     argsort = torch.argsort(torch.Tensor(dice_drop), descending=True)
                     ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                    dropped_rank = ranking[train_state["output_dict"]["drop_frame"][frame_idx]].item()
+                    dropped_rank = ranking[drop_frame].item()
                     
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[train_state["output_dict"]["drop_frame"][frame_idx]]
+                    miss = dice_drop[drop_frame] < 0 and np.any(dice_drop > 0)
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[drop_frame]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["miss"] = video_segments[frame_idx]["dice"]
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["miss"] = miss
                 
                 # for frame_idx in train_state["output_dict"]["image_features"].keys():
                 #     curr_gt = train_state["gt_masks"][frame_idx].float().to(GPUdevice, non_blocking=True)
@@ -558,12 +560,14 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 ablation_data[obj_id]["delta"],
                 ablation_data[obj_id]["rank"],
                 ablation_data[obj_id]["dice"],
+                ablation_data[obj_id]["miss"],
             ))
         columns = [
             "obj_id",
             "delta",
             "rank",
             "dice",
+            "miss",
         ]
         
         df = pd.DataFrame(data=data, columns=columns)
