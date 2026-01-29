@@ -30,7 +30,8 @@ ckpt=(
     # output/msd_task02/2026-01-28-04-47-14/best.pth
     # output/dpc/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_7_dice0.5675.pth
 
-    output/sarcoma+grpo+icl+entrop1e-3/2026-01-21-18-03-09/best.pth
+    # output/sarcoma+grpo+icl+entrop1e-3/2026-01-21-18-03-09/best.pth
+    output/sarcoma+phase_1/2026-01-29-14-59-10/epoch_2_dice0.7240.pth
     # output/sarcoma+no_agent+icl+fullfinetuning/2026-01-22-09-29-29/epoch_2_dice0.7036.pth
 
     # output/msd_task02+no_agent+icl+correct_iou/2026-01-19-19-23-17/best.pth
@@ -44,7 +45,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
