@@ -96,8 +96,8 @@ def train(rank=0, world_size=0):
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
-    param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
+    # param_list = [{'params': head, 'initial_lr': args.lr}]
+    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
