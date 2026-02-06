@@ -22,8 +22,8 @@ declare -a ckpt=(
     # output/msd_task02+no_agent+icl/2026-02-06-12-53-05/best.pth
     # output/msd_task02+no_agent+icl/2026-02-06-17-09-30/best.pth
 
-    # output/msd_task02+grpo+icl/2026-02-06-15-04-02/best.pth
-    output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
+    output/msd_task02+grpo+icl/2026-02-06-15-04-02/best.pth
+    # output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -39,7 +39,7 @@ do
             -task Task02 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -no_agent
+            # -no_agent
             # -vis
     done
 done
