@@ -58,22 +58,25 @@ def train(rank=0, world_size=0):
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
 
+    if args.wandb_enabled:
+        wandb.watch(net, log='all', log_freq=1)
+
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
-    
+
     if not args.no_agent:
-        for name, param in net.named_parameters():        
+        for name, param in net.named_parameters():
             if "image_encoder" in name:
                 param.requires_grad_(False)
             elif "sam_prompt_encoder" in name:
                 param.requires_grad_(False)
             else:
                 param.requires_grad_(True)
-        
+
     agent_n_params = 0
     if agent is not None:
         agent_n_params = agent.num_parameters()
@@ -96,8 +99,8 @@ def train(rank=0, world_size=0):
             net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
-    # param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(net.parameters(), lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
+    param_list = [{'params': head, 'initial_lr': args.lr}]
+    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
@@ -212,7 +215,7 @@ def train(rank=0, world_size=0):
                 }
                 if not args.no_agent:
                     ckpt['agent'] = net.agent.state_dict()
-                    
+
                 torch.save(ckpt, os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
 
                 if new_best:

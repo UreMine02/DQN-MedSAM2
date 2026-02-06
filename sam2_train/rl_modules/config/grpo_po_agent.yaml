@@ -9,7 +9,7 @@ agent:
   entropy_weight: 0.001
   epsilon: 0.2
   tau: 0.99
-  range: 1.0
+  range: 2.0
   sam2_dim:
     n_query: 16
     image_dim: 256
