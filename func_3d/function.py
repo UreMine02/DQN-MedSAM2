@@ -357,16 +357,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 if args.vis:
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    save_prefix = f"{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_"
-                    ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                    save_prefix = f"{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    # ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                    # ts.overlay(
+                    #     [save_prefix + "image.png", pred_mask], [1, 0.4],
+                    #     save_as=save_prefix + "pred.png",
+                    #     cmap="jet"
+                    # )
+                    # ts.overlay(
+                    #     [save_prefix + "image.png", mask], [1, 0.4],
+                    #     save_as=save_prefix + "mask.png",
+                    #     cmap="jet"
+                    # )
+                    
                     ts.overlay(
-                        [save_prefix + "image.png", pred_mask], [1, 0.4],
-                        save_as=save_prefix + "pred.png",
-                        cmap="jet"
-                    )
-                    ts.overlay(
-                        [save_prefix + "image.png", mask], [1, 0.4],
-                        save_as=save_prefix + "mask.png",
+                        [imgs_tensor[frame_idx], pred_mask, mask], [1, 0.4, 0.4],
+                        save_as=save_prefix + ".png",
                         cmap="jet"
                     )
 
@@ -390,7 +396,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     dropped_rank = ranking[drop_frame].item()
                     
                     miss = dice_drop[drop_frame] < 0 and np.any(dice_drop > 0)
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop[drop_frame]
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = dice_drop
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["miss"] = miss

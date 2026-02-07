@@ -14,10 +14,9 @@
 # conda activate rlsam2
 
 ckpt=(
-    # output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
+    output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
 
     # output/msd_task02+grpo+icl/2026-02-06-15-04-02/best.pth
-    output/msd_task02+grpo+icl/2026-02-06-15-04-02/epoch_46_dice0.8699.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -34,6 +33,7 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            # -no_agent
+            -vis \
+            -no_agent
     done
 done
