@@ -12,10 +12,10 @@ from torch.utils.data import Dataset
 from torchvision.transforms.functional import normalize
 
 
-def normalization(image):
+def scaling(image):
     image_min = np.min(image)
     image_max = np.max(image)
-    image = ((image - image_min)/(image_max-image_min))*255
+    image = (image - image_min)/(image_max-image_min)
     return image
 
 def remove_negative_samples(image, mask):
@@ -84,7 +84,7 @@ class MSD(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id
+            "task": task, "obj_id": obj_id, "case": os.path.basename(image_path)
         }
         
         return output_dict
@@ -126,7 +126,8 @@ class MSD(Dataset):
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
-        
+
+        image_3d = scaling(image_3d)
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 

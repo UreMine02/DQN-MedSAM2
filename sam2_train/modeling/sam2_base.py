@@ -412,8 +412,6 @@ class SAM2Base(torch.nn.Module):
             best_iou = ious
         # print('best iou', best_iou)
 
-
-           
         # Extract object pointer from the SAM output token (with occlusion handling)
         obj_ptr = self.obj_ptr_proj(sam_output_token) # torch.Size([1, 256])
         if self.pred_obj_scores:

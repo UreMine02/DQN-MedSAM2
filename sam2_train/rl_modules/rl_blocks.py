@@ -136,12 +136,15 @@ class SpatialSummarizer(nn.Module):
         super().__init__()
         self.down_scale = down_scale
         self.n_query = n_query
+        self.n_layers = n_layers
         
         self.qformer = nn.ModuleList(
             [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads, dropout=dropout) for _ in range(n_layers)]
         )
         self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
+        
+        self.initialize_parameters()
         
     def forward(self, x):
         """x: [B,C,H,W]"""
@@ -155,6 +158,20 @@ class SpatialSummarizer(nn.Module):
             spatial_query = layer(x_f=x, x=spatial_query)
             
         return spatial_query
+    
+    def initialize_parameters(self):
+        nn.init.normal_(self.spatial_query, std=0.02)
+        
+        proj_std = (self.spatial_dim ** -0.5) * ((2 * self.n_layers) ** -0.5)
+        attn_std = self.spatial_dim ** -0.5
+        fc_std = (2 * self.spatial_dim) ** -0.5
+        for block in self.qformer:
+            nn.init.normal_(block.attn.to_q.weight, std=attn_std)
+            nn.init.normal_(block.attn.to_k.weight, std=attn_std)
+            nn.init.normal_(block.attn.to_v.weight, std=attn_std)
+            nn.init.normal_(block.attn.to_out.weight, std=proj_std)
+            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
+            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
     
 class BasicTransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads):

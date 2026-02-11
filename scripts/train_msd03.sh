@@ -27,7 +27,7 @@ python train_3d.py \
     -data_path /data/datasets/nii/MSD \
     -lr 5e-5 \
     -val_freq 1 \
-    -ep 10 \
+    -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \

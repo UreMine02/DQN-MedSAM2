@@ -14,6 +14,7 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import L1Loss, BCEWithLogitsLoss
 from torch.autograd import Function
 import torch.distributed as dist
@@ -408,6 +409,46 @@ def dice_coeff(input, target):
 
     return s / (i + 1)
 
+def sigmoid_focal_loss(
+    inputs,
+    targets,
+    num_objects,
+    alpha: float = 0.25,
+    gamma: float = 2,
+    loss_on_multimask=False,
+):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        num_objects: Number of objects in the batch
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+        loss_on_multimask: True if multimask prediction is enabled
+    Returns:
+        focal loss tensor
+    """
+    prob = inputs.sigmoid()
+    ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    p_t = prob * targets + (1 - prob) * (1 - targets)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    if loss_on_multimask:
+        # loss is [N, M, H, W] where M corresponds to multiple predicted masks
+        assert loss.dim() == 4
+        return loss.flatten(2).mean(-1) / num_objects  # average over spatial dims
+    return loss.mean(1).sum() / num_objects
+
 class DiceCoeff(Function):
     """Dice coeff for individual examples"""
 
@@ -467,7 +508,6 @@ class CombinedLoss(nn.Module):
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
         obj_pred = obj_pred.view(1, -1)
-
         if (targets == 0).all():
             bce = self.bce_loss(obj_pred, torch.zeros(obj_pred.shape).to(device=obj_pred.device))
         else:

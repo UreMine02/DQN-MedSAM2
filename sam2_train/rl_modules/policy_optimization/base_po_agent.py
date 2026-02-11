@@ -115,7 +115,6 @@ class BaseFeatureSummarizer(nn.Module):
         self.num_maskmem = num_maskmem
         self.n_query = n_query
         self.memory_dim = memory_dim
-        # self.hidden_dim = n_query * memory_dim + obj_ptr_dim
         memory_num_head = memory_dim // 64
         self.hidden_dim = image_dim
 
@@ -159,11 +158,9 @@ class BaseFeatureSummarizer(nn.Module):
         non_cond_obj_ptr, cond_obj_ptr = torch.tensor_split(bank_ptr, indices=(self.num_maskmem,), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
-        # cond_bank_feat = cond_bank_feat.flatten(2)
         curr_mem_feat = curr_mem_feat.flatten(2)
 
         non_cond_bank_feat = torch.cat([non_cond_bank_feat, non_cond_obj_ptr], dim=-1)
-        # cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=-1)
         curr_mem_feat = torch.cat([curr_mem_feat, memory_ptr.unsqueeze(1)], dim=-1)
         
         cond_bank_feat = self.cond_mem_proj(cond_bank_feat)
@@ -174,11 +171,6 @@ class BaseFeatureSummarizer(nn.Module):
         
         non_cond_bank_feat = self.non_cond_proj(non_cond_bank_feat)
         curr_mem_feat = self.non_cond_proj(curr_mem_feat)
-        
-        # image_spatial_query = print("image_spatial_query", image_spatial_query.shape)
-        # non_cond_bank_feat = print("non_cond_bank_feat", non_cond_bank_feat.shape)
-        # cond_bank_feat = print("cond_bank_feat", cond_bank_feat.shape)
-        # curr_mem_feat = print("curr_mem_feat", curr_mem_feat.shape)
 
         return image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat
 
@@ -195,14 +187,7 @@ class BasePolicyNetwork(nn.Module):
         self.action_decoder = nn.ModuleList(
             [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
         )
-        # self.action_proj = nn.Sequential(
-        #     nn.LayerNorm(self.hidden_dim),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim, self.hidden_dim * 4),
-        #     QuickGELU(),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim * 4, 1)
-        # )
+        
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
@@ -220,10 +205,6 @@ class BasePolicyNetwork(nn.Module):
 
         actions_logits = self.action_proj(action_query)
         actions_probs = torch.softmax(actions_logits, dim=1)
-
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
 
         return actions_probs.squeeze(-1)
 

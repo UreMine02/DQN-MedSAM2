@@ -59,7 +59,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
     # with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
-    for packs in metric_logger.log_every(train_loader, print_freq, header=header) :
+    for packs in metric_logger.log_every(train_loader, print_freq, header=header):
         whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -127,6 +127,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                     iou_pred = video_segments[frame_idx][obj_id]["iou"]
                     pred_mask = (torch.sigmoid(pred) > 0.5).float()
+                    assert not pred_mask.isnan().any()
                     iou_gt = iou_score(pred_mask, mask)
                     dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                     class_loss["num_step"] += 1
@@ -140,7 +141,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 average_loss(class_loss)
                 avg_loss = class_loss["total_loss"]
 
-                to_reduce = {k: class_loss[k] for k in class_loss.keys() if k != "num_step"}
+                to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                 losses_reduced = reduce_dict(to_reduce)
                 loss_value = sum(losses_reduced.values()).item()
 
@@ -321,16 +322,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
-                        save_prefix = f"{save_dir}/vis/{packs['case']}_{obj_id}_idx{frame_idx}_"
-                        ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
+                        save_prefix = f"{save_dir}/vis/{packs['case'][0]}_{obj_id}_idx{frame_idx}_dice{dice.item()}"
+                        mask *= 2
                         ts.overlay(
-                            [save_prefix + "image.png", pred_mask], [1, 0.4],
-                            save_as=save_prefix + "pred.png",
-                            cmap="jet"
-                        )
-                        ts.overlay(
-                            [save_prefix + "image.png", mask], [1, 0.4],
-                            save_as=save_prefix + "mask.png",
+                            [imgs_tensor[frame_idx], pred_mask, mask], [1, 0.4, 0.4],
+                            save_as=save_prefix + ".png",
                             cmap="jet"
                         )
 
@@ -340,13 +336,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 instance_score["num_step"] += 1
 
             average_score(instance_score)
-            # print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
+            print(f"Name: {task}_{obj_id} Dice score: {instance_score['dice_score']} IoU score: {instance_score['iou_score']}")
             update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
             total_score["num_step"] += 1
             pbar.update()
 
     average_score(total_score)
-    
+
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),

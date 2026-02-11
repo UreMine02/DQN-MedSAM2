@@ -14,23 +14,16 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task01+grpo+icl/2026-01-19-16-37-50/epoch_21_dice0.4791.pth
-    # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task07+grpo+icl/2026-01-23-10-45-01/epoch_29_dice0.5645.pth
-    # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task08+grpo+icl/2026-01-23-10-45-02/epoch_20_dice0.3753.pth
-    # /data/rlsam2/msd01/DQN-MedSAM2/output/msd_task09+grpo+icl/2026-01-23-10-47-46/epoch_39_dice0.9158.pth
-
-    # output/msd_task02+no_agent+icl/2026-02-06-12-53-05/best.pth
-    # output/msd_task02+no_agent+icl/2026-02-06-17-09-30/best.pth
-
-    output/msd_task02+grpo+icl/2026-02-06-15-04-02/best.pth
-    # output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
+    # output/msd_task02+no_agent+icl/2026-02-10-19-11-56/best.pth
+    # output/msd_task02+grpo+icl/2026-02-11-10-07-12/best.pth
+    output/msd_task02+no_agent+icl+freeze/2026-02-11-14-41-19/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do
-    for shot in 1 5;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
@@ -39,7 +32,7 @@ do
             -task Task02 \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            # -no_agent
-            # -vis
+            -no_agent \
+            -vis
     done
 done

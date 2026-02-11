@@ -18,10 +18,13 @@ from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
 from datetime import datetime
 import pytz
+
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
+from torch import autocast, GradScaler
+
 import numpy as np
 
 import wandb
@@ -68,14 +71,14 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
 
-    if not args.no_agent:
-        for name, param in net.named_parameters():
-            if "image_encoder" in name:
-                param.requires_grad_(False)
-            elif "sam_prompt_encoder" in name:
-                param.requires_grad_(False)
-            else:
-                param.requires_grad_(True)
+    # if not args.no_agent:
+    for name, param in net.named_parameters():
+        if "image_encoder" in name:
+            param.requires_grad_(False)
+        elif "sam_prompt_encoder" in name:
+            param.requires_grad_(False)
+        else:
+            param.requires_grad_(True)
 
     agent_n_params = 0
     if agent is not None:
