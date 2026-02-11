@@ -14,12 +14,11 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/msd_task02+no_agent+icl/2026-02-06-18-10-03/best.pth
-
-    # output/msd_task02+grpo+icl/2026-02-06-15-04-02/best.pth
+    output/msd_task02+grpo+icl/2026-02-11-10-07-12/best.pth
+    # output/msd_task02+no_agent+icl+freeze/2026-02-11-14-41-19/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
@@ -33,7 +32,6 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            -vis \
-            -no_agent
+            # -no_agent
     done
 done

@@ -569,7 +569,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 ablation_data[obj_id]["miss"],
             ))
         columns = [
-            "obj_id",
+            "id",
             "delta",
             "rank",
             "dice",
