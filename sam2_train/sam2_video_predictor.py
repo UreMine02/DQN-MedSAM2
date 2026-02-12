@@ -1411,7 +1411,7 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["masked_image_features"][frame_idx].append((current_vision_feats[i] * lowres_mask))
 
         storage_device = inference_state["device"]
-        
+
         track_step_kwargs = {
             "is_init_cond_frame": is_init_cond_frame,
             "feat_sizes": feat_sizes,
@@ -1449,7 +1449,7 @@ class SAM2VideoPredictor(SAM2Base):
             )
         elif frame_idx == 0 and "image_features" in output_dict.keys():
             output_dict["drop_frame"][frame_idx] = -1
-        
+
         if "image_features" in output_dict.keys():
             output_dict["attn_frames"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys())
 
@@ -1652,7 +1652,7 @@ class SAM2VideoPredictor(SAM2Base):
             gt_masks = gt_masks.to(torch.float32)
 
             loss_before = compute_loss(pred_masks, gt_masks, inference_state)
-        
+
         state, action_frame_map = prepare_rl_state(
             current_vision_feats,
             current_vision_pos_embeds,
@@ -1748,7 +1748,7 @@ class SAM2VideoPredictor(SAM2Base):
         action = action_out['main_action']
         if "drop_frame" in output_dict.keys():
             output_dict["drop_frame"][frame_idx] = -1
-            
+
         if action == 0:
             # Add
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
@@ -1903,10 +1903,10 @@ class SAM2VideoPredictor(SAM2Base):
         output_dict,
         agent_act,
         **kwargs):
-        
+
         video_H = inference_state["video_height"]
         video_W = inference_state["video_width"]
-        
+
         output_before = self.track_step(
             frame_idx=frame_idx,
             current_vision_feats=current_vision_feats,
@@ -1915,7 +1915,7 @@ class SAM2VideoPredictor(SAM2Base):
             agent_act=True,
             **kwargs
         )
-        
+
         pred_masks = output_before["pred_masks"]
         pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
         gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
@@ -1930,9 +1930,9 @@ class SAM2VideoPredictor(SAM2Base):
                 align_corners=False,
             )
         pred_masks = (pred_masks.sigmoid() > 0.5).float()
-        
+
         dice_before = dice_score(pred_masks, gt_masks, smoothing=1e-8)
-        
+
         output_dict["dice_drop"][frame_idx] = {}
         for prev_frame_idx in output_dict["non_cond_frame_outputs"].keys():
             temp_output_dict = {
@@ -1941,7 +1941,7 @@ class SAM2VideoPredictor(SAM2Base):
             }
             temp_output_dict["non_cond_frame_outputs"].pop(prev_frame_idx)
             temp_output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            
+
             output_after = self.track_step(
                 frame_idx=frame_idx,
                 current_vision_feats=current_vision_feats,
@@ -1950,7 +1950,7 @@ class SAM2VideoPredictor(SAM2Base):
                 agent_act=True,
                 **kwargs
             )
-            
+
             pred_masks = output_after["pred_masks"]
             pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
             gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
@@ -1965,9 +1965,9 @@ class SAM2VideoPredictor(SAM2Base):
                     align_corners=False,
                 )
             pred_masks = (pred_masks.sigmoid() > 0.5).float()
-            
+
             dice_after = dice_score(pred_masks, gt_masks, smoothing=1e-8)
-            
+
             output_dict["dice_drop"][frame_idx][prev_frame_idx] = (dice_after - dice_before).item()
 
         if not agent_act:
