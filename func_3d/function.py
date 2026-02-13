@@ -395,11 +395,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
                     dropped_rank = ranking[drop_frame].item()
 
-                    miss = dice_drop_list[drop_frame] < 0 and np.any(dice_drop_list > 0)
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = train_state["output_dict"]["dice_drop"][frame_idx]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["miss"] = miss
+                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["drop_frame"] = drop_frame
 
         average_score(instance_score)
         update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
@@ -410,39 +409,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
     # HYPOTHESIS TESTING
     if args.ablation:
-        # data = []
-        # for obj_id in total_global_highres_sim.keys():
-        #     data.append((
-        #         obj_id,
-        #         # vol_avg_dice[obj_id],
-        #         total_global_highres_sim[obj_id],
-        #         total_global_lowres_sim[obj_id],
-        #         total_global_masked_highres_sim[obj_id],
-        #         total_global_masked_lowres_sim[obj_id],
-        #         total_local_highres_sim[obj_id],
-        #         total_local_lowres_sim[obj_id],
-        #         total_local_masked_highres_sim[obj_id],
-        #         total_local_masked_lowres_sim[obj_id],
-        #         total_lesion_highres_sim[obj_id],
-        #         total_lesion_lowres_sim[obj_id],
-        #         total_iou_sim[obj_id]
-        #     ))
-        # columns = [
-        #     "obj_id",
-        #     # "vol_avg_dice",
-        #     "global_highres_sim",
-        #     "global_lowres_sim",
-        #     "global_masked_highres_sim",
-        #     "global_masked_lowres_sim",
-        #     "local_highres_sim",
-        #     "local_lowres_sim",
-        #     "local_masked_highres_sim",
-        #     "local_masked_lowres_sim",
-        #     "lesion_highres_sim",
-        #     "lesion_lowres_sim",
-        #     "gt_iou"
-        # ]
-        
         data = []
         for obj_id in ablation_data.keys():
             data.append((
@@ -450,14 +416,14 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 ablation_data[obj_id]["delta"],
                 ablation_data[obj_id]["rank"],
                 ablation_data[obj_id]["dice"],
-                ablation_data[obj_id]["miss"],
+                ablation_data[obj_id]["drop_frame"]
             ))
         columns = [
             "id",
             "delta",
             "rank",
             "dice",
-            "miss",
+            "drop_frame"
         ]
         
         df = pd.DataFrame(data=data, columns=columns)
