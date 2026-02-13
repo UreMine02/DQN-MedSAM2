@@ -84,7 +84,8 @@ class MSD(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id, "case": os.path.basename(image_path)
+            "task": task, "obj_id": obj_id, 
+            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path)
         }
         
         return output_dict
@@ -135,14 +136,6 @@ class MSD(Dataset):
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
         
-        scale = 1
-        image_3d = scaling(image_3d, scale=scale)
-        image_3d = normalize(
-            image_3d, 
-            mean=[0.485 * scale, 0.456 * scale, 0.406 * scale], 
-            std=[0.229 * scale, 0.224 * scale, 0.225 * scale]
-        )
-        
-        image_3d *= 255
+        image_3d = scaling(image_3d, scale=255)
         
         return image_3d, data_seg_3d

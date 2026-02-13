@@ -57,7 +57,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     agent_step = 0
     metric_logger = MetricLogger(delimiter="  ")
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 10
+    print_freq = 1
     # with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
     for packs in metric_logger.log_every(train_loader, print_freq, header=header):
         whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -65,6 +65,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         task = packs["task"][0]
+        print(packs["name"][0], packs["support_name"][0])
 
         obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
         instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
@@ -322,7 +323,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
-                        save_prefix = f"{save_dir}/vis/{packs['case'][0]}_{obj_id}_idx{frame_idx}_dice{dice.item()}"
+                        save_prefix = f"{save_dir}/vis/{packs['name'][0]}_{obj_id}_idx{frame_idx}_dice{dice.item()}"
                         mask *= 2
                         ts.overlay(
                             [imgs_tensor[frame_idx], pred_mask, mask], [1, 0.4, 0.4],

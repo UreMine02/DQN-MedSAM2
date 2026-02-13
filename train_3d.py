@@ -104,7 +104,7 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
-    # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -158,8 +158,9 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            # "train/lr": scheduler.get_last_lr()[0],
+            "train/lr": scheduler.get_last_lr()[0],
         }
+        scheduler.step()
 
         if args.wandb_enabled and loss is not None:
             wandb.log(loss_dict, step=epoch)
@@ -193,8 +194,6 @@ def train(rank=0, world_size=0):
 
             if args.wandb_enabled:
                 wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-
-        # scheduler.step()
 
         if args.save_ckpt:
             if args.distributed and rank == 0:
