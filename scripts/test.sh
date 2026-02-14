@@ -32,6 +32,8 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            # -no_agent
+            -vis 
+            # -no_agent \
+            # -vis
     done
 done
