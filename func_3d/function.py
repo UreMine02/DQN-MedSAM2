@@ -386,17 +386,17 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 for frame_idx in train_state["output_dict"]["dice_drop"].keys():
                     dice_drop_list = list(train_state["output_dict"]["dice_drop"][frame_idx].values())
                     
-                    if train_state["output_dict"]["drop_frame"][frame_idx] < 0:
-                        continue
+                    # if train_state["output_dict"]["drop_frame"][frame_idx] < 0:
+                    #     continue
                     
                     drop_frame = train_state["output_dict"]["drop_frame"][frame_idx]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"] = {}
-                    argsort = torch.argsort(torch.Tensor(dice_drop_list), descending=True)
-                    ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                    dropped_rank = ranking[drop_frame].item()
+                    # argsort = torch.argsort(torch.Tensor(dice_drop_list), descending=True)
+                    # ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
+                    # dropped_rank = ranking[drop_frame].item()
 
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["delta"] = train_state["output_dict"]["dice_drop"][frame_idx]
-                    ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
+                    # ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
                     ablation_data[f"{name}_{cls_id}_{frame_idx}"]["drop_frame"] = drop_frame
 
