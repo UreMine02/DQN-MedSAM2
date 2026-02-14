@@ -414,14 +414,14 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             data.append((
                 obj_id,
                 ablation_data[obj_id]["delta"],
-                ablation_data[obj_id]["rank"],
+                # ablation_data[obj_id]["rank"],
                 ablation_data[obj_id]["dice"],
                 ablation_data[obj_id]["drop_frame"]
             ))
         columns = [
             "id",
             "delta",
-            "rank",
+            # "rank",
             "dice",
             "drop_frame"
         ]
