@@ -15,9 +15,8 @@
 # conda activate rlsam2
 
 EXP=sarcoma+grpo+icl
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
-sleep 5h;
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
