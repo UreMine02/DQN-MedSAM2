@@ -20,7 +20,9 @@ declare -a ckpt=(
 
     # output/msd_task03+no_agent+icl+freeze/2026-02-12-10-15-20/best.pth
 
-    output/msd_task09+no_agent+icl/2026-02-16-12-04-25/best.pth
+    # output/msd_task09+no_agent+icl/2026-02-16-12-04-25/best.pth
+
+    output/msd_task09+no_agent+icl+dice_weight10.0/2026-02-16-18-51-38/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
