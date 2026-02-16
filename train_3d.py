@@ -77,6 +77,8 @@ def train(rank=0, world_size=0):
             param.requires_grad_(True)
         elif "memory_attention" in name:
             param.requires_grad_(True)
+        elif "obj_ptr_proj" in name:
+            param.requires_grad_(True)
         else:
             param.requires_grad_(False)
         
@@ -113,7 +115,7 @@ def train(rank=0, world_size=0):
     optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
     # scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
     # scheduler = LinearLR(optimizer, start_factor=20.0, end_factor=1.0, total_iters=40)
-    scheduler = MultiplicativeLR(optimizer, lr_lambda=0.95)
+    scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda ep: 0.95)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
