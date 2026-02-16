@@ -141,8 +141,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 # Average loss of this class
                 average_loss(class_loss)
-                # avg_loss = class_loss["total_loss"]
-                avg_loss = class_loss["focal_loss"] + class_loss["dice_loss"]
+                avg_loss = class_loss["total_loss"]
+                # avg_loss = class_loss["focal_loss"] + class_loss["dice_loss"]
 
                 to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                 losses_reduced = reduce_dict(to_reduce)
