@@ -136,7 +136,5 @@ class MSD(Dataset):
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-        
-        image_3d = normalize(image_3d, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
         return image_3d, data_seg_3d
