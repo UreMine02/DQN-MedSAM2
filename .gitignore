@@ -9,3 +9,4 @@ __pycache__/
 rlsam2.sh
 *.out
 *.log
+*ablation.csv
