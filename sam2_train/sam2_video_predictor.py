@@ -1718,11 +1718,11 @@ class SAM2VideoPredictor(SAM2Base):
             dropped_rank = rank[prev_frames.index(drop_frame)].item()
             output_dict["dropped_frames_lowres_sim_rank"].append(dropped_rank)
 
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} "
-                  f"action {action} "
-                  f"drop_frame {drop_frame} "
-                  f"bank_size {bank_size} ")
+        # if not train_agent:
+        #     print(f"[Q] frame {frame_idx-1} "
+        #           f"action {action} "
+        #           f"drop_frame {drop_frame} "
+        #           f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
