@@ -36,9 +36,10 @@ do
             -task "" \
             -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
+            -no_agent
             # -ablation \
             # -vis 
-            -no_agent \
+            # -no_agent \
             # -vis
     done
 done
