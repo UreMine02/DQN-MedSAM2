@@ -22,7 +22,7 @@ import pytz
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR
 from torch import autocast, GradScaler
 
 import numpy as np
@@ -111,7 +111,8 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
-    scheduler = StepLR(optimizer, step_size=5, gamma=0.5)
+    scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
+    scheduler = LinearLR(optimizer, start_factor=20.0, end_factor=1.0, total_iters=40)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
