@@ -17,17 +17,17 @@ ckpt=(
     # output/msd_task02+grpo+icl/2026-02-11-10-07-12/best.pth
     # output/msd_task02+no_agent+icl+freeze/2026-02-11-14-41-19/best.pth
 
-    # output/sarcoma+grpo+icl/2026-02-16-08-27-05/best.pth
-    output/sarcoma+no_agent+icl/2026-02-16-08-26-53/best.pth
+    output/sarcoma+grpo+icl/2026-02-16-08-27-05/best.pth
+    # output/sarcoma+no_agent+icl/2026-02-16-08-26-53/best.pth
     # output/sarcoma+no_agent+icl/2026-02-16-08-26-53/epoch_30_dice0.7499.pth
     # output/sarcoma+grpo+icl/2026-02-16-08-27-05/epoch_30_dice0.7843.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 1;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
@@ -36,9 +36,8 @@ do
             -task "" \
             -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
-            -no_agent
-            # -ablation \
-            # -vis 
+            -ablation \
+            -vis 
             # -no_agent \
             # -vis
     done
