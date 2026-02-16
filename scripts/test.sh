@@ -37,8 +37,6 @@ do
             -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -ablation \
-            -vis 
-            # -no_agent \
-            # -vis
+            -vis
     done
 done
