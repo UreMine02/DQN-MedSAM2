@@ -258,13 +258,13 @@ def score_cal(seg_map, prd_map):
 
     return iou_score, dice_score, fb_iou_score
 
-def eval_seg(pred, mask):
+def eval_seg(pred, mask, thr=0.5):
     """
     Args:
         pred: [D, H, W]
         mask: [D, H, W]
     """
-    pred = (torch.sigmoid(pred) > 0.5).float()
+    pred = (torch.sigmoid(pred) > thr).float()
     iou, dice, fb_iou = score_cal(mask, pred)
     
     iou[iou.isnan()] = 0. 
@@ -512,6 +512,8 @@ class CombinedLoss(nn.Module):
             bce = self.bce_loss(obj_pred, torch.zeros(obj_pred.shape).to(device=obj_pred.device))
         else:
             bce = self.bce_loss(obj_pred, torch.ones(obj_pred.shape).to(device=obj_pred.device))
+            
+        
         dice = self.dice_loss(inputs, targets)
         focal = self.focal_loss(inputs, targets)
         mae = self.mae_loss(iou_pred, iou_gt)

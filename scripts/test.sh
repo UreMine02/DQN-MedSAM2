@@ -22,14 +22,16 @@ declare -a ckpt=(
 
     # output/msd_task09+no_agent+icl/2026-02-16-12-04-25/best.pth
 
-    output/msd_task09+no_agent+icl+dice_weight10.0/2026-02-16-18-51-38/best.pth
+    # output/msd_task09+no_agent+icl+dice_weight10.0/2026-02-16-18-51-38/best.pth
+
+    output/msd_task09+no_agent+icl+dice_weight20.0/2026-02-16-21-18-36/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do
-    for shot in 2 4 8 16;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \

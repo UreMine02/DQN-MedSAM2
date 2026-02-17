@@ -24,7 +24,7 @@ from func_3d.misc import MetricLogger, reduce_dict
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(dice_weight=20.0)
+paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
@@ -58,7 +58,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     agent_step = 0
     metric_logger = MetricLogger(delimiter="  ")
     header = 'Epoch: [{}]'.format(epoch)
-    print_freq = 1
+    print_freq = 10
     # with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
     for packs in metric_logger.log_every(train_loader, print_freq, header=header):
         whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -66,7 +66,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
         task = packs["task"][0]
-        print(packs["name"][0], packs["support_name"][0])
 
         obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
         instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
@@ -219,12 +218,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     n_val = len(val_loader)
 
     total_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
+    ths = np.arange(0, 1.0, 0.001)
     score_per_class = {}
+    masks = {}
+    preds = {}
     agent_act = not args.no_agent
     # lossfunc = paper_loss
-
-    dropped_frames_allres_sim_rank = []
-    dropped_frames_lowres_sim_rank = []
 
     with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
         for packs in val_loader:
@@ -249,12 +248,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
-                if obj_id not in score_per_class.keys():
-                    score_per_class[f"{task}_{obj_id}"] = {
-                        "iou": torch.FloatTensor([]).to(device=GPUdevice),
-                        "dice": torch.FloatTensor([]).to(device=GPUdevice),
-                        "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
-                    }
+                if f"{task}_{obj_id}" not in score_per_class.keys():
+                    score_per_class[f"{task}_{obj_id}"] = {}
+                    preds[f"{task}_{obj_id}"] = []
+                    masks[f"{task}_{obj_id}"] = []
 
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
@@ -307,6 +304,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                        masks[f"{task}_{obj_id}"].append(mask.cpu())
+                        preds[f"{task}_{obj_id}"].append(pred.cpu())
                         (
                             iou,
                             dice,
@@ -315,11 +314,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         update_score(class_score, dice.item(), iou.item())
                         class_score["num_step"] += 1
 
-                        score_dict = score_per_class[f"{task}_{obj_id}"]
+                        # score_dict = score_per_class[f"{task}_{obj_id}"]
 
-                        score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
-                        score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
-                        score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
+                        # score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
+                        # score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
+                        # score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice)
 
@@ -346,6 +345,34 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
     average_score(total_score)
 
+    for name in preds.keys():
+        class_masks = torch.stack(masks[name]).to(GPUdevice, non_blocking=True)
+        class_preds = torch.stack(preds[name]).to(GPUdevice, non_blocking=True)
+        
+        best_iou = 0
+        best_dice = 0
+        best_fbiou = 0
+        best_th = ths[0]
+        
+        for th in ths:
+            iou, dice, fb_iou = eval_seg(class_preds, class_masks, thr=th)
+            
+            iou = iou.mean(dim=0, keepdim=True)
+            dice = dice.mean(dim=0, keepdim=True)
+            fb_iou = fb_iou.mean(dim=0, keepdim=True)
+            
+            if dice > best_dice:
+                best_iou = iou
+                best_dice = dice
+                best_fbiou = fb_iou
+                best_th = th
+                
+        score_per_class[name]["iou"] = best_iou
+        score_per_class[name]["dice"] = best_dice
+        score_per_class[name]["fb_iou"] = best_fbiou
+        score_per_class[name]["th"] = best_th
+                
+
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),
@@ -355,23 +382,18 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     table_data = []
 
     for name, metrics_dict in score_per_class.items():
-        miou = metrics_dict["iou"].mean(dim=0, keepdim=True)
-        mdice = metrics_dict["dice"].mean(dim=0, keepdim=True)
-        mfb_iou = metrics_dict["fb_iou"].mean(dim=0, keepdim=True)
-
         table_data.append((
             name,
-            miou.item(),
-            mdice.item(),
-            mfb_iou.item(),
+            metrics_dict["iou"].item(),
+            metrics_dict["dice"].item(),
+            metrics_dict["fb_iou"].item(),
+            metrics_dict["th"]
         ))
 
-        avg["iou"] = torch.cat([avg["iou"], miou])
-        avg["dice"] = torch.cat([avg["dice"], mdice])
-        avg["fb_iou"] = torch.cat([avg["fb_iou"], mfb_iou])
-        
-        if args.wandb_enabled:
-            wandb.log({f"val/{name}_Dice": mdice}, step=epoch)
+        avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"]])
+        avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"]])
+        avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])
+        avg["th"] = None
 
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()
@@ -382,8 +404,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["iou"].item(),
         avg["dice"].item(),
         avg["fb_iou"].item(),
+        avg["th"]
     ))
 
-    print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou"], floatfmt=".4f", tablefmt="grid"))
+    print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou", "th"], floatfmt=".4f", tablefmt="grid"))
 
     return avg['iou'], avg['dice']

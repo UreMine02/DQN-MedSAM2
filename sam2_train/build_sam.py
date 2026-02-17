@@ -46,7 +46,7 @@ def build_sam2_video_predictor(
     device="cuda",
     mode="eval",
     hydra_overrides_extra=[],
-    apply_postprocessing=True,
+    apply_postprocessing=True
 ):
     hydra_overrides = [
         "++model._target_=sam2_train.sam2_video_predictor.SAM2VideoPredictor",

@@ -8,9 +8,6 @@
 import os
 import time
 
-import torch
-import torch.optim as optim
-
 import cfg
 from func_3d import function
 from conf import settings
@@ -18,14 +15,16 @@ from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
 from datetime import datetime
 import pytz
-
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR, MultiplicativeLR
-from torch import autocast, GradScaler
-
 import numpy as np
+
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.optim as torch_optim
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR, MultiplicativeLR
+
+from timm import optim as timm_optim
 
 import wandb
 
@@ -84,7 +83,7 @@ def train(rank=0, world_size=0):
         
         if "image_encoder" in name:
             param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
+        elif "prompt_encoder" in name:
             param.requires_grad_(False)
         else:
             param.requires_grad_(True)
@@ -112,10 +111,11 @@ def train(rank=0, world_size=0):
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
+    # optimizer = optim.SGD(param_list, lr=args.lr, momentum=0.9, weight_decay=0.01)
     # scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
     # scheduler = LinearLR(optimizer, start_factor=20.0, end_factor=1.0, total_iters=40)
-    scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda ep: 0.95)
+    # scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda ep: 0.95)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -169,9 +169,9 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            "train/lr": scheduler.get_last_lr()[0],
+            "train/lr": optimizer.param_groups[0]['lr'],
         }
-        scheduler.step()
+        # scheduler.step()
 
         if args.wandb_enabled and loss is not None:
             wandb.log(loss_dict, step=epoch)
