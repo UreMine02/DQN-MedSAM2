@@ -83,7 +83,7 @@ def train(rank=0, world_size=0):
         
         if "image_encoder" in name:
             param.requires_grad_(False)
-        elif "prompt_encoder" in name:
+        elif "sam_prompt_encoder" in name:
             param.requires_grad_(False)
         else:
             param.requires_grad_(True)
@@ -112,10 +112,6 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
-    # optimizer = optim.SGD(param_list, lr=args.lr, momentum=0.9, weight_decay=0.01)
-    # scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
-    # scheduler = LinearLR(optimizer, start_factor=20.0, end_factor=1.0, total_iters=40)
-    # scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda ep: 0.95)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
