@@ -24,7 +24,7 @@ from func_3d.misc import MetricLogger, reduce_dict
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(focal_weight=30, dice_weight=1)
+paper_loss = CombinedLoss(focal_weight=40, dice_weight=1)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
@@ -149,12 +149,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 optimizer.zero_grad()
                 avg_loss.backward()
-                # grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
                 metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                # metric_logger.update(grad_norm=grad_total_norm)
+                metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
                 if agent is not None:

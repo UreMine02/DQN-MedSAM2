@@ -488,7 +488,7 @@ class BasePOAgent(BaseAgent):
             policy_loss.backward()
             actor_gradnorm = nn.utils.clip_grad_norm_(
                 list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=1
+                max_norm=0.5
             )
             self.policy_optimizer.step()
 
@@ -508,7 +508,7 @@ class BasePOAgent(BaseAgent):
 
                 self.value_optimizer.zero_grad()
                 value_loss.backward()
-                critic_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=1)
+                critic_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
