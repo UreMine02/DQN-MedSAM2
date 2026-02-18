@@ -119,7 +119,7 @@ class PerceiverResampler(nn.Module):
         self.hidden_dim = hidden_dim
         self.dropout = dropout
         
-    def forward(self, x_f, x):
+    def forward(self, x_f, x, training=True):
         """
         Forward
         
@@ -127,8 +127,8 @@ class PerceiverResampler(nn.Module):
         :param x: [B,L,D]
         """
         
-        x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout)
-        x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout)
+        x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout, training=training)
+        x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout, training=training)
         return x
     
 class SpatialSummarizer(nn.Module):
@@ -146,7 +146,7 @@ class SpatialSummarizer(nn.Module):
         
         self.initialize_parameters()
         
-    def forward(self, x):
+    def forward(self, x, training=True):
         """x: [B,C,H,W]"""
         B, C, H, W = x.shape
         
@@ -155,7 +155,7 @@ class SpatialSummarizer(nn.Module):
         x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
         
         for layer in self.qformer:
-            spatial_query = layer(x_f=x, x=spatial_query)
+            spatial_query = layer(x_f=x, x=spatial_query, training=training)
             
         return spatial_query
     

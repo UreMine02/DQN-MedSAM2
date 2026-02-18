@@ -72,7 +72,7 @@ class GRPOActor(nn.Module):
         self.policy_net = policy_net
         
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
-        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
         policy_probs = self.policy_net(*curr_feats, training=training)
         return policy_probs
 
@@ -156,7 +156,7 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training).squeeze(0).detach().cpu()
+        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=False).squeeze(0).detach().cpu()
         
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
@@ -240,7 +240,7 @@ class GRPOAgent(BasePOAgent):
             # rewards = self.range * (rewards - rewards_mean) / (rewards_std + 1e-8)
 
             with torch.enable_grad():
-                policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+                policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True)
                 action_probs = policy_probs.gather(1, actions)
                 log_probs = torch.log(policy_probs)
                 log_action_probs = torch.log(action_probs)
@@ -252,7 +252,7 @@ class GRPOAgent(BasePOAgent):
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=10.0)
             self.policy_optimizer.step()
             
             total_policy_loss += policy_loss.detach()

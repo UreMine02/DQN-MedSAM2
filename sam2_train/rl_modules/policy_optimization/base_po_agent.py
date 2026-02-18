@@ -141,13 +141,13 @@ class BaseFeatureSummarizer(nn.Module):
         self.cond_obj_proj = nn.Linear(obj_ptr_dim, image_dim)
         self.non_cond_proj = nn.Linear(n_query * memory_dim + obj_ptr_dim, image_dim)
 
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
         B, T, C, H, W = bank_feat.shape
 
         combined_mem_feat = torch.cat([bank_feat, memory_feat.unsqueeze(1)], dim=1)
         combined_mem_feat = combined_mem_feat.reshape(B * (T+1), C, H, W)
-        memory_spatial_query = self.memory_spatial_summary(combined_mem_feat)
-        image_spatial_query = self.image_spatial_summary(image_feat)
+        memory_spatial_query = self.memory_spatial_summary(combined_mem_feat, training=training)
+        image_spatial_query = self.image_spatial_summary(image_feat, training=training)
 
         memory_spatial_query = memory_spatial_query.reshape(B, (T+1), self.n_query, self.memory_dim)
         (
@@ -201,7 +201,7 @@ class BasePolicyNetwork(nn.Module):
         action_context = torch.cat([cond_bank_feat, image_spatial_query], dim=1)
 
         for layer in self.action_decoder:
-            action_query = layer(x_f=action_context, x=action_query)
+            action_query = layer(x_f=action_context, x=action_query, training=training)
 
         actions_logits = self.action_proj(action_query)
         actions_probs = torch.softmax(actions_logits, dim=1)
@@ -235,14 +235,14 @@ class BaseValueNetwork(nn.Module):
             nn.Linear(self.hidden_dim, 1)
         )
 
-    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat):
+    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
         B = image_spatial_query.shape[0]
         value_query = self.value_query.expand(B, 1, self.hidden_dim)
 
         tokens = torch.cat([curr_mem_feat, non_cond_bank_feat, cond_bank_feat, image_spatial_query], dim=1)
 
         for layer in self.value_decoder:
-            value_query = layer(x_f=tokens, x=value_query)
+            value_query = layer(x_f=tokens, x=value_query, training=training)
 
         return self.value_proj(tokens[:, 0, :])
 
