@@ -112,9 +112,23 @@ class MSD(Dataset):
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                # selectable = np.arange(max_slices // 2, image_3d.shape[-1] - max_slices // 2 + 1)
+                # mid_slice = np.random.choice(selectable)
+                # image_3d = image_3d[..., mid_slice-max_slices//2:mid_slice+max_slices//2]
+                # data_seg_3d = data_seg_3d[..., mid_slice-max_slices//2:mid_slice+max_slices//2]
+                
+                choices = np.arange((image_3d.shape[-1] + max_slices - 1) // max_slices)
+                segment = np.random.choice(choices)
+                if segment == choices[-1]:
+                    image_3d = image_3d[..., -max_slices:]
+                    data_seg_3d = data_seg_3d[..., -max_slices:]
+                else:
+                    image_3d = image_3d[..., segment * max_slices:segment * max_slices + max_slices]
+                    data_seg_3d = data_seg_3d[..., segment * max_slices:segment * max_slices + max_slices]
+                    
+                # start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                # image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                # data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)

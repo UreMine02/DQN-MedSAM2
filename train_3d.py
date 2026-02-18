@@ -8,9 +8,6 @@
 import os
 import time
 
-import torch
-import torch.optim as optim
-
 import cfg
 from func_3d import function
 from conf import settings
@@ -18,14 +15,16 @@ from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
 from datetime import datetime
 import pytz
+import numpy as np
 
+import torch
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.multiprocessing as mp
+import torch.optim as torch_optim
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR, MultiplicativeLR
-from torch import autocast, GradScaler
 
-import timm.optim as timm_optim
+from timm import optim as timm_optim
 
 import numpy as np
 
@@ -61,14 +60,14 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
 
-    # if not args.no_agent:
-    for name, param in net.named_parameters():
-        if "image_encoder" in name:
-            param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
-        else:
-            param.requires_grad_(True)
+    if not args.no_agent:
+        for name, param in net.named_parameters():            
+            if "image_encoder" in name:
+                param.requires_grad_(False)
+            elif "sam_prompt_encoder" in name:
+                param.requires_grad_(False)
+            else:
+                param.requires_grad_(True)
 
     agent_n_params = 0
     if agent is not None:
@@ -93,8 +92,7 @@ def train(rank=0, world_size=0):
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    # optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
-    optimizer = timm_optim.Lion(param_list, lr=args.lr, betas=(0.9, 0.999), weight_decay=0.1)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -148,7 +146,7 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            # "train/lr": scheduler.get_last_lr()[0],
+            "train/lr": optimizer.param_groups[0]['lr'],
         }
         # scheduler.step()
 

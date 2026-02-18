@@ -20,7 +20,7 @@ from torch.autograd import Function
 import torch.distributed as dist
 
 from monai.losses import DiceLoss, FocalLoss
-from monai.metrics import compute_hausdorff_distance
+from monai.metrics import compute_hausdorff_distance, compute_surface_dice
 from sklearn.cluster import KMeans
 
 import cfg
@@ -508,6 +508,8 @@ class CombinedLoss(nn.Module):
             bce = self.bce_loss(obj_pred, torch.zeros(obj_pred.shape).to(device=obj_pred.device))
         else:
             bce = self.bce_loss(obj_pred, torch.ones(obj_pred.shape).to(device=obj_pred.device))
+            
+        
         dice = self.dice_loss(inputs, targets)
         focal = self.focal_loss(inputs, targets)
         mae = self.mae_loss(iou_pred, iou_gt)
