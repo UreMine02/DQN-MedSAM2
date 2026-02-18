@@ -47,6 +47,8 @@ def build_sam2_video_predictor(
     mode="eval",
     hydra_overrides_extra=[],
     apply_postprocessing=True,
+    adaptformer_stages = [2, 3],
+    channel_factor = 0.3
 ):
     hydra_overrides = [
         "++model._target_=sam2_train.sam2_video_predictor.SAM2VideoPredictor",

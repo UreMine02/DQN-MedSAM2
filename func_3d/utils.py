@@ -28,8 +28,6 @@ from omegaconf import OmegaConf
 from hydra import compose
 from hydra.utils import instantiate
 
-import wandb
-
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
 
@@ -52,8 +50,6 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             ]
             cfg = compose(config_name=args.rl_config)
             print(cfg)
-            if args.wandb_enabled:
-                wandb.config.update(dict(cfg))
             OmegaConf.resolve(cfg)
             net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
@@ -258,13 +254,13 @@ def score_cal(seg_map, prd_map):
 
     return iou_score, dice_score, fb_iou_score
 
-def eval_seg(pred, mask):
+def eval_seg(pred, mask, thr=0.5):
     """
     Args:
         pred: [D, H, W]
         mask: [D, H, W]
     """
-    pred = (torch.sigmoid(pred) > 0.5).float()
+    pred = (torch.sigmoid(pred) > thr).float()
     iou, dice, fb_iou = score_cal(mask, pred)
     
     iou[iou.isnan()] = 0. 

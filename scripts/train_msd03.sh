@@ -2,22 +2,19 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd03 # job name
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03-%j.out"
 
-# conda activate rlsam2
-# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-# conda init
-# conda activate rlsam2
+conda activate rlsam2
+cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+conda init
+conda activate rlsam2
 
-EXP=msd_task03+no_+agent+icl
-export CUDA_VISIBLE_DEVICES=0
-
-sleep 2h
+EXP=msd_task03+no_agent+icl
 
 python train_3d.py \
     -exp_name $EXP \
@@ -26,13 +23,12 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task03 \
-    -data_path /data/datasets/nii/MSD \
-    -lr 1e-4 \
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
     -invalid_penalty -0.01 \
-    -num_support 16 \
-    -no_agent \
-    -wandb_enabled
+    -num_support 3 \
+    -no_agent

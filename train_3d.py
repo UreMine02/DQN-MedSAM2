@@ -25,9 +25,9 @@ import torch.multiprocessing as mp
 from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR, MultiplicativeLR
 from torch import autocast, GradScaler
 
-import numpy as np
+import timm.optim as timm_optim
 
-import wandb
+import numpy as np
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -48,21 +48,11 @@ def train(rank=0, world_size=0):
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
 
-    if args.wandb_enabled:
-        wandb.init(
-            project="dqn-medsam2",
-            name=args.exp_name,              # Experiment name from args
-            config=args
-        )
-
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
     agent = getattr(net, "agent", None)
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
-
-    if args.wandb_enabled:
-        wandb.watch(net, log='all', log_freq=1)
 
     if args.pretrain:
         print(args.pretrain)
@@ -73,15 +63,6 @@ def train(rank=0, world_size=0):
 
     # if not args.no_agent:
     for name, param in net.named_parameters():
-        # if "memory_encoder" in name:
-        #     param.requires_grad_(True)
-        # elif "memory_attention" in name:
-        #     param.requires_grad_(True)
-        # elif "obj_ptr_proj" in name:
-        #     param.requires_grad_(True)
-        # else:
-        #     param.requires_grad_(False)
-        
         if "image_encoder" in name:
             param.requires_grad_(False)
         elif "sam_prompt_encoder" in name:
@@ -112,10 +93,8 @@ def train(rank=0, world_size=0):
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
-    # scheduler = StepLR(optimizer, step_size=10, gamma=0.5)
-    # scheduler = LinearLR(optimizer, start_factor=20.0, end_factor=1.0, total_iters=40)
-    scheduler = MultiplicativeLR(optimizer, lr_lambda=lambda ep: 0.95)
+    # optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
+    optimizer = timm_optim.Lion(param_list, lr=args.lr, betas=(0.9, 0.999), weight_decay=0.1)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -169,12 +148,9 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            "train/lr": scheduler.get_last_lr()[0],
+            # "train/lr": scheduler.get_last_lr()[0],
         }
-        scheduler.step()
-
-        if args.wandb_enabled and loss is not None:
-            wandb.log(loss_dict, step=epoch)
+        # scheduler.step()
 
         time_end = time.time()
         print(loss_dict)
@@ -202,9 +178,6 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-
-            if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
 
         if args.save_ckpt:
             if args.distributed and rank == 0:
