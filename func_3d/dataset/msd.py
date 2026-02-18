@@ -15,7 +15,7 @@ from torchvision.transforms.functional import normalize
 def scale(image):
     image_min = np.min(image)
     image_max = np.max(image)
-    image = ((image - image_min)/(image_max-image_min))
+    image = ((image - image_min)/(image_max-image_min)) * 255
     return image
 
 def remove_negative_samples(image, mask):

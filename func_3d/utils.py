@@ -257,13 +257,13 @@ def score_cal(seg_map, prd_map):
 
     return iou_score, dice_score, fb_iou_score
 
-def eval_seg(pred, mask):
+def eval_seg(pred, mask, thr=0.5):
     """
     Args:
         pred: [D, H, W]
         mask: [D, H, W]
     """
-    pred = (torch.sigmoid(pred) > 0.5).float()
+    pred = (torch.sigmoid(pred) > thr).float()
     iou, dice, fb_iou = score_cal(mask, pred)
     
     iou[iou.isnan()] = 0. 
