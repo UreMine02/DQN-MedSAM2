@@ -20,7 +20,7 @@ from torch.autograd import Function
 import torch.distributed as dist
 
 from monai.losses import DiceLoss, FocalLoss
-from monai.metrics import compute_hausdorff_distance
+from monai.metrics import compute_hausdorff_distance, compute_surface_dice
 from sklearn.cluster import KMeans
 
 import cfg
