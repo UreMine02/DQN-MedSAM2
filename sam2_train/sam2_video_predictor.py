@@ -1828,27 +1828,23 @@ class SAM2VideoPredictor(SAM2Base):
         reward = 0
         drop_frame = None
         storage_key = "non_cond_frame_outputs"
+        
+        if "drop_frame" in output_dict.keys():
+            output_dict["drop_frame"][frame_idx] = -1
+        
         if action == 0:
             # Add
-            if bank_full:
-                reward = inference_state["rl_config"]["invalid_penalty"]
-            else:
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
-            reward = 0.0
+            drop_frame = frame_idx - 1
         else:
             # Add the new frame and skip a specific frame
-            if action not in action_frame_map.keys():
-                # penalty for dropping blank
-                reward = inference_state["rl_config"]["invalid_penalty"]
-                # raise ValueError(
-                    # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-            else:
-                # drop_frame = list(output_dict[storage_key].keys())[drop_key]
-                drop_frame = action_frame_map[action]
-                output_dict[storage_key].pop(drop_frame)
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            drop_frame = action_frame_map[action]
+            if "drop_frame" in output_dict.keys():
+                output_dict["drop_frame"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys()).index(drop_frame)
+            output_dict[storage_key].pop(drop_frame)
+            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
         if not train_agent:
             print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
