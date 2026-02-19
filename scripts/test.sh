@@ -19,8 +19,9 @@ ckpt=(
     # output/msd_task02+ppo+icl+300ep/2026-02-18-23-33-10/best.pth
     # output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
 
-    # output/msd_task02+grpo+icl+lr4e-4/2026-02-19-17-23-55/best.pth
-    output/msd_task02+no_agent+icl+freeze/2026-02-19-17-16-22/best.pth
+    # output/msd_task02+grpo+icl+300ep/2026-02-18-23-19-20/best.pth
+    output/msd_task02+grpo+icl/2026-02-18-22-02-34/best.pth
+    # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -31,7 +32,6 @@ do
     do
         python eval_3d.py \
             -pretrain $pretrain \
-            -sam_config sam2_hiera_l \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
             -task "Task02" \
@@ -39,6 +39,6 @@ do
             -num_support $shot \
             -ablation \
             -vis \
-            -no_agent
+            # -no_agent
     done
 done
