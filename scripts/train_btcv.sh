@@ -23,7 +23,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset btcv \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/BTCV \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
