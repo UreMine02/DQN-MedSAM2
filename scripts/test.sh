@@ -14,26 +14,11 @@
 # conda activate rlsam2
 
 ckpt=(
-    # output/msd_task02+grpo+icl/2026-02-18-15-10-06/best.pth
-    # output/msd_task02+grpo+icl+300ep/2026-02-18-23-19-20/best.pth
-    # output/msd_task02+ppo+icl+300ep/2026-02-18-23-33-10/best.pth
-    # output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
-
-    # output/msd_task02+grpo+icl+300ep/2026-02-18-23-19-20/best.pth
-    # output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
-    # output/msd_task02+grpo+icl/2026-02-18-22-02-34/best.pth
-    # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
-
-    # output/msd_task02+grpo+icl+3update/2026-02-19-23-09-24/best.pth
-    # output/msd_task02+grpo+icl+5update/2026-02-20-01-09-46/best.pth
-    # output/msd_task02+grpo+icl+5warmup/2026-02-20-03-14-58/best.pth
-
-    # output/msd_task02+grpo+icl+10warmup+5update/2026-02-20-08-13-49/best.pth
-    output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
-    # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
+    output/sarcoma+grpo+icl/2026-02-19-18-37-54/best.pth
+    output/sarcoma+no_agent+icl/2026-02-20-22-59-55/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
