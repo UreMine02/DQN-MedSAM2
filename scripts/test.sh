@@ -25,15 +25,19 @@ ckpt=(
     # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
 
     # output/msd_task02+grpo+icl+3update/2026-02-19-23-09-24/best.pth
-    output/msd_task02+grpo+icl+5update/2026-02-20-01-09-46/best.pth
+    # output/msd_task02+grpo+icl+5update/2026-02-20-01-09-46/best.pth
     # output/msd_task02+grpo+icl+5warmup/2026-02-20-03-14-58/best.pth
+
+    # output/msd_task02+grpo+icl+10warmup+5update/2026-02-20-08-13-49/best.pth
+    output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
+    # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
@@ -44,6 +48,6 @@ do
             -num_support $shot \
             -ablation \
             -vis \
-            # -no_agent
+            -no_agent
     done
 done
