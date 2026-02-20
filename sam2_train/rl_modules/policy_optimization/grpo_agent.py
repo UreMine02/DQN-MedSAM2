@@ -108,8 +108,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=2)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=2)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
