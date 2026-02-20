@@ -220,16 +220,9 @@ class BaseValueNetwork(nn.Module):
 
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.value_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, 1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, 1, dropout=0.1) for _ in range(n_layers)]
         )
-        # self.value_proj = nn.Sequential(
-        #     nn.LayerNorm(self.hidden_dim),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim, self.hidden_dim * 4),
-        #     QuickGELU(),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim * 4, 1)
-        # )
+        
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)

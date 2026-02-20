@@ -125,7 +125,6 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
-        
         x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout, training=training)
         x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout, training=training)
         return x
