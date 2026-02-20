@@ -6,12 +6,12 @@ agent:
   gamma: 0.99
   buffer_size: 500
   batch_size: 128
-  entropy_weight: 0.001
+  entropy_weight: 1e-3
   epsilon: 0.2
   tau: 0.99
-  range: 10.0
+  range: 1.0
   sam2_dim:
-    n_query: 8
+    n_query: 16
     image_dim: 256
     memory_dim: 64
     obj_ptr_dim: 256

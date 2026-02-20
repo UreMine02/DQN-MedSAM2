@@ -1593,7 +1593,7 @@ class SAM2VideoPredictor(SAM2Base):
             action_out = self.agent.select_action(
                 state,
                 valid_actions=torch.tensor(valid_actions),
-                num_samples=6,
+                num_samples=10,
                 training=train_agent,
             ) # ask agent
 
