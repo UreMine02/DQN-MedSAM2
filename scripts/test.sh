@@ -14,8 +14,10 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/sarcoma+grpo+icl/2026-02-19-18-37-54/best.pth
-    output/sarcoma+no_agent+icl/2026-02-20-22-59-55/best.pth
+    # output/sarcoma+grpo+icl/2026-02-19-18-37-54/best.pth
+    # output/sarcoma+no_agent+icl/2026-02-20-22-59-55/best.pth
+    
+    output/msd_task02+grpo+icl/2026-02-21-09-06-46/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -33,6 +35,6 @@ do
             -num_support $shot \
             -ablation \
             -vis \
-            -no_agent
+            # -no_agent
     done
 done

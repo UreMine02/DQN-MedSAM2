@@ -109,8 +109,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
         
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, num_maskmem, n_layers=4)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=2)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, num_maskmem, n_layers=2)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -171,7 +171,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
-            action_idx = torch.argmax(valid_probs)
+            # action_idx = torch.argmax(valid_probs)
+            action_idx = torch.multinomial(valid_probs, num_samples=1)
             
             return {
                 "main_action": valid_actions[action_idx].item(),
