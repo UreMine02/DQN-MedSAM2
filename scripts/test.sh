@@ -14,11 +14,11 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    # output/msd_task02+no_agent+icl/2026-02-18-15-09-52/best.pth
-    output/msd_task02+grpo+icl/2026-02-18-15-10-06/best.pth
+    # output/msd_task02+grpo+icl/2026-02-21-09-06-46/best.pth
+    output/msd_task02+grpo+icl/2026-02-21-09-06-46/epoch_39_dice0.9150.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do

@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+icl+n_layer2
+EXP=sarcoma+grpo+icl
 export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
@@ -28,7 +28,7 @@ python train_3d.py \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
-    -lazy_penalty -0.01 \
+    -lazy_penalty -0.05 \
     -invalid_penalty -0.01 \
     -num_support 3 \
     -wandb_enabled

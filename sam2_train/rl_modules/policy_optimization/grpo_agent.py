@@ -170,7 +170,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
-            action_idx = torch.argmax(valid_probs)
+            # action_idx = torch.argmax(valid_probs)
+            action_idx = torch.multinomial(valid_probs, num_samples=1)
 
             return {
                 "main_action": valid_actions[action_idx].item(),
