@@ -338,8 +338,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             cmap="jet"
                         )
                 
-                volume_masks = torch.stack(volume_masks).flatten(1) # [D,H,W]
-                volume_preds = torch.stack(volume_preds).flatten(1) # [D,H,W]
+                volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+                volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
                 
                 masks[f"{task}_{obj_id}"].append(volume_masks)
                 preds[f"{task}_{obj_id}"].append(volume_preds)

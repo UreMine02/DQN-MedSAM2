@@ -247,12 +247,12 @@ class GRPOAgent(BasePOAgent):
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
                 minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
-                policy_loss = 5.0 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+                policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
                 policy_loss = policy_loss.mean()
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
             self.policy_optimizer.step()
 
             total_policy_loss += policy_loss.detach()
