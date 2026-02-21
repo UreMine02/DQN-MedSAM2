@@ -1191,7 +1191,7 @@ class SAM2VideoPredictor(SAM2Base):
             # batched forward on them via `_run_single_frame_inference` because the
             # number of clicks on each object might be different.
 
-            if agent_act:
+            if agent_act or generate_rl_samples:
                 storage_key = "await_outputs"
             else:
                 storage_key = "non_cond_frame_outputs"
