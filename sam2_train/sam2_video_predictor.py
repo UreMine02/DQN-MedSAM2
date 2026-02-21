@@ -753,6 +753,7 @@ class SAM2VideoPredictor(SAM2Base):
             mask_inputs=mask_inputs,
             reverse=reverse,
             agent_act=False,
+            generate_rl_samples=False,
             # Skip the memory encoder when adding clicks or mask. We execute the memory encoder
             # at the beginning of `propagate_in_video` (after user finalize their clicks). This
             # allows us to enforce non-overlapping constraints on all objects before encoding
@@ -1162,6 +1163,7 @@ class SAM2VideoPredictor(SAM2Base):
         reverse=False,
         train_agent=False,
         agent_act=True,
+        generate_rl_samples=False
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1206,6 +1208,7 @@ class SAM2VideoPredictor(SAM2Base):
                 run_mem_encoder=True,
                 agent_act=agent_act,
                 train_agent=train_agent,
+                generate_rl_samples=generate_rl_samples
             )
             output_dict[storage_key][frame_idx] = current_out
             # Create slices of per-object outputs for subsequent interaction with each
@@ -1338,6 +1341,7 @@ class SAM2VideoPredictor(SAM2Base):
         prev_sam_mask_logits=None,
         agent_act=False,
         train_agent=False,
+        generate_rl_samples=False
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -1372,6 +1376,7 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict,
                 train_agent,
                 agent_act,
+                generate_rl_samples,
                 **track_step_kwargs
             )
 
@@ -1509,6 +1514,7 @@ class SAM2VideoPredictor(SAM2Base):
         output_dict,
         train_agent,
         agent_act,
+        generate_rl_samples,
         **track_step_kwargs
     ):
         if isinstance(self.agent, GRPOAgent):
@@ -1521,6 +1527,7 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict=output_dict,
                 train_agent=train_agent,
                 agent_act=agent_act,
+                generate_rl_samples=generate_rl_samples,
                 **track_step_kwargs
             )
         else:
@@ -1557,6 +1564,7 @@ class SAM2VideoPredictor(SAM2Base):
         output_dict,
         train_agent=False,
         agent_act=True,
+        generate_rl_samples=False,
         **kwargs
     ):
         # compute loss before
@@ -1579,7 +1587,7 @@ class SAM2VideoPredictor(SAM2Base):
 
             loss_before = compute_loss(pred_masks, gt_masks, inference_state)
         
-        if agent_act:
+        if agent_act or generate_rl_samples:
             state, action_frame_map = prepare_rl_state(
                 current_vision_feats,
                 current_vision_pos_embeds,
@@ -1605,7 +1613,7 @@ class SAM2VideoPredictor(SAM2Base):
 
             # state.offload_to_cpu()
 
-        if train_agent:
+        if generate_rl_samples:
             self.agent.init_new_group()
 
             actions = action_out["action"]
