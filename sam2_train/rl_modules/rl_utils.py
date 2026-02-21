@@ -68,10 +68,10 @@ def prepare_rl_state(
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1).clone().detach()
     
     #TODO: Finding out why this part affecting testing
-    if training:
-        randperm = torch.randperm(num_maskmem)
-        prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
-        prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
+    # if training:
+    #     randperm = torch.randperm(num_maskmem)
+    #     prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
+    #     prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
     
     if offload_to_cpu:
         next_image_feat = next_image_feat.detach().cpu()
@@ -93,11 +93,11 @@ def prepare_rl_state(
     
     state = RLStates(**rl_state)
     list_frame = list(output_dict["non_cond_frame_outputs"].keys())
-    if training:
-        avail_index = np.argsort(randperm)[:len(non_cond_bank_list)].tolist()
-        action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
-    else:
-        action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
+    # if training:
+    #     avail_index = np.argsort(randperm)[:len(non_cond_bank_list)].tolist()
+    #     action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
+    # else:
+    action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
     
     return state, action_frame_map
 

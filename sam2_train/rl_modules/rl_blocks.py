@@ -145,7 +145,7 @@ class SpatialSummarizer(nn.Module):
         self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
         
-        self.initialize_parameters()
+        # self.initialize_parameters()
         
     def forward(self, x, training=True):
         """x: [B,C,H,W]"""

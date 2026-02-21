@@ -752,6 +752,7 @@ class SAM2VideoPredictor(SAM2Base):
             point_inputs=None,
             mask_inputs=mask_inputs,
             reverse=reverse,
+            agent_act=False,
             # Skip the memory encoder when adding clicks or mask. We execute the memory encoder
             # at the beginning of `propagate_in_video` (after user finalize their clicks). This
             # allows us to enforce non-overlapping constraints on all objects before encoding
@@ -1351,7 +1352,7 @@ class SAM2VideoPredictor(SAM2Base):
         storage_device = inference_state["device"]
 
         # Agent
-        if agent_act and frame_idx > 0:
+        if frame_idx > 0:
             track_step_kwargs = {
                 "is_init_cond_frame": is_init_cond_frame,
                 "feat_sizes": feat_sizes,
@@ -1370,6 +1371,7 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds,
                 output_dict,
                 train_agent,
+                agent_act,
                 **track_step_kwargs
             )
 
@@ -1506,6 +1508,7 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent,
+        agent_act,
         **track_step_kwargs
     ):
         if isinstance(self.agent, GRPOAgent):
@@ -1517,6 +1520,7 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds=current_vision_pos_embeds,
                 output_dict=output_dict,
                 train_agent=train_agent,
+                agent_act=agent_act,
                 **track_step_kwargs
             )
         else:
@@ -1552,6 +1556,7 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent=False,
+        agent_act=True,
         **kwargs
     ):
         # compute loss before
@@ -1573,31 +1578,32 @@ class SAM2VideoPredictor(SAM2Base):
             gt_masks = gt_masks.to(torch.float32)
 
             loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+        
+        if agent_act:
+            state, action_frame_map = prepare_rl_state(
+                current_vision_feats,
+                current_vision_pos_embeds,
+                output_dict,
+                frame_idx,
+                self.num_maskmem - 1,
+                num_max_prompt=inference_state["support_num_frames"],
+                offload_to_cpu=False,
+                training=train_agent
+            )
 
-        state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False,
-            training=train_agent
-        )
+            bank_size = len(output_dict["non_cond_frame_outputs"])
+            bank_full = (bank_size >= self.num_maskmem - 1)
+            valid_actions = [1] if bank_full else [0, 1]
+            valid_actions.extend(list(action_frame_map.keys()))
+            with torch.no_grad():
+                action_out = self.agent.select_action(
+                    state,
+                    valid_actions=torch.tensor(valid_actions),
+                    num_samples=10,
+                    training=train_agent,
+                ) # ask agent
 
-        bank_size = len(output_dict["non_cond_frame_outputs"])
-        bank_full = (bank_size >= self.num_maskmem - 1)
-        valid_actions = [1] if bank_full else [0, 1]
-        valid_actions.extend(list(action_frame_map.keys()))
-        with torch.no_grad():
-            action_out = self.agent.select_action(
-                state,
-                valid_actions=torch.tensor(valid_actions),
-                num_samples=10,
-                training=train_agent,
-            ) # ask agent
-
-        # state.offload_to_cpu()
+            # state.offload_to_cpu()
 
         if train_agent:
             self.agent.init_new_group()
@@ -1664,28 +1670,29 @@ class SAM2VideoPredictor(SAM2Base):
 
             self.agent.final_group()
 
-        drop_frame = None
-        reward = 0.0
-        action = action_out['main_action']
-        prev_frames = list(output_dict["non_cond_frame_outputs"].keys()) + [frame_idx-1]
-        if action == 0:
-            # Add
-            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-        elif action == 1:
-            # Skip (equivalent to adding then drop the same frame)
-            drop_frame = frame_idx - 1
+        if agent_act:
+            drop_frame = None
             reward = 0.0
-        else:
-            # Add the new frame and skip a specific frame
-            drop_frame = action_frame_map[action]
-            output_dict["non_cond_frame_outputs"].pop(drop_frame)
-            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            action = action_out['main_action']
+            prev_frames = list(output_dict["non_cond_frame_outputs"].keys()) + [frame_idx-1]
+            if action == 0:
+                # Add
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            elif action == 1:
+                # Skip (equivalent to adding then drop the same frame)
+                drop_frame = frame_idx - 1
+                reward = 0.0
+            else:
+                # Add the new frame and skip a specific frame
+                drop_frame = action_frame_map[action]
+                output_dict["non_cond_frame_outputs"].pop(drop_frame)
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} "
-                  f"action {action} "
-                  f"drop_frame {drop_frame} "
-                  f"bank_size {bank_size} ")
+            if not train_agent:
+                print(f"[Q] frame {frame_idx-1} "
+                    f"action {action} "
+                    f"drop_frame {drop_frame} "
+                    f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

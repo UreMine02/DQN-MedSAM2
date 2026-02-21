@@ -148,6 +148,8 @@ class GRPOAgent(BasePOAgent):
 
     def select_action(self, state, valid_actions, num_samples=1, training=False):
         self.actor.eval()
+        
+        # print(training)
 
         image_feat = state.next_image_feat.detach().to(torch.float32)
         memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
@@ -170,8 +172,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
-            # action_idx = torch.argmax(valid_probs)
-            action_idx = torch.multinomial(valid_probs, num_samples=1)
+            action_idx = torch.argmax(valid_probs)
+            # action_idx = torch.multinomial(valid_probs, num_samples=1)
 
             return {
                 "main_action": valid_actions[action_idx].item(),
@@ -234,11 +236,11 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
-
-            # rewards_mean = rewards.mean(dim=0, keepdim=True)
-            # rewards_std  = rewards.std(dim=0, keepdim=True)
-            # rewards = self.range * (rewards - rewards_mean) / (rewards_std + 1e-8)
-
+            
+            # for action in actions.unique():
+            #     action_rewards = rewards.squeeze()[actions.squeeze() == action]
+            #     print(action, action_rewards.shape[0], action_rewards.mean())
+            
             with torch.enable_grad():
                 policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True)
                 action_probs = policy_probs.gather(1, actions)
