@@ -14,8 +14,7 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/sarcoma+no_agent+icl/2026-02-20-22-59-55/best.pth
-    # output/sarcoma+grpo+icl/2026-02-21-09-03-51/best.pth
+    output/msd_task02+grpo+icl/2026-02-21-15-45-02/epoch_40_dice0.9096.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -27,12 +26,11 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset sarcoma \
-            -task "" \
-            -data_path /data/datasets/nii/Sarcoma \
+            -dataset msd \
+            -task "Task02" \
+            -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            -vis \
-            -no_agent
+            -vis
     done
 done
