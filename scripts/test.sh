@@ -14,7 +14,8 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/msd_task02+grpo+icl/2026-02-21-15-45-02/best.pth
+    output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
+    # output/msd_task02+grpo+icl/2026-02-21-15-45-02/best.pth
     # output/msd_task02+grpo+icl/2026-02-21-15-45-02/epoch_40_dice0.9096.pth
 )
 
@@ -32,6 +33,7 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            -vis
+            -vis \
+            -no_agent
     done
 done
