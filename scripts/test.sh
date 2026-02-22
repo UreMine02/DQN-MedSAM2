@@ -15,13 +15,14 @@
 
 ckpt=(
     output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
+    # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 1;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
@@ -31,6 +32,7 @@ do
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -ablation \
-            -vis
+            -vis \
+            # -no_agent
     done
 done
