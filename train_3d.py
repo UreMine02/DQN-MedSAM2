@@ -61,7 +61,7 @@ def train(rank=0, world_size=0):
             agent.load_state_dict(weights["agent"])
 
     if not args.no_agent:
-        for name, param in net.named_parameters():            
+        for name, param in net.named_parameters():
             if "image_encoder" in name:
                 param.requires_grad_(False)
             elif "sam_prompt_encoder" in name:

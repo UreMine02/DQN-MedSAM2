@@ -156,7 +156,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
-                if agent is not None:
+                if agent is not None and epoch >= args.warmup_ep:
                     q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                     agent_step_loss = agent.update(q_updates_per_step)
                     if agent_step_loss is not None:

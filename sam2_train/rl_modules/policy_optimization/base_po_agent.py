@@ -125,7 +125,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=image_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.2
         )
         self.memory_spatial_summary = SpatialSummarizer(
             n_query=n_query,
@@ -134,7 +134,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=memory_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.2
         )
         
         self.cond_mem_proj = nn.Linear(memory_dim, image_dim)
@@ -185,7 +185,7 @@ class BasePolicyNetwork(nn.Module):
 
         self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.action_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.2) for _ in range(n_layers)]
         )
         
         self.action_proj = nn.Sequential(
@@ -220,16 +220,9 @@ class BaseValueNetwork(nn.Module):
 
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.value_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, 1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, 1, dropout=0.2) for _ in range(n_layers)]
         )
-        # self.value_proj = nn.Sequential(
-        #     nn.LayerNorm(self.hidden_dim),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim, self.hidden_dim * 4),
-        #     QuickGELU(),
-        #     nn.Dropout(0.2),
-        #     nn.Linear(self.hidden_dim * 4, 1)
-        # )
+        
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)

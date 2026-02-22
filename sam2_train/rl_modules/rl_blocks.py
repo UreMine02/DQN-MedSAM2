@@ -111,8 +111,7 @@ class PerceiverResampler(nn.Module):
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
             ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim)),
-            ("dropout", nn.Dropout(dropout))
+            ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))
         ]))
         self.norm2 = nn.LayerNorm(hidden_dim)
         
@@ -126,7 +125,6 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
-        
         x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout, training=training)
         x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout, training=training)
         return x
