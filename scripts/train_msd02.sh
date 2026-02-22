@@ -15,7 +15,7 @@
 # conda activate rlsam2
 
 EXP=msd_task02+grpo+icl
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -30,6 +30,6 @@ python train_3d.py \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
-    -lazy_penalty -0.001 \
+    -lazy_penalty 0.0 \
     -num_support 3 \
     -wandb_enabled

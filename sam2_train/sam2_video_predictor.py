@@ -1517,42 +1517,43 @@ class SAM2VideoPredictor(SAM2Base):
         generate_rl_samples,
         **track_step_kwargs
     ):
-        if isinstance(self.agent, GRPOAgent):
-            self.generate_rl_steps(
-                inference_state=inference_state,
-                storage_device=storage_device,
-                frame_idx=frame_idx,
-                current_vision_feats=current_vision_feats,
-                current_vision_pos_embeds=current_vision_pos_embeds,
-                output_dict=output_dict,
-                train_agent=train_agent,
-                agent_act=agent_act,
-                generate_rl_samples=generate_rl_samples,
-                **track_step_kwargs
-            )
-        else:
-            # Finalize replay buffer instance from previous frame
-            if frame_idx > 1 and train_agent:
-                self.agent_update_second_stage(
+        if generate_rl_samples or train_agent or agent_act:
+            if isinstance(self.agent, GRPOAgent):
+                self.generate_rl_steps(
                     inference_state=inference_state,
-                    output_dict=output_dict,
-                    frame_idx=frame_idx,
                     storage_device=storage_device,
+                    frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    train_agent=train_agent,
+                    agent_act=agent_act,
+                    generate_rl_samples=generate_rl_samples,
+                    **track_step_kwargs
                 )
+            else:
+                # Finalize replay buffer instance from previous frame
+                if frame_idx > 1 and train_agent:
+                    self.agent_update_second_stage(
+                        inference_state=inference_state,
+                        output_dict=output_dict,
+                        frame_idx=frame_idx,
+                        storage_device=storage_device,
+                        current_vision_feats=current_vision_feats,
+                        current_vision_pos_embeds=current_vision_pos_embeds,
+                    )
 
-            # Initiate replay buffer instance for current frame
-            self.agent_update_first_stage(
-                inference_state=inference_state,
-                storage_device=storage_device,
-                frame_idx=frame_idx,
-                current_vision_feats=current_vision_feats,
-                current_vision_pos_embeds=current_vision_pos_embeds,
-                output_dict=output_dict,
-                train_agent=train_agent,
-                **track_step_kwargs
-            )
+                # Initiate replay buffer instance for current frame
+                self.agent_update_first_stage(
+                    inference_state=inference_state,
+                    storage_device=storage_device,
+                    frame_idx=frame_idx,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    train_agent=train_agent,
+                    **track_step_kwargs
+                )
 
     def generate_rl_steps(
         self,

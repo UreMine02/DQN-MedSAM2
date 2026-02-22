@@ -14,15 +14,17 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    output/msd_task02+grpo+icl/2026-02-21-15-45-02/best.pth
+    # output/msd_task02+grpo+icl/2026-02-21-15-45-02/best.pth
     # output/msd_task02+grpo+icl/2026-02-21-15-45-02/epoch_49_dice0.9084.pth
+    # output/msd_task02+no_agent+icl/2026-02-21-20-05-23/best.pth
+    output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do
-    for shot in 1;
+    for shot in 1 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \

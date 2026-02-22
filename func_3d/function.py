@@ -46,7 +46,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
     video_length = args.video_length
     train_agent = not args.no_agent
-    agent_act = not args.no_agent and epoch >= 5
+    agent_act = not args.no_agent # and epoch >= 0
     generate_rl_samples = not args.no_agent
     dice_loss_per_class = {}
 
