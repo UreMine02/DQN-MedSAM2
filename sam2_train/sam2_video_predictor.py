@@ -752,6 +752,8 @@ class SAM2VideoPredictor(SAM2Base):
             point_inputs=None,
             mask_inputs=mask_inputs,
             reverse=reverse,
+            agent_act=False,
+            generate_rl_samples=False,
             # Skip the memory encoder when adding clicks or mask. We execute the memory encoder
             # at the beginning of `propagate_in_video` (after user finalize their clicks). This
             # allows us to enforce non-overlapping constraints on all objects before encoding
@@ -1161,6 +1163,7 @@ class SAM2VideoPredictor(SAM2Base):
         reverse=False,
         train_agent=False,
         agent_act=True,
+        generate_rl_samples=False
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1188,7 +1191,7 @@ class SAM2VideoPredictor(SAM2Base):
             # batched forward on them via `_run_single_frame_inference` because the
             # number of clicks on each object might be different.
 
-            if agent_act:
+            if agent_act or generate_rl_samples:
                 storage_key = "await_outputs"
             else:
                 storage_key = "non_cond_frame_outputs"
@@ -1205,6 +1208,7 @@ class SAM2VideoPredictor(SAM2Base):
                 run_mem_encoder=True,
                 agent_act=agent_act,
                 train_agent=train_agent,
+                generate_rl_samples=generate_rl_samples
             )
             output_dict[storage_key][frame_idx] = current_out
             # Create slices of per-object outputs for subsequent interaction with each
@@ -1337,6 +1341,7 @@ class SAM2VideoPredictor(SAM2Base):
         prev_sam_mask_logits=None,
         agent_act=False,
         train_agent=False,
+        generate_rl_samples=False
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -1351,7 +1356,7 @@ class SAM2VideoPredictor(SAM2Base):
         storage_device = inference_state["device"]
 
         # Agent
-        if agent_act and frame_idx > 0:
+        if frame_idx > 0:
             track_step_kwargs = {
                 "is_init_cond_frame": is_init_cond_frame,
                 "feat_sizes": feat_sizes,
@@ -1370,6 +1375,8 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds,
                 output_dict,
                 train_agent,
+                agent_act,
+                generate_rl_samples,
                 **track_step_kwargs
             )
 
@@ -1506,42 +1513,47 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent,
+        agent_act,
+        generate_rl_samples,
         **track_step_kwargs
     ):
-        if isinstance(self.agent, GRPOAgent):
-            self.generate_rl_steps(
-                inference_state=inference_state,
-                storage_device=storage_device,
-                frame_idx=frame_idx,
-                current_vision_feats=current_vision_feats,
-                current_vision_pos_embeds=current_vision_pos_embeds,
-                output_dict=output_dict,
-                train_agent=train_agent,
-                **track_step_kwargs
-            )
-        else:
-            # Finalize replay buffer instance from previous frame
-            if frame_idx > 1 and train_agent:
-                self.agent_update_second_stage(
+        if generate_rl_samples or train_agent or agent_act:
+            if isinstance(self.agent, GRPOAgent):
+                self.generate_rl_steps(
                     inference_state=inference_state,
-                    output_dict=output_dict,
-                    frame_idx=frame_idx,
                     storage_device=storage_device,
+                    frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    train_agent=train_agent,
+                    agent_act=agent_act,
+                    generate_rl_samples=generate_rl_samples,
+                    **track_step_kwargs
                 )
+            else:
+                # Finalize replay buffer instance from previous frame
+                if frame_idx > 1 and train_agent:
+                    self.agent_update_second_stage(
+                        inference_state=inference_state,
+                        output_dict=output_dict,
+                        frame_idx=frame_idx,
+                        storage_device=storage_device,
+                        current_vision_feats=current_vision_feats,
+                        current_vision_pos_embeds=current_vision_pos_embeds,
+                    )
 
-            # Initiate replay buffer instance for current frame
-            self.agent_update_first_stage(
-                inference_state=inference_state,
-                storage_device=storage_device,
-                frame_idx=frame_idx,
-                current_vision_feats=current_vision_feats,
-                current_vision_pos_embeds=current_vision_pos_embeds,
-                output_dict=output_dict,
-                train_agent=train_agent,
-                **track_step_kwargs
-            )
+                # Initiate replay buffer instance for current frame
+                self.agent_update_first_stage(
+                    inference_state=inference_state,
+                    storage_device=storage_device,
+                    frame_idx=frame_idx,
+                    current_vision_feats=current_vision_feats,
+                    current_vision_pos_embeds=current_vision_pos_embeds,
+                    output_dict=output_dict,
+                    train_agent=train_agent,
+                    **track_step_kwargs
+                )
 
     def generate_rl_steps(
         self,
@@ -1552,6 +1564,8 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent=False,
+        agent_act=True,
+        generate_rl_samples=False,
         **kwargs
     ):
         # compute loss before
@@ -1573,33 +1587,34 @@ class SAM2VideoPredictor(SAM2Base):
             gt_masks = gt_masks.to(torch.float32)
 
             loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+        
+        if agent_act or generate_rl_samples:
+            state, action_frame_map = prepare_rl_state(
+                current_vision_feats,
+                current_vision_pos_embeds,
+                output_dict,
+                frame_idx,
+                self.num_maskmem - 1,
+                num_max_prompt=inference_state["support_num_frames"],
+                offload_to_cpu=False,
+                training=train_agent
+            )
 
-        state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False,
-            training=train_agent
-        )
+            bank_size = len(output_dict["non_cond_frame_outputs"])
+            bank_full = (bank_size >= self.num_maskmem - 1)
+            valid_actions = [1] if bank_full else [0, 1]
+            valid_actions.extend(list(action_frame_map.keys()))
+            with torch.no_grad():
+                action_out = self.agent.select_action(
+                    state,
+                    valid_actions=torch.tensor(valid_actions),
+                    num_samples=10,
+                    training=train_agent,
+                ) # ask agent
 
-        bank_size = len(output_dict["non_cond_frame_outputs"])
-        bank_full = (bank_size >= self.num_maskmem - 1)
-        valid_actions = [1] if bank_full else [0, 1]
-        valid_actions.extend(list(action_frame_map.keys()))
-        with torch.no_grad():
-            action_out = self.agent.select_action(
-                state,
-                valid_actions=torch.tensor(valid_actions),
-                num_samples=6,
-                training=train_agent,
-            ) # ask agent
+            # state.offload_to_cpu()
 
-        # state.offload_to_cpu()
-
-        if train_agent:
+        if generate_rl_samples:
             self.agent.init_new_group()
 
             actions = action_out["action"]
@@ -1664,27 +1679,29 @@ class SAM2VideoPredictor(SAM2Base):
 
             self.agent.final_group()
 
-        drop_frame = None
-        reward = 0.0
-        action = action_out['main_action']
-        prev_frames = list(output_dict["non_cond_frame_outputs"].keys()) + [frame_idx-1]
-        if action == 0:
-            # Add
-            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-        elif action == 1:
-            # Skip (equivalent to adding then drop the same frame)
-            drop_frame = frame_idx - 1
-        else:
-            # Add the new frame and skip a specific frame
-            drop_frame = action_frame_map[action]
-            output_dict["non_cond_frame_outputs"].pop(drop_frame)
-            output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        if agent_act:
+            drop_frame = None
+            reward = 0.0
+            action = action_out['main_action']
+            prev_frames = list(output_dict["non_cond_frame_outputs"].keys()) + [frame_idx-1]
+            if action == 0:
+                # Add
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            elif action == 1:
+                # Skip (equivalent to adding then drop the same frame)
+                drop_frame = frame_idx - 1
+                reward = 0.0
+            else:
+                # Add the new frame and skip a specific frame
+                drop_frame = action_frame_map[action]
+                output_dict["non_cond_frame_outputs"].pop(drop_frame)
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} "
-                  f"action {action} "
-                  f"drop_frame {drop_frame} "
-                  f"bank_size {bank_size} ")
+            if not train_agent:
+                print(f"[Q] frame {frame_idx-1} "
+                    f"action {action} "
+                    f"drop_frame {drop_frame} "
+                    f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

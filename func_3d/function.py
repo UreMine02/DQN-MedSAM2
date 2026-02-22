@@ -45,7 +45,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
     video_length = args.video_length
     train_agent = not args.no_agent
-    agent_act = not args.no_agent
+    agent_act = not args.no_agent # and epoch >= 0
+    generate_rl_samples = not args.no_agent
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
@@ -106,7 +107,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 video_segments = {}  # video_segments contains the per-frame segmentation results
 
-                for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, train_agent=train_agent, agent_act=agent_act):
+                for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, train_agent=train_agent, agent_act=agent_act, generate_rl_samples=generate_rl_samples):
                     video_segments[out_frame_idx] = {
                         out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                         "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}

@@ -31,7 +31,10 @@ class CrossAttention(nn.Module):
         self.to_k = nn.Linear(context_dim, inner_dim, bias=False)
         self.to_v = nn.Linear(context_dim, inner_dim, bias=False)
 
-        self.to_out = nn.Linear(inner_dim, query_dim)
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, query_dim),
+            nn.Dropout(dropout)
+        )
 
         self.prompt_to_prompt = False
     
@@ -106,7 +109,7 @@ class QFormerBlock(nn.Module):
 class PerceiverResampler(nn.Module):
     def __init__(self, hidden_dim=256, num_heads=1, dropout=0.):
         super().__init__()
-        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads, dropout=dropout)
+        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads, dropout=0.1)
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
@@ -167,7 +170,7 @@ class SpatialSummarizer(nn.Module):
             nn.init.normal_(block.attn.to_q.weight, std=attn_std)
             nn.init.normal_(block.attn.to_k.weight, std=attn_std)
             nn.init.normal_(block.attn.to_v.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_out.weight, std=proj_std)
+            nn.init.normal_(block.attn.to_out[0].weight, std=proj_std)
             nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
             nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
     
