@@ -77,7 +77,7 @@ def train(rank=0, world_size=0):
             elif "sam_prompt_encoder" in name:
                 param.requires_grad_(False)
             else:
-                param.requires_grad_(False)
+                param.requires_grad_(True)
 
     agent_n_params = 0
     if agent is not None:

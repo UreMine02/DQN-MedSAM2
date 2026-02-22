@@ -148,14 +148,14 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 losses_reduced = reduce_dict(to_reduce)
                 loss_value = sum(losses_reduced.values()).item()
 
-                # optimizer.zero_grad()
-                # avg_loss.backward()
-                # grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                # optimizer.step()
+                optimizer.zero_grad()
+                avg_loss.backward()
+                grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                optimizer.step()
 
-                # metric_logger.update(loss=loss_value, **losses_reduced)
-                # metric_logger.update(lr=optimizer.param_groups[0]["lr"])
-                # metric_logger.update(grad_norm=grad_total_norm)
+                metric_logger.update(loss=loss_value, **losses_reduced)
+                metric_logger.update(lr=optimizer.param_groups[0]["lr"])
+                metric_logger.update(grad_norm=grad_total_norm)
 
                 agent = getattr(net, "agent", None)
                 if agent is not None and epoch >= args.warmup_ep:
