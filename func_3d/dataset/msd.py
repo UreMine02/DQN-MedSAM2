@@ -158,8 +158,8 @@ class MSD(Dataset):
         
         if self.mode == "train":
             transform_output = self.transform({"im": image_3d, "gt":data_seg_3d })
-            image_3d = transform_output['im'].unsqueeze(0).permute(0,1,4,2,3)
-            data_seg_3d = transform_output['gt'].unsqueeze(0).permute(0,1,4,2,3)
+            image_3d = transform_output['im'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
+            data_seg_3d = transform_output['gt'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
         else:
             image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
             data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
