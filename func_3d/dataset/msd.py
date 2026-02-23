@@ -155,8 +155,8 @@ class MSD(Dataset):
 
         image_3d = torch.tensor(image_3d).unsqueeze(0)
         data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
-        image_3d = self.transform(image_3d)
-        data_seg_3d = self.transform(data_seg_3d)
+        image_3d = self.transform(image_3d).unsqueeze(0).permute(0,1,4,2,3)
+        data_seg_3d = self.transform(data_seg_3d).unsqueeze(0).permute(0,1,4,2,3)
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
