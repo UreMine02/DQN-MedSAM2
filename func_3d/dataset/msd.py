@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import normalize
 
+from monai import transforms
+
 
 def scaling(image, scale=255):
     image_min = image.min()
@@ -47,6 +49,11 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
+        
+        self.transform = transforms.Compose([
+            transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=0),
+            transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=1),
+        ]) 
         
     def __len__(self):
         return len(self.gt_path)
@@ -143,8 +150,19 @@ class MSD(Dataset):
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
         image_3d = scaling(image_3d, scale=255)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+
+        image_3d = torch.tensor(image_3d).unsqueeze(0)
+        data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
+        
+        if self.mode == "train":
+            transform_output = self.transform({"im": image_3d, "gt":data_seg_3d })
+            image_3d = transform_output['im'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
+            data_seg_3d = transform_output['gt'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
+        else:
+            image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
+            data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
 
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')

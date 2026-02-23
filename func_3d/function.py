@@ -335,8 +335,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             pbar.update()
 
-    ths = np.arange(0, 1.0, 0.01)
-    # ths = [0.5]
+    # ths = np.arange(0, 1.0, 0.01)
+    ths = [0.5]
     for name in preds.keys():
         best_iou = 0
         best_dice = 0
@@ -383,9 +383,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     for name, metrics_dict in score_per_class.items():
         table_data.append((
             name,
-            metrics_dict["iou"].item(),
-            metrics_dict["dice"].item(),
-            metrics_dict["fb_iou"].item(),
+            metrics_dict["iou"],
+            metrics_dict["dice"],
+            metrics_dict["fb_iou"],
             metrics_dict["th"]
         ))
 
