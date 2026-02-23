@@ -1612,7 +1612,7 @@ class SAM2VideoPredictor(SAM2Base):
                     training=train_agent,
                 ) # ask agent
 
-            # state.offload_to_cpu()
+            state.offload_to_cpu()
 
         if generate_rl_samples:
             self.agent.init_new_group()

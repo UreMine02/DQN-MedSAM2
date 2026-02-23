@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task05+no_agent+icl
+EXP=msd_task05+grpo+icl
 
 python train_3d.py \
     -exp_name $EXP \
@@ -24,11 +24,10 @@ python train_3d.py \
     -dataset msd \
     -task Task05 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 1e-5 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 200 \
     -q_updates_per_step 2 \
-    -lazy_penalty -0.01 \
+    -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
-    -no_agent
+    -num_support 3
