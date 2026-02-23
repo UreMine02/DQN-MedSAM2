@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torchvision.transforms.functional import normalize
 
+from monai import transforms
+
 
 def scaling(image, scale=255):
     image_min = image.min()
@@ -47,6 +49,11 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
+        
+        self.transform = transforms.Compose([
+            transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=0),
+            transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=1),
+        ]) 
         
     def __len__(self):
         return len(self.gt_path)
@@ -143,9 +150,13 @@ class MSD(Dataset):
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
         image_3d = scaling(image_3d, scale=255)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
+        image_3d = torch.tensor(image_3d).unsqueeze(0)
+        data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
+        image_3d = self.transform(image_3d)
+        data_seg_3d = self.transform(data_seg_3d)
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
