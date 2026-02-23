@@ -371,12 +371,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 dices = torch.cat([dices, dice])
                 fb_ious = torch.cat([fb_ious, fb_iou])
             
-            # print(dices)
+            print(ious)
             ious = ious.mean(dim=0, keepdim=True)
             dices = dices.mean(dim=0, keepdim=True)
             fb_ious = fb_ious.mean(dim=0, keepdim=True)
-            
-            # print(th, dices)
+            print(th, ious)
             
             if dices > best_dice:
                 best_iou = ious
@@ -400,9 +399,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     for name, metrics_dict in score_per_class.items():
         table_data.append((
             name,
-            metrics_dict["iou"].item(),
-            metrics_dict["dice"].item(),
-            metrics_dict["fb_iou"].item(),
+            metrics_dict["iou"],
+            metrics_dict["dice"],
+            metrics_dict["fb_iou"],
             metrics_dict["th"]
         ))
 

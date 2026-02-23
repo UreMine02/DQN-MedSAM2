@@ -17,8 +17,6 @@
 EXP=msd_task04+grpo+icl
 export CUDA_VISIBLE_DEVICES=1
 
-sleep 3h
-
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
