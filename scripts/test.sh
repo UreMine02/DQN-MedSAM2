@@ -14,13 +14,11 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    # output/msd_task02+grpo+icl/2026-02-21-15-45-02/best.pth
-    # output/msd_task02+grpo+icl/2026-02-21-15-45-02/epoch_49_dice0.9084.pth
-    # output/msd_task02+no_agent+icl/2026-02-21-20-05-23/best.pth
-    output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
+    # output/msd_task10+grpo+icl/2026-02-24-15-34-45/best.pth
+    output/msd_task10+grpo+icl/2026-02-24-15-34-45/epoch_48_dice0.5752.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]}
 do
@@ -30,10 +28,10 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task Task02 \
+            -task Task10\
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            # -no_agent \
+            -no_agent \
             # -vis
     done
 done

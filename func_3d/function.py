@@ -349,8 +349,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             pbar.update()
 
-    # ths = np.arange(0, 1.0, 0.01)
-    ths = [0.5]
+    ths = np.arange(0, 1.0, 0.01)
+    # ths = [0.5]
     for name in preds.keys():
         best_iou = 0
         best_dice = 0
@@ -371,11 +371,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 dices = torch.cat([dices, dice])
                 fb_ious = torch.cat([fb_ious, fb_iou])
             
-            print(ious)
+            # print(ious)
             ious = ious.mean(dim=0, keepdim=True)
             dices = dices.mean(dim=0, keepdim=True)
             fb_ious = fb_ious.mean(dim=0, keepdim=True)
-            print(th, ious)
+            # print(th, ious)
             
             if dices > best_dice:
                 best_iou = ious

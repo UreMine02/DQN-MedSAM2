@@ -228,7 +228,7 @@ class SAM2Base(torch.nn.Module):
                 depth=2,
                 embedding_dim=self.sam_prompt_embed_dim,
                 mlp_dim=2048,
-                num_heads=8,
+                num_heads=16,
             ),
             transformer_dim=self.sam_prompt_embed_dim,
             iou_head_depth=3,

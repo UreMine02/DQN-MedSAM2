@@ -48,10 +48,10 @@ def train(rank=0, world_size=0):
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"])
-        if "agent" in weights.keys():
+        if "agent" in weights.keys() and not args.no_agent:
             net.agent.load_state_dict(weights["agent"])
             print("Loaded Agent weights")
-        elif "q_agent" in weights.keys():
+        elif "q_agent" in weights.keys() and not args.no_agent:
             net.agent.load_state_dict(weights["q_agent"])
             print("Loaded DQN weights")
     
