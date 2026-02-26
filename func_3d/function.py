@@ -339,7 +339,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 if args.vis:
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    save_prefix = f"fifo_{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    save_prefix = f"{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
                     mask *= 2
                     # ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
                     # ts.overlay(
@@ -417,8 +417,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         ]
         
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_csv(f"fifo_{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
-        print(f"Ablation save to fifo_{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
+        csv_dir = "/".join(args.pretrain.split("/")[:-1])
+        os.makedirs(csv_dir, exist_ok=True)
+        df.to_csv(f"{csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
+        print(f"Ablation save to {csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
     ths = np.arange(0, 1.0, 0.01)
     # ths = [0.5]
