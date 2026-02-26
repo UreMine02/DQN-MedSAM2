@@ -249,7 +249,7 @@ class GRPOAgent(BasePOAgent):
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
                 minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
-                policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
                 policy_loss = policy_loss.mean()
 
             self.policy_optimizer.zero_grad()

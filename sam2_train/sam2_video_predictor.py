@@ -1659,7 +1659,7 @@ class SAM2VideoPredictor(SAM2Base):
                     loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
                     reward += loss_after.detach().cpu() - loss_before.detach().cpu()
-                print(action, reward)
+
                 replay_instance_info = {
                     "frame_idx": frame_idx,
                     "state": state,
