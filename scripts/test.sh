@@ -15,10 +15,11 @@
 
 declare -a ckpt=(
     # output/msd_task10+grpo+icl/2026-02-24-15-34-45/best.pth
-    output/msd_task10+grpo+icl/2026-02-24-15-34-45/epoch_48_dice0.5752.pth
+    # output/msd_task10+grpo+icl/2026-02-24-15-34-45/epoch_48_dice0.5752.pth
+    output/btcv+grpo+icl/2026-02-24-22-04-03/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do
@@ -27,9 +28,9 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task Task10\
-            -data_path /data/datasets/nii/MSD \
+            -dataset btcv \
+            -task "" \
+            -data_path /data/datasets/nii/BTCV \
             -num_support $shot \
             -no_agent \
             # -vis

@@ -1608,7 +1608,7 @@ class SAM2VideoPredictor(SAM2Base):
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
-                    num_samples=10,
+                    num_samples=6,
                     training=train_agent,
                 ) # ask agent
 
@@ -1631,25 +1631,18 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
-                    if bank_full:
-                        reward= inference_state['rl_config']['invalid_penalty']
-                        valid = False
-                    else:
-                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
                     reward = inference_state['rl_config']['lazy_penalty']
                 else:
                     # Add the new frame and skip a specific frame
-                    if action not in action_frame_map.keys():
-                        reward= inference_state['rl_config']['invalid_penalty']
-                        valid = False
-                    else:
-                        drop_frame = action_frame_map[action]
-                        temp_output_dict[storage_key].pop(drop_frame)
-                        temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                    drop_frame = action_frame_map[action]
+                    temp_output_dict[storage_key].pop(drop_frame)
+                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-                if valid:
+                # print(action, reward)
+                if action != 1:
                     with torch.no_grad():
                         output_before = self.track_step(
                             frame_idx=frame_idx,
@@ -1666,7 +1659,7 @@ class SAM2VideoPredictor(SAM2Base):
                     loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
                     reward += loss_after.detach().cpu() - loss_before.detach().cpu()
-
+                print(action, reward)
                 replay_instance_info = {
                     "frame_idx": frame_idx,
                     "state": state,
@@ -1674,6 +1667,8 @@ class SAM2VideoPredictor(SAM2Base):
                     "reward": reward,
                     "log_probs": log_prob,
                 }
+                
+                # print(replay_instance_info["action"], replay_instance_info["reward"])
 
                 self.agent.add_new_instance_to_group(**replay_instance_info)
 
