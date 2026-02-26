@@ -1752,20 +1752,18 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
             if "drop_frame" in output_dict.keys():
                 output_dict["drop_frame"][frame_idx] = -1
-                print(frame_idx, -1)
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
             drop_frame = frame_idx - 1
             reward = 0.0
             if "drop_frame" in output_dict.keys():
                 output_dict["drop_frame"][frame_idx] = frame_idx-1
-                print(frame_idx, drop_frame)
         else:
             # Add the new frame and skip a specific frame
             drop_frame = action_frame_map[action]
             if "drop_frame" in output_dict.keys():
                 output_dict["drop_frame"][frame_idx] = drop_frame
-                print(frame_idx, drop_frame)
+
             output_dict["non_cond_frame_outputs"].pop(drop_frame)
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
@@ -1971,8 +1969,8 @@ class SAM2VideoPredictor(SAM2Base):
 
             dice_after = dice_score(pred_masks, gt_masks, smoothing=1e-8)
             output_dict["dice_drop"][frame_idx][prev_frame_idx] = dice_after.item()
-            print(frame_idx, prev_frame_idx)
 
+        # print(frame_idx, output_dict["dice_drop"][frame_idx].keys())
         if not agent_act:
             output_dict["drop_frame"][frame_idx] = -1
             if len(output_dict["non_cond_frame_outputs"]) == self.num_maskmem - 1:

@@ -14,12 +14,12 @@
 # conda activate rlsam2
 
 ckpt=(
-    # output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
+    output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
     # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
     # output/msd_task02+grpo+icl+agent_only/2026-02-22-15-36-52/best.pth
 
     # output/msd_task02+grpo+icl/2026-02-26-12-37-46/best.pth
-    output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
+    # output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
