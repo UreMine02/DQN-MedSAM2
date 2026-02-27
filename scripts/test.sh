@@ -20,7 +20,9 @@ ckpt=(
 
     # output/msd_task02+grpo+icl/2026-02-26-12-37-46/best.pth
     # output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
-    output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
+    # output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
+
+    output/msd_task02+grpo+icl+uniform_sampling+add_reward/2026-02-27-14-39-53/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
