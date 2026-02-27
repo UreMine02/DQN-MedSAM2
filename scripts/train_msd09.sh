@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+grpo+icl
+EXP=msd_task09+no_agent+icl
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -33,4 +33,5 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
+    -no_agent \
     -wandb_enabled
