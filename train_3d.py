@@ -115,6 +115,13 @@ def train(rank=0, world_size=0):
     '''begain training'''
     best_dice = 0.0
     for epoch in range(args.ep):
+        if not args.no_agent and epoch >= 40:
+            for name, param in net.named_parameters():
+                if "maskmem_tpos_enc" in name:
+                    param.requires_grad_(True)
+                else:
+                    param.requires_grad_(False)
+        
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
@@ -217,7 +224,7 @@ def main():
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     args = cfg.parse_args()
 

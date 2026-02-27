@@ -50,10 +50,9 @@ class MSD(Dataset):
         self.num_support = args.num_support
         self.max_slices = args.video_length
         
-        # self.transform = transforms.Compose([
-        #     transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=0),
-        #     transforms.RandFlipd(["im", "gt"], prob=0.5, spatial_axis=1),
-        # ]) 
+        self.transform = transforms.Compose([
+            transforms.RandRotate90d(["im", "gt"], prob=0.75, spatial_axes=(0, 1), max_k=3),
+        ]) 
         
     def __len__(self):
         return len(self.gt_path)
@@ -119,23 +118,9 @@ class MSD(Dataset):
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                # selectable = np.arange(max_slices // 2, image_3d.shape[-1] - max_slices // 2 + 1)
-                # mid_slice = np.random.choice(selectable)
-                # image_3d = image_3d[..., mid_slice-max_slices//2:mid_slice+max_slices//2]
-                # data_seg_3d = data_seg_3d[..., mid_slice-max_slices//2:mid_slice+max_slices//2]
-                
-                choices = np.arange((image_3d.shape[-1] + max_slices - 1) // max_slices)
-                segment = np.random.choice(choices)
-                if segment == choices[-1]:
-                    image_3d = image_3d[..., -max_slices:]
-                    data_seg_3d = data_seg_3d[..., -max_slices:]
-                else:
-                    image_3d = image_3d[..., segment * max_slices:segment * max_slices + max_slices]
-                    data_seg_3d = data_seg_3d[..., segment * max_slices:segment * max_slices + max_slices]
-                    
-                # start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                # image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                # data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
@@ -150,17 +135,10 @@ class MSD(Dataset):
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
         image_3d = scaling(image_3d, scale=255)
-        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 
         image_3d = torch.tensor(image_3d).unsqueeze(0)
         data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
         
-        # if self.mode == "train":
-        #     transform_output = self.transform({"im": image_3d, "gt":data_seg_3d })
-        #     image_3d = transform_output['im'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
-        #     data_seg_3d = transform_output['gt'].as_tensor().unsqueeze(0).permute(0,1,4,2,3)
-        # else:
         image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
         data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
 

@@ -59,6 +59,7 @@ class GRPOGroup:
 
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]
+            # print(ins.action, ins.reward)
 
     def get_instances(self):
         return [ins.get() for ins in self.group]
@@ -148,8 +149,6 @@ class GRPOAgent(BasePOAgent):
 
     def select_action(self, state, valid_actions, num_samples=1, training=False):
         self.actor.eval()
-        
-        # print(training)
 
         image_feat = state.next_image_feat.detach().to(torch.float32)
         memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
@@ -165,11 +164,11 @@ class GRPOAgent(BasePOAgent):
         if training:
             # main_action_idx = torch.argmax(valid_probs)
             main_action_idx = torch.multinomial(valid_probs, num_samples=1)
-            action_idx = torch.multinomial(action_probs.squeeze(), min(len(valid_actions), num_samples))
-
+            action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
+            # print("valid actions", valid_actions, action_idx,  valid_actions[action_idx].tolist())
             return {
                 "main_action": valid_actions[main_action_idx].item(),
-                "action": action_idx.tolist(),
+                "action": valid_actions[action_idx].tolist(),
                 "log_probs": action_probs.log()[action_idx].tolist()
             }
         else:
