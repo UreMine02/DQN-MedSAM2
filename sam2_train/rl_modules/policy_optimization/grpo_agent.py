@@ -53,9 +53,9 @@ class GRPOGroup:
     def finalize(self):
         group_rewards = torch.Tensor([ins.reward for ins in self.group])
 
-        group_mean = group_rewards.mean(dim=0, keepdim=True)
-        group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
+        # group_mean = group_rewards.mean(dim=0, keepdim=True)
+        # group_std  = group_rewards.std(dim=0, keepdim=True)
+        # group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
 
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]
@@ -250,7 +250,7 @@ class GRPOAgent(BasePOAgent):
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
                 minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
-                policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
                 policy_loss = policy_loss.mean()
 
             self.policy_optimizer.zero_grad()
