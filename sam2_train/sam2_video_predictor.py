@@ -1631,10 +1631,12 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
+                    reward = inference_state['rl_config']['lazy_penalty']
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
-                    reward = inference_state['rl_config']['lazy_penalty']
+                    # reward = inference_state['rl_config']['lazy_penalty']
+                    reward = 0
                 else:
                     # Add the new frame and skip a specific frame
                     drop_frame = action_frame_map[action]
