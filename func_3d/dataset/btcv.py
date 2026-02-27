@@ -116,8 +116,12 @@ class BTCV(Dataset):
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
         image_3d = scale(image_3d)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+
+        image_3d = torch.tensor(image_3d).unsqueeze(0)
+        data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
+        
+        image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
+        data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
 
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')

@@ -194,25 +194,25 @@ class GRPOAgent(BasePOAgent):
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
-            batch = random.sample(self.replay_buffer, k=self.batch_size)
+            # batch = random.sample(self.replay_buffer, k=self.batch_size)
             
-            # n_actions = {}
-            # for sample in self.replay_buffer:
-            #     action = sample[2]
-            #     if action not in n_actions.keys():
-            #         n_actions[action] = 0
-            #     n_actions[action] += 1
+            n_actions = {}
+            for sample in self.replay_buffer:
+                action = sample[2]
+                if action not in n_actions.keys():
+                    n_actions[action] = 0
+                n_actions[action] += 1
 
-            # p = []
-            # for sample in self.replay_buffer:
-            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            p = []
+            for sample in self.replay_buffer:
+                p.append(len(self.replay_buffer) / n_actions[sample[2]])
 
-            # p = np.asanyarray(p)
-            # p = p / p.sum()
-            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            # batch = []
-            # for idx in batch_idx:
-            #     batch.append(self.replay_buffer[idx])
+            p = np.asanyarray(p)
+            p = p / p.sum()
+            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            batch = []
+            for idx in batch_idx:
+                batch.append(self.replay_buffer[idx])
 
             states, old_log_probs, actions, rewards, dones = zip(*batch)
 
