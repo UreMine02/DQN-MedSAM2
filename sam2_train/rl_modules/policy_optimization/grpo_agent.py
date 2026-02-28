@@ -12,6 +12,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
 
+from func_3d.misc import MetricLogger
+
 class GRPOReplayInstance(RLReplayInstance):
     def __init__(
         self,
@@ -51,15 +53,15 @@ class GRPOGroup:
         self.group.append(instance)
 
     def finalize(self):
-        group_rewards = torch.Tensor([ins.reward for ins in self.group])
+        pass
+        # group_rewards = torch.Tensor([ins.reward for ins in self.group])
 
         # group_mean = group_rewards.mean(dim=0, keepdim=True)
         # group_std  = group_rewards.std(dim=0, keepdim=True)
         # group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
 
-        for i, ins in enumerate(self.group):
-            ins.reward = group_rewards[i]
-            # print(ins.action, ins.reward)
+        # for i, ins in enumerate(self.group):
+        #     ins.reward = group_rewards[i]
 
     def get_instances(self):
         return [ins.get() for ins in self.group]
@@ -146,7 +148,8 @@ class GRPOAgent(BasePOAgent):
                 self.priority.append(0.25)
             else:
                 self.priority.append(1.0)
-
+    
+    @torch.no_grad()
     def select_action(self, state, valid_actions, num_samples=1, training=False):
         self.actor.eval()
 
@@ -156,7 +159,8 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training).squeeze(0).detach().cpu()
+        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training).squeeze(0)
+        action_probs = action_probs.detach().cpu()
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_probs = action_probs.gather(0, valid_actions)
@@ -194,25 +198,25 @@ class GRPOAgent(BasePOAgent):
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
-            # batch = random.sample(self.replay_buffer, k=self.batch_size)
+            batch = random.sample(self.replay_buffer, k=self.batch_size)
             
-            n_actions = {}
-            for sample in self.replay_buffer:
-                action = sample[2]
-                if action not in n_actions.keys():
-                    n_actions[action] = 0
-                n_actions[action] += 1
+            # n_actions = {}
+            # for sample in self.replay_buffer:
+            #     action = sample[2]
+            #     if action not in n_actions.keys():
+            #         n_actions[action] = 0
+            #     n_actions[action] += 1
 
-            p = []
-            for sample in self.replay_buffer:
-                p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            # p = []
+            # for sample in self.replay_buffer:
+            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
 
-            p = np.asanyarray(p)
-            p = p / p.sum()
-            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            batch = []
-            for idx in batch_idx:
-                batch.append(self.replay_buffer[idx])
+            # p = np.asanyarray(p)
+            # p = p / p.sum()
+            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            # batch = []
+            # for idx in batch_idx:
+            #     batch.append(self.replay_buffer[idx])
 
             states, old_log_probs, actions, rewards, dones = zip(*batch)
 
@@ -238,9 +242,14 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
+            reward_mean = rewards.mean(dim=0, keepdim=True)
+            reward_std  = rewards.std(dim=0, keepdim=True)
+            rewards = (rewards - reward_mean) / (reward_std + 1e-8)
+            
             # for action in actions.unique():
-            #     action_rewards = rewards.squeeze()[actions.squeeze() == action]
-            #     print(action, action_rewards.shape[0], action_rewards.mean())
+            #     action_rewards = rewards.squeeze()[actions.squeeze() == action].mean()
+
+                # metric_logger.update(**{str(action.item()): action_rewards})
             
             with torch.enable_grad():
                 policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True)
@@ -249,9 +258,8 @@ class GRPOAgent(BasePOAgent):
                 log_action_probs = torch.log(action_probs)
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-                minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
-                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
-                policy_loss = policy_loss.mean()
+                minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True).mean()
+                policy_loss = 200 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
@@ -264,10 +272,13 @@ class GRPOAgent(BasePOAgent):
         return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
+        advantage = advantage.detach()
+        old_log_prob = old_log_prob.detach()
+        
         ratio = (log_prob - old_log_prob).exp()
         surr_loss = ratio * advantage
         clipped_surr_loss = torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon) * advantage
-        policy_loss = -torch.min(surr_loss, clipped_surr_loss)
+        policy_loss = -torch.mean(torch.min(surr_loss, clipped_surr_loss))
         return policy_loss
 
     def state_dict(self):

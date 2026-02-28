@@ -6,7 +6,7 @@ agent:
   gamma: 0.99
   buffer_size: 500
   batch_size: 128
-  entropy_weight: 1e-4
+  entropy_weight: 1e-3
   epsilon: 0.5
   tau: 0.99
   range: 2.0

@@ -56,7 +56,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     target_class = 4
     agent_loss = {"actor_loss": 0, "critic_loss": 0}
     agent_step = 0
-    metric_logger = MetricLogger(delimiter="  ")
+    metric_logger = MetricLogger(delimiter=" ")
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
     # with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0) as pbar:
