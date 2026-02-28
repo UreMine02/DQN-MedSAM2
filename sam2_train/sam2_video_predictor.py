@@ -1554,7 +1554,7 @@ class SAM2VideoPredictor(SAM2Base):
                     train_agent=train_agent,
                     **track_step_kwargs
                 )
-
+    @torch.no_grad()
     def generate_rl_steps(
         self,
         inference_state,
@@ -1581,12 +1581,12 @@ class SAM2VideoPredictor(SAM2Base):
                     **kwargs
                 )
 
-            pred_masks = output_before["pred_masks"]
-            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-            gt_masks = gt_masks.to(torch.float32)
+                pred_masks = output_before["pred_masks"]
+                pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+                gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+                gt_masks = gt_masks.to(torch.float32)
 
-            loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+                loss_before = compute_loss(pred_masks, gt_masks, inference_state)
         
         if agent_act or generate_rl_samples:
             state, action_frame_map = prepare_rl_state(
@@ -1631,12 +1631,12 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
-                    reward = inference_state['rl_config']['lazy_penalty']
+                    reward = 0.001
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
                     # reward = inference_state['rl_config']['lazy_penalty']
-                    reward = 0
+                    reward = 0.0
                 else:
                     # Add the new frame and skip a specific frame
                     drop_frame = action_frame_map[action]
@@ -1655,12 +1655,12 @@ class SAM2VideoPredictor(SAM2Base):
                             **kwargs
                         )
 
-                    pred_masks = output_before["pred_masks"]
-                    pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+                        pred_masks = output_before["pred_masks"]
+                        pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
 
-                    loss_after = compute_loss(pred_masks, gt_masks, inference_state)
+                        loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-                    reward += loss_after.detach().cpu() - loss_before.detach().cpu()
+                        reward += (loss_after.detach().cpu() - loss_before.detach().cpu())
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,

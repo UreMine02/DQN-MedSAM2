@@ -35,8 +35,6 @@ class CrossAttention(nn.Module):
             nn.Linear(inner_dim, query_dim),
             nn.Dropout(dropout)
         )
-
-        self.prompt_to_prompt = False
     
     def forward(self, x, context=None, mask=None):
         is_self_attn = context is None
@@ -109,7 +107,8 @@ class QFormerBlock(nn.Module):
 class PerceiverResampler(nn.Module):
     def __init__(self, hidden_dim=256, num_heads=1, dropout=0.):
         super().__init__()
-        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads, dropout=0.1)
+        # self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
+        self.attn = nn.MultiheadAttention(hidden_dim, num_heads, dropout=dropout, batch_first=True)
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
@@ -121,6 +120,10 @@ class PerceiverResampler(nn.Module):
         self.hidden_dim = hidden_dim
         self.dropout = dropout
         
+    def attention(self, x: torch.Tensor, context: torch.Tensor):
+        attn = self.attn(x, context, context, need_weights=False)[0]
+        return attn
+        
     def forward(self, x_f, x, training=True):
         """
         Forward
@@ -128,8 +131,8 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
-        x = x + F.dropout(self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1)), p=self.dropout, training=training)
-        x = x + F.dropout(self.mlp(self.norm2(x)), p=self.dropout, training=training)
+        x = x + self.attention(self.norm1(x), context=torch.cat([x_f, x], dim=1))
+        x = x + self.mlp(self.norm2(x))
         return x
     
 class SpatialSummarizer(nn.Module):
@@ -142,21 +145,25 @@ class SpatialSummarizer(nn.Module):
         self.qformer = nn.ModuleList(
             [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads, dropout=dropout) for _ in range(n_layers)]
         )
-        self.spatial_query = nn.Parameter(torch.rand(1, n_query, spatial_dim))
+        scale = spatial_dim ** -0.5
+        self.spatial_query = nn.Parameter(scale * torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
         
-        self.initialize_parameters()
+        # self.initialize_parameters()
         
     def forward(self, x, training=True):
         """x: [B,C,H,W]"""
         B, C, H, W = x.shape
         
-        spatial_query = self.spatial_query.expand(B, self.n_query, self.spatial_dim)
-
         x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
-        
+        spatial_query = self.spatial_query.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)
+
         for layer in self.qformer:
-            spatial_query = layer(x_f=x, x=spatial_query, training=training)
+            spatial_query = layer(
+                x_f=x,
+                x=spatial_query,
+                training=training
+            )
             
         return spatial_query
     

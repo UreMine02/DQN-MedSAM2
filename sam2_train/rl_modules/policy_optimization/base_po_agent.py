@@ -125,7 +125,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=image_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
         self.memory_spatial_summary = SpatialSummarizer(
             n_query=n_query,
@@ -134,7 +134,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=memory_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
         
         self.cond_mem_proj = nn.Linear(memory_dim, image_dim)
@@ -183,9 +183,10 @@ class BasePolicyNetwork(nn.Module):
         super().__init__()
         self.hidden_dim = hidden_dim
 
-        self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
+        scale = hidden_dim ** -0.5
+        self.non_drop_embed = nn.Parameter(scale * torch.rand(self.hidden_dim))
         self.action_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.0) for _ in range(n_layers)]
         )
         
         self.action_proj = nn.Sequential(
@@ -195,7 +196,10 @@ class BasePolicyNetwork(nn.Module):
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
         B = image_spatial_query.shape[0]
-        non_drop_embed = self.non_drop_embed.expand(B, 1, self.hidden_dim)
+        dtype = image_spatial_query.dtype
+        device = image_spatial_query.device
+        # non_drop_embed = self.non_drop_embed.expand(B, 1, self.hidden_dim)
+        non_drop_embed = self.non_drop_embed.to(dtype) + torch.zeros(B, 1, self.hidden_dim, dtype=dtype, device=device)
 
         action_query = torch.cat([non_drop_embed, curr_mem_feat, non_cond_bank_feat], dim=1)
         action_context = torch.cat([cond_bank_feat, image_spatial_query], dim=1)
@@ -206,9 +210,9 @@ class BasePolicyNetwork(nn.Module):
         actions_logits = self.action_proj(action_query)
         actions_probs = torch.softmax(actions_logits, dim=1)
         
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
+        if not training:
+            print(actions_logits.squeeze())
+            print(actions_probs.squeeze())
 
         return actions_probs.squeeze(-1)
 
@@ -224,7 +228,7 @@ class BaseValueNetwork(nn.Module):
 
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.value_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, 1, dropout=0.1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, 1, dropout=0.0) for _ in range(n_layers)]
         )
         
         self.value_proj = nn.Sequential(
@@ -268,14 +272,10 @@ class BasePOAgent(BaseAgent):
             list(self.policy_net.parameters()) + \
             list(self.feat_summarizer.parameters()),
             lr=policy_lr,
-            # weight_decay=0.05,
-            fused=True
         )
         self.value_optimizer = optim.AdamW(
             list(self.value_net.parameters()),
             lr=value_lr,
-            # weight_decay=0.05,
-            fused=True
         )
 
         self.tau = tau
