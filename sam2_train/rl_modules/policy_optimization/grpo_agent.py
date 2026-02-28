@@ -195,6 +195,7 @@ class GRPOAgent(BasePOAgent):
         total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
             # batch = random.sample(self.replay_buffer, k=self.batch_size)
+            
             n_actions = {}
             for sample in self.replay_buffer:
                 action = sample[2]

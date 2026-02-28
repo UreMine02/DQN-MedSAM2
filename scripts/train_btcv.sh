@@ -14,9 +14,8 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=btcv+grpo+icl
+EXP=btcv+no_agent+icl
 
-sleep 2h
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
@@ -26,8 +25,9 @@ python train_3d.py \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/BTCV \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 30 \
     -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3
+    -num_support 3 \
+    -no_agent

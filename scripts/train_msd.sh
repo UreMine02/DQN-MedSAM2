@@ -25,7 +25,7 @@ python train_3d.py \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 30 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
