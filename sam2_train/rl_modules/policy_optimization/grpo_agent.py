@@ -263,7 +263,7 @@ class GRPOAgent(BasePOAgent):
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
 
             total_policy_loss += policy_loss.detach()

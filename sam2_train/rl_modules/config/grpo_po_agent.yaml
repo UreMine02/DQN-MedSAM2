@@ -4,10 +4,10 @@ agent:
   policy_lr: 1e-6
   value_lr: 1e-5
   gamma: 0.99
-  buffer_size: 500
+  buffer_size: 400
   batch_size: 128
   entropy_weight: 1e-3
-  epsilon: 0.5
+  epsilon: 0.2
   tau: 0.99
   range: 2.0
   sam2_dim:
