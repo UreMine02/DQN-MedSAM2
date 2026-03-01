@@ -194,7 +194,7 @@ class BasePolicyNetwork(nn.Module):
             nn.Linear(self.hidden_dim, 1)
         )
 
-    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
+    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True, return_logits=False):
         B = image_spatial_query.shape[0]
         dtype = image_spatial_query.dtype
         device = image_spatial_query.device
@@ -208,11 +208,11 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(x_f=action_context, x=action_query, training=training)
 
         actions_logits = self.action_proj(action_query)
-        actions_probs = torch.softmax(actions_logits, dim=1)
         
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
+        if return_logits:
+            return actions_logits.squeeze(-1)
+        
+        actions_probs = torch.softmax(actions_logits, dim=1)
 
         return actions_probs.squeeze(-1)
 

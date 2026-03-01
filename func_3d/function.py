@@ -24,7 +24,7 @@ from func_3d.misc import MetricLogger, reduce_dict
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
+paper_loss = CombinedLoss(focal_weight=20, dice_weight=2)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True

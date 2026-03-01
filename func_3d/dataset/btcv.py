@@ -43,8 +43,7 @@ class BTCV(Dataset):
     
     def __getitem__(self, index):
         obj_id = self.obj_id[index]
-        support_list = (self.obj_id == obj_id) & \
-                        (self.n_pos >= self.num_support)
+        support_list = (self.obj_id == obj_id) & (self.n_pos >= self.num_support)
         
         support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
         support_index = np.random.choice(support_list, size=1)[0]
