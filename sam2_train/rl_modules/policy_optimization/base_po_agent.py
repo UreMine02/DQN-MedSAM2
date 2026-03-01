@@ -456,7 +456,7 @@ class BasePOAgent(BaseAgent):
 
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        advantages = (advantages - adv_mean) / adv_std
 
         with torch.enable_grad():
             (
@@ -509,7 +509,7 @@ class BasePOAgent(BaseAgent):
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
-                critic_gradnorm = 0
+                critic_gradnorm = torch.Tensor([0])
 
             # total_loss = policy_loss + 0.1 * value_loss
 

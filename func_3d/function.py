@@ -410,6 +410,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])
         avg["th"] = None
         
+        if args.wandb_enabled:
+            wandb.log({name: avg}, step=epoch)
+        
     # print(avg["iou"])
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()

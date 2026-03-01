@@ -159,10 +159,11 @@ class GRPOAgent(BasePOAgent):
         action_probs = action_dist.probs
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
-        valid_probs = action_probs.gather(0, valid_actions)
+        valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
+        valid_probs = valid_dist.probs
         
-        if not training:
-            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+        # if not training:
+        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
             # main_action_idx = torch.argmax(valid_probs)
@@ -260,7 +261,7 @@ class GRPOAgent(BasePOAgent):
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
                 # minus_entropy = (policy_dist.probs * log_probs).sum(dim=1, keepdim=True).mean()
                 minus_entropy = -policy_dist.entropy().mean()
-                policy_loss = 200 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()

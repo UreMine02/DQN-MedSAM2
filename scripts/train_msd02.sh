@@ -14,14 +14,14 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+32query+6layer+argmax
+EXP=msd_task02+ppo+icl+32query+6layer+argmax
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task02 \

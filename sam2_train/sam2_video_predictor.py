@@ -1761,6 +1761,7 @@ class SAM2VideoPredictor(SAM2Base):
         if action == 0:
             # Add
             if bank_full:
+                raise RuntimeError("Try to add while bank is full")
                 reward = inference_state["rl_config"]["invalid_penalty"]
             else:
                 output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
@@ -1771,6 +1772,7 @@ class SAM2VideoPredictor(SAM2Base):
             # Add the new frame and skip a specific frame
             if action not in action_frame_map.keys():
                 # penalty for dropping blank
+                raise RuntimeError("Dropping a blank frame")
                 reward = inference_state["rl_config"]["invalid_penalty"]
                 # raise ValueError(
                     # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
