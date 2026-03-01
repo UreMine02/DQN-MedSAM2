@@ -260,8 +260,8 @@ class GRPOAgent(BasePOAgent):
                 policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
                 policy_dist = Categorical(logits=policy_logits)
                 action_probs = policy_dist.probs.gather(1, actions)
-                log_probs = policy_dist.log_prob()
                 log_action_probs = torch.log(action_probs)
+                log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
                 # minus_entropy = (policy_dist.probs * log_probs).sum(dim=1, keepdim=True).mean()
