@@ -119,7 +119,6 @@ class GRPOAgent(BasePOAgent):
         self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
 
         self.await_group = None
-        self.priority = deque(maxlen=buffer_size)
 
         # For distributed training
         self.rank = 0
@@ -143,11 +142,6 @@ class GRPOAgent(BasePOAgent):
         self.await_group.finalize()
         new_normalized_instances = self.await_group.get_instances()
         self.replay_buffer.extend(new_normalized_instances)
-        for ins in new_normalized_instances:
-            if ins[2] == 0: # If action = 0 (add without skip), then assign lower priority
-                self.priority.append(0.25)
-            else:
-                self.priority.append(1.0)
     
     @torch.no_grad()
     def select_action(self, state, valid_actions, num_samples=1, training=False):
