@@ -156,7 +156,6 @@ class GRPOAgent(BasePOAgent):
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_dist = Categorical(logits=action_logits)
-        action_probs = action_dist.probs
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))

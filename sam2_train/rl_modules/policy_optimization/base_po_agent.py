@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributions import Categorical
 
 from sam2_train.rl_modules.rl_components import RLStates, RLReplayInstance
 from sam2_train.rl_modules.rl_blocks import (
@@ -343,17 +344,20 @@ class BasePOAgent(BaseAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=training).detach().cpu()
+        action_logits = self.policy_net(*state, training=training, return_logits=True).detach().cpu()
+        action_logits = action_logits.detach().cpu()
+        action_dist = Categorical(logits=action_logits)
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
-        valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
+        valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
+        valid_probs = valid_dist.probs
 
         if training:
             action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
         else:
             action_idx = torch.argmax(valid_probs)
 
-        return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
+        return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}
 
     def to(self, device, non_blocking=False):
         self.device = device
