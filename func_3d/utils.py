@@ -229,7 +229,7 @@ def score_cal(seg_map, prd_map):
     if seg_map.ndim == 2:
         seg_map = seg_map.unsqueeze(0)
         prd_map = prd_map.unsqueeze(0)
-        
+    
     total_num = seg_map.shape[0]
     
     seg_map = seg_map.reshape(total_num, -1)

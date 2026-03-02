@@ -233,7 +233,7 @@ def load_video_frames_from_data(
     img_mean = torch.tensor(img_mean, dtype=torch.float32)[:, None, None]
     img_std = torch.tensor(img_std, dtype=torch.float32)[:, None, None]
 
-    imgs_tensor = imgs_tensor / 255.0
+    # imgs_tensor = imgs_tensor / 255.0
     if not offload_video_to_cpu:
         imgs_tensor = imgs_tensor.to(device=device)
         img_mean = img_mean.to(device=device)

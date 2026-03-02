@@ -92,7 +92,7 @@ def train(rank=0, world_size=0):
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
 
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -115,13 +115,6 @@ def train(rank=0, world_size=0):
     '''begain training'''
     best_dice = 0.0
     for epoch in range(args.ep):
-        if not args.no_agent and epoch >= 40:
-            for name, param in net.named_parameters():
-                if "maskmem_tpos_enc" in name:
-                    param.requires_grad_(True)
-                else:
-                    param.requires_grad_(False)
-        
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
