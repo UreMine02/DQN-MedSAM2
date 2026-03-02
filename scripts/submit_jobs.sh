@@ -1,6 +1,5 @@
 declare -a DATASET=(
     msd05
-    msd06
     msd07
     msd08
     msd01

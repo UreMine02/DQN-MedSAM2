@@ -2,7 +2,7 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=4:00:00 # time
 #SBATCH -J msd09 # job name
@@ -26,7 +26,7 @@ python train_3d.py \
     -data_path /data/datasets/nii/MSD \
     -lr 5e-5 \
     -val_freq 1 \
-    -ep 30 \
+    -ep 100 \
     -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \

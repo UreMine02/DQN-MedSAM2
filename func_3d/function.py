@@ -255,7 +255,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
                 if f"{task}_{obj_id}" not in score_per_class.keys():
-                    score_per_class[f"{task}_{obj_id}"] = {}
+                    score_per_class[f"{task}_{obj_id}"] = {
+                        "iou": torch.FloatTensor([]).to(device=GPUdevice),
+                        "dice": torch.FloatTensor([]).to(device=GPUdevice),
+                        "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
+                    }
                     preds[f"{task}_{obj_id}"] = []
                     masks[f"{task}_{obj_id}"] = []
 
