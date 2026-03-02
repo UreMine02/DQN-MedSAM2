@@ -2,9 +2,9 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:1 # num gpus
+#SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
-#SBATCH --time=24:00:00 # time
+#SBATCH --time=2:00:00 # time
 #SBATCH -J msd02 # job name
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd02+adapter-%j.out"
@@ -32,3 +32,4 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
+    -distributed
