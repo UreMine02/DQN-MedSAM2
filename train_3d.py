@@ -22,7 +22,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as torch_optim
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR, LinearLR, MultiplicativeLR
+from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from timm import optim as timm_optim
 
@@ -103,7 +103,7 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
-
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
@@ -158,7 +158,7 @@ def train(rank=0, world_size=0):
             "train/critic_loss": agent_loss["critic_loss"],
             "train/lr": optimizer.param_groups[0]['lr'],
         }
-        # scheduler.step()
+        scheduler.step()
 
         if args.wandb_enabled and loss is not None:
             wandb.log(loss_dict, step=epoch)
