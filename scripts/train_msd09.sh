@@ -13,7 +13,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+no_agent+icl
+EXP=msd_task09+grpo+icl
 
 python train_3d.py \
     -exp_name $EXP \
@@ -31,4 +31,3 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
-    -no_agent

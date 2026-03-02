@@ -50,9 +50,9 @@ class MSD(Dataset):
         self.num_support = args.num_support
         self.max_slices = args.video_length
         
-        self.transform = transforms.Compose([
-            transforms.RandRotate90d(["im", "gt"], prob=0.75, spatial_axes=(0, 1), max_k=3),
-        ]) 
+        # self.transform = transforms.Compose([
+        #     transforms.RandRotate90d(["im", "gt"], prob=0.75, spatial_axes=(0, 1), max_k=3),
+        # ]) 
         
     def __len__(self):
         return len(self.gt_path)

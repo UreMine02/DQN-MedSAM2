@@ -3,7 +3,6 @@ declare -a DATASET=(
     msd06
     msd07
     msd08
-    btcv
     msd01
     msd03
     msd04
