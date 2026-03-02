@@ -24,7 +24,7 @@ from func_3d.misc import MetricLogger, reduce_dict
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(focal_weight=20, dice_weight=2)
+paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
@@ -96,7 +96,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
             )
 
-            with torch.cuda.amp.autocast():
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 for frame_idx in range(support_masks_tensor.shape[0]):
                     mask = support_masks_tensor[frame_idx]
                     _, _, _ = net.train_add_new_mask(
@@ -130,7 +130,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     iou_pred = video_segments[frame_idx][obj_id]["iou"]
                     pred_mask = (torch.sigmoid(pred) > 0.5).float()
                     assert not pred_mask.isnan().any()
-                    iou_gt = iou_score(pred_mask, mask)
+                    iou_gt = iou_score(pred_mask, mask, smoothing=1e-8)
                     dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                     class_loss["num_step"] += 1
                     # Update the loss of the class
@@ -151,6 +151,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 optimizer.zero_grad()
                 avg_loss.backward()
                 grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                if args.distributed:
+                    for param in net.parameters():
+                        if param.grad is not None:
+                            torch.distributed.all_reduce(param.grad.data, op=torch.distributed.ReduceOp.SUM)
+                            param.grad.data /= torch.distributed.get_world_size()
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
@@ -232,6 +237,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
             task = packs["task"][0]
+            name = packs["name"][0]
             # cls_id = packs["obj_id"][0]
             # Log initial slice stats for validation
             # print(f"[VALIDATION PACK] Name: {name}")
@@ -281,7 +287,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 )
 
                 with torch.no_grad():
-                    with torch.cuda.amp.autocast():
+                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                         for frame_idx in range(support_masks_tensor.shape[0]):
                             mask = support_masks_tensor[frame_idx]
                             _, _, _ = net.train_add_new_mask(
@@ -312,14 +318,14 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         # masks[f"{task}_{obj_id}"].append(mask.cpu())
                         # preds[f"{task}_{obj_id}"].append(pred.cpu())
                         
-                        volume_masks.append(mask.cpu())
-                        volume_preds.append(pred.cpu())
+                        volume_masks.append(mask)
+                        volume_preds.append(pred)
                         
-                        (
-                            iou,
-                            dice,
-                            fb_iou,
-                        ) = eval_seg(pred, mask)
+                        # (
+                        #     iou,
+                        #     dice,
+                        #     fb_iou,
+                        # ) = eval_seg(pred, mask)
 
                         # score_dict = score_per_class[f"{task}_{obj_id}"]
 
@@ -327,7 +333,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         # score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
                         # score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
-                        mask = torch.zeros_like(pred).to(device=GPUdevice)
+                        mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
 
                     if args.vis:
                         save_dir = "/".join(args.pretrain.split("/")[:-1])
@@ -339,8 +345,24 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             cmap="jet"
                         )
                 
-                volume_masks = torch.stack(volume_masks).flatten(1) # [D,H,W]
-                volume_preds = torch.stack(volume_preds).flatten(1) # [D,H,W]
+                volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+                volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+                
+                (
+                    iou,
+                    dice,
+                    fb_iou,
+                ) = eval_seg(volume_preds, volume_masks)
+                
+                iou = iou.mean(dim=0, keepdim=True)
+                dice = dice.mean(dim=0, keepdim=True)
+                fb_iou = fb_iou.mean(dim=0, keepdim=True)
+                    
+                score_dict = score_per_class[f"{task}_{obj_id}"]
+
+                score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
+                score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
+                score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                 
                 masks[f"{task}_{obj_id}"].append(volume_masks)
                 preds[f"{task}_{obj_id}"].append(volume_preds)
@@ -349,44 +371,44 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             pbar.update()
 
-    ths = np.arange(0, 1.0, 0.01)
-    # ths = [0.5]
-    for name in preds.keys():
-        best_iou = 0
-        best_dice = 0
-        best_fbiou = 0
-        best_th = ths[0]
+    # ths = np.arange(0, 1.0, 0.01)
+    # # ths = [0.5]s
+    # for name in preds.keys():
+    #     best_iou = 0
+    #     best_dice = 0
+    #     best_fbiou = 0
+    #     best_th = ths[0]
         
-        for th in ths:
-            ious = torch.FloatTensor([]).to(device=GPUdevice)
-            dices = torch.FloatTensor([]).to(device=GPUdevice)
-            fb_ious = torch.FloatTensor([]).to(device=GPUdevice)
+    #     for th in ths:
+    #         ious = torch.FloatTensor([]).to(device=GPUdevice)
+    #         dices = torch.FloatTensor([]).to(device=GPUdevice)
+    #         fb_ious = torch.FloatTensor([]).to(device=GPUdevice)
             
-            for i in range(len(preds[name])):
-                pred = preds[name][i].to(GPUdevice)
-                mask = masks[name][i].to(GPUdevice)
-                iou, dice, fb_iou = eval_seg(pred, mask, thr=th)
+    #         for i in range(len(preds[name])):
+    #             pred = preds[name][i].to(GPUdevice)
+    #             mask = masks[name][i].to(GPUdevice)
+    #             iou, dice, fb_iou = eval_seg(pred, mask, thr=th)
                 
-                ious = torch.cat([ious, iou])
-                dices = torch.cat([dices, dice])
-                fb_ious = torch.cat([fb_ious, fb_iou])
+    #             ious = torch.cat([ious, iou])
+    #             dices = torch.cat([dices, dice])
+    #             fb_ious = torch.cat([fb_ious, fb_iou])
             
-            # print(ious)
-            ious = ious.mean(dim=0, keepdim=True)
-            dices = dices.mean(dim=0, keepdim=True)
-            fb_ious = fb_ious.mean(dim=0, keepdim=True)
-            # print(th, ious)
+    #         # print(ious)
+    #         ious = ious.mean(dim=0, keepdim=True)
+    #         dices = dices.mean(dim=0, keepdim=True)
+    #         fb_ious = fb_ious.mean(dim=0, keepdim=True)
+    #         # print(th, ious)
             
-            if dices > best_dice:
-                best_iou = ious
-                best_dice = dices
-                best_fbiou = fb_ious
-                best_th = th
+    #         if dices > best_dice:
+    #             best_iou = ious
+    #             best_dice = dices
+    #             best_fbiou = fb_ious
+    #             best_th = th
                 
-        score_per_class[name]["iou"] = best_iou
-        score_per_class[name]["dice"] = best_dice
-        score_per_class[name]["fb_iou"] = best_fbiou
-        score_per_class[name]["th"] = best_th
+    #     score_per_class[name]["iou"] = best_iou
+    #     score_per_class[name]["dice"] = best_dice
+    #     score_per_class[name]["fb_iou"] = best_fbiou
+    #     score_per_class[name]["th"] = best_th
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
@@ -399,19 +421,19 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     for name, metrics_dict in score_per_class.items():
         table_data.append((
             name,
-            metrics_dict["iou"],
-            metrics_dict["dice"],
-            metrics_dict["fb_iou"],
-            metrics_dict["th"]
+            metrics_dict["iou"].mean(),
+            metrics_dict["dice"].mean(),
+            metrics_dict["fb_iou"].mean(),
+            0.5
         ))
 
         avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"]])
         avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"]])
         avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])
-        avg["th"] = None
+        avg["th"] = 0.5
         
         if args.wandb_enabled:
-            wandb.log({name: avg}, step=epoch)
+            wandb.log({f"val/{name}.Dice": metrics_dict["dice"].mean()}, step=epoch)
         
     # print(avg["iou"])
     avg["iou"] = avg["iou"].mean()

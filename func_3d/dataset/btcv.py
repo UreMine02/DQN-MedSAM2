@@ -72,7 +72,7 @@ class BTCV(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": "btcv", "obj_id": obj_id, "case": os.path.splitext(os.path.basename(image_path))[0]
+            "task": "btcv", "obj_id": obj_id, "name": os.path.splitext(os.path.basename(image_path))[0]
         }
         
         return output_dict

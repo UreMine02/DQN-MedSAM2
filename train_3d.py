@@ -74,8 +74,8 @@ def train(rank=0, world_size=0):
     for name, param in net.named_parameters():
         if "image_encoder" in name:
             param.requires_grad_(False)
-        elif "sam_prompt_encoder" in name:
-            param.requires_grad_(False)
+        # elif "sam_prompt_encoder" in name:
+        #     param.requires_grad_(False)
         else:
             param.requires_grad_(True)
 

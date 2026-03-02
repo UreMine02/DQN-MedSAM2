@@ -344,7 +344,7 @@ class BasePOAgent(BaseAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_logits = self.policy_net(*state, training=training, return_logits=True).detach().cpu()
+        action_logits = self.policy_net(*state, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_dist = Categorical(logits=action_logits)
 
@@ -381,7 +381,7 @@ class BasePOAgent(BaseAgent):
 
         np.random.seed(self.rank + self.epoch * 100)
 
-        # print(f"Update agent for {num_update} steps")
+        print(f"Update agent for {num_update} steps")
         self.feat_summarizer.train()
         self.policy_net.train()
         self.value_net.train()

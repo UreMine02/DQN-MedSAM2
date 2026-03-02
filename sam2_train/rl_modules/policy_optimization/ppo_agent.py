@@ -44,11 +44,13 @@ class PPOAgent(BasePOAgent):
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
         
-        if local_count < 500:
+        if local_count < 200:
             return None
         
-        super().update(num_update)
+        out = super().update(num_update)
         self.clear_buffer()
+        
+        return out
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         ratio = (log_prob - old_log_prob).exp()
