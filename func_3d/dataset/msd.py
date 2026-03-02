@@ -99,14 +99,16 @@ class MSD(Dataset):
             label_path,
             obj_id = obj_id,
             max_slices=self.max_slices if self.mode == "train" else -1,
-            slice_selection='contiguous'
+            slice_selection='contiguous',
+            is_support=False
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random' if self.mode == 'train' else 'evenly'
+            slice_selection='random' if self.mode == 'train' else 'evenly',
+            is_support=True
         )
         
         # image_3d = torch.tensor(image_3d).unsqueeze(0)
@@ -147,7 +149,7 @@ class MSD(Dataset):
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous'):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -163,24 +165,23 @@ class MSD(Dataset):
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
         
-        pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
-        image_3d = image_3d[:, :, pos_slices]
-        data_seg_3d = data_seg_3d[:, :, pos_slices]
+        if self.mode == "train" and not is_support:
+            pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
+            
+            from_idx, to_idx = pos_slices.min() - (max_slices - 1), pos_slices.max() + (max_slices - 1)
+            image_3d = image_3d[:, :, max(from_idx, 0):to_idx]
+            data_seg_3d = data_seg_3d[:, :, max(from_idx, 0):to_idx]
+        else:
+            pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
+            image_3d = image_3d[:, :, pos_slices]
+            data_seg_3d = data_seg_3d[:, :, pos_slices]
+            
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                # start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                # image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                # data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
-                
-                segment = np.random.choice(range((image_3d.shape[-1] + max_slices - 1) // max_slices))
-                if segment >= image_3d.shape[-1] // max_slices:
-                    image_3d = image_3d[..., -max_slices:]
-                    data_seg_3d = data_seg_3d[..., -max_slices:]
-                else:
-                    image_3d = image_3d[..., max_slices*segment:max_slices*segment + max_slices]
-                    data_seg_3d = data_seg_3d[..., max_slices*segment:max_slices*segment + max_slices]
-                    
+                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
