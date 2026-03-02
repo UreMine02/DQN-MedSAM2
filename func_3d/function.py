@@ -309,6 +309,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 # Record the loss in this step
                 volume_masks = []
                 volume_preds = []
+                dices = torch.FloatTensor([]).to(device=GPUdevice)
+                ious = torch.FloatTensor([]).to(device=GPUdevice)
+                fbious = torch.FloatTensor([]).to(device=GPUdevice)
                 for frame_idx in video_segments.keys():
                     pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                     mask = video_segments[frame_idx][obj_id]["image_label"]
@@ -321,17 +324,15 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         volume_masks.append(mask)
                         volume_preds.append(pred)
                         
-                        # (
-                        #     iou,
-                        #     dice,
-                        #     fb_iou,
-                        # ) = eval_seg(pred, mask)
+                        (
+                            iou,
+                            dice,
+                            fb_iou,
+                        ) = eval_seg(pred, mask)
 
-                        # score_dict = score_per_class[f"{task}_{obj_id}"]
-
-                        # score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
-                        # score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
-                        # score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
+                        ious = torch.cat([ious, iou.detach()])
+                        dices = torch.cat([dices, dice.detach()])
+                        fbious = torch.cat([fbious, fb_iou.detach()])
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
 
@@ -345,18 +346,18 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             cmap="jet"
                         )
                 
-                volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
-                volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+                # volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+                # volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
                 
-                (
-                    iou,
-                    dice,
-                    fb_iou,
-                ) = eval_seg(volume_preds, volume_masks)
+                # (
+                #     iou,
+                #     dice,
+                #     fb_iou,
+                # ) = eval_seg(volume_preds, volume_masks)
                 
-                iou = iou.mean(dim=0, keepdim=True)
-                dice = dice.mean(dim=0, keepdim=True)
-                fb_iou = fb_iou.mean(dim=0, keepdim=True)
+                iou = ious.mean(dim=0, keepdim=True)
+                dice = dices.mean(dim=0, keepdim=True)
+                fb_iou = fbious.mean(dim=0, keepdim=True)
                     
                 score_dict = score_per_class[f"{task}_{obj_id}"]
 

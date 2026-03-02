@@ -9,7 +9,9 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-from torchvision.transforms.functional import normalize
+
+from torchvision.transforms import v2
+from torchvision import tv_tensors
 
 from monai import transforms
 
@@ -50,8 +52,11 @@ class MSD(Dataset):
         self.num_support = args.num_support
         self.max_slices = args.video_length
         
-        self.transform = transforms.Compose([
-            transforms.RandRotate90d(["im", "gt"], prob=0.75, spatial_axes=(0, 1), max_k=3),
+        self.transform = v2.Compose([
+            v2.RandomHorizontalFlip(0.5),
+            v2.RandomAffine(25, shear=20),
+            v2.GaussianNoise(),
+            v2.GaussianBlur(kernel_size=5),
         ]) 
         
     def __len__(self):
@@ -72,6 +77,23 @@ class MSD(Dataset):
         support_label_path = os.path.join(self.root, self.gt_path[support_index])
         support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
         
+        (
+            image_3d,
+            data_seg_3d,
+            support_image_3d,
+            support_data_seg_3d
+        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
+        
+        output_dict = {
+            "image": image_3d, "label": data_seg_3d,
+            "support_image": support_image_3d, "support_label": support_data_seg_3d,
+            "task": task, "obj_id": obj_id, 
+            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path)
+        }
+        
+        return output_dict
+    
+    def load_data(self, image_path, label_path, support_image_path, support_label_path, obj_id):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
@@ -84,17 +106,46 @@ class MSD(Dataset):
             support_label_path,
             obj_id = obj_id,
             max_slices=self.num_support,
-            slice_selection='random' if self.subset == 'train' else 'evenly'
+            slice_selection='random' if self.mode == 'train' else 'evenly'
         )
         
-        output_dict = {
-            "image": image_3d, "label": data_seg_3d,
-            "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id, 
-            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path)
-        }
+        # image_3d = torch.tensor(image_3d).unsqueeze(0)
+        # data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
+        # image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
+        # data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
         
-        return output_dict
+        if self.mode == "train":
+            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
+            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
+            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
+            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
+            
+            image_3d = tv_tensors.Image(image_3d)
+            data_seg_3d = tv_tensors.Mask(data_seg_3d)
+            support_image_3d = tv_tensors.Image(support_image_3d)
+            support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+            
+            (
+                image_3d,
+                data_seg_3d,
+                support_image_3d,
+                support_data_seg_3d
+            ) = self.transform(image_3d, data_seg_3d, support_image_3d, support_data_seg_3d)
+            
+            image_3d = image_3d.unsqueeze(0)
+            data_seg_3d = data_seg_3d.unsqueeze(0)
+            support_image_3d = support_image_3d.unsqueeze(0)
+            support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
+        else:
+            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            
+        image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
+        support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
+
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
     def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous'):
         image_3d = nib.load(image_path)
@@ -118,9 +169,18 @@ class MSD(Dataset):
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                # start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
+                # image_3d = image_3d[..., start_slice:start_slice+max_slices]
+                # data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                
+                segment = np.random.choice(range((image_3d.shape[-1] + max_slices - 1) // max_slices))
+                if segment >= image_3d.shape[-1] // max_slices:
+                    image_3d = image_3d[..., -max_slices:]
+                    data_seg_3d = data_seg_3d[..., -max_slices:]
+                else:
+                    image_3d = image_3d[..., max_slices*segment:max_slices*segment + max_slices]
+                    data_seg_3d = data_seg_3d[..., max_slices*segment:max_slices*segment + max_slices]
+                    
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
@@ -134,14 +194,11 @@ class MSD(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
-        image_3d = scaling(image_3d, scale=255)
-
-        image_3d = torch.tensor(image_3d).unsqueeze(0)
-        data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
+        image_3d = scaling(image_3d, scale=1)
         
-        image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
-        data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
-
+        return image_3d, data_seg_3d
+    
+    def resize(self, image_3d, data_seg_3d):
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
