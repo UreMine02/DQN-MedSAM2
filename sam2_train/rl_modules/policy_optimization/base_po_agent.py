@@ -9,6 +9,7 @@ import torch.optim as optim
 import torch.nn.functional as F
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributions import Categorical
 
 from sam2_train.rl_modules.rl_components import RLStates, RLReplayInstance
 from sam2_train.rl_modules.rl_blocks import (
@@ -194,7 +195,7 @@ class BasePolicyNetwork(nn.Module):
             nn.Linear(self.hidden_dim, 1)
         )
 
-    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True):
+    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, training=True, return_logits=False):
         B = image_spatial_query.shape[0]
         dtype = image_spatial_query.dtype
         device = image_spatial_query.device
@@ -208,11 +209,11 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(x_f=action_context, x=action_query, training=training)
 
         actions_logits = self.action_proj(action_query)
-        actions_probs = torch.softmax(actions_logits, dim=1)
         
-        # if not training:
-        #     print(actions_logits.squeeze())
-        #     print(actions_probs.squeeze())
+        if return_logits:
+            return actions_logits.squeeze(-1)
+        
+        actions_probs = torch.softmax(actions_logits, dim=1)
 
         return actions_probs.squeeze(-1)
 
@@ -343,17 +344,20 @@ class BasePOAgent(BaseAgent):
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_probs = self.policy_net(*state, training=training).detach().cpu()
+        action_logits = self.policy_net(*state, training=training, return_logits=True).squeeze(0)
+        action_logits = action_logits.detach().cpu()
+        action_dist = Categorical(logits=action_logits)
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
-        valid_probs = action_probs.squeeze(0).gather(0, valid_actions)
+        valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
+        valid_probs = valid_dist.probs
 
         if training:
             action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
         else:
             action_idx = torch.argmax(valid_probs)
 
-        return {"action": valid_actions[action_idx].item(), "log_probs": torch.log(valid_probs[action_idx])}
+        return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}
 
     def to(self, device, non_blocking=False):
         self.device = device
@@ -377,7 +381,7 @@ class BasePOAgent(BaseAgent):
 
         np.random.seed(self.rank + self.epoch * 100)
 
-        # print(f"Update agent for {num_update} steps")
+        print(f"Update agent for {num_update} steps")
         self.feat_summarizer.train()
         self.policy_net.train()
         self.value_net.train()
@@ -456,7 +460,7 @@ class BasePOAgent(BaseAgent):
 
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = 0.5 * (advantages - adv_mean) / adv_std
+        advantages = (advantages - adv_mean) / adv_std
 
         with torch.enable_grad():
             (
@@ -509,7 +513,7 @@ class BasePOAgent(BaseAgent):
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
-                critic_gradnorm = 0
+                critic_gradnorm = torch.Tensor([0])
 
             # total_loss = policy_loss + 0.1 * value_loss
 

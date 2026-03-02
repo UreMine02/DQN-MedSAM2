@@ -1631,7 +1631,7 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
-                    reward = 0.001
+                    reward = 0.01
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
@@ -1694,11 +1694,11 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-            if not train_agent:
-                print(f"[Q] frame {frame_idx-1} "
-                    f"action {action} "
-                    f"drop_frame {drop_frame} "
-                    f"bank_size {bank_size} ")
+            # if not train_agent:
+            #     print(f"[Q] frame {frame_idx-1} "
+            #         f"action {action} "
+            #         f"drop_frame {drop_frame} "
+            #         f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

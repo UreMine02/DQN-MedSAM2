@@ -15,6 +15,7 @@
 
 EXP=msd_task09+grpo+icl
 
+sleep 6h
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \

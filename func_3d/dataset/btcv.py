@@ -43,8 +43,7 @@ class BTCV(Dataset):
     
     def __getitem__(self, index):
         obj_id = self.obj_id[index]
-        support_list = (self.obj_id == obj_id) & \
-                        (self.n_pos >= self.num_support)
+        support_list = (self.obj_id == obj_id) & (self.n_pos >= self.num_support)
         
         support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
         support_index = np.random.choice(support_list, size=1)[0]
@@ -73,7 +72,7 @@ class BTCV(Dataset):
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": "btcv", "obj_id": obj_id, "case": os.path.splitext(os.path.basename(image_path))[0]
+            "task": "btcv", "obj_id": obj_id, "name": os.path.splitext(os.path.basename(image_path))[0]
         }
         
         return output_dict

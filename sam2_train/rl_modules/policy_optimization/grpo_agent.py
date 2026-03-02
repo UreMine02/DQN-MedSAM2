@@ -8,6 +8,7 @@ import torch.distributed as dist
 from torch import optim, nn
 from torch.utils.checkpoint import checkpoint
 from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.distributions.categorical import Categorical
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
@@ -53,15 +54,14 @@ class GRPOGroup:
         self.group.append(instance)
 
     def finalize(self):
-        pass
-        # group_rewards = torch.Tensor([ins.reward for ins in self.group])
+        group_rewards = torch.Tensor([ins.reward for ins in self.group])
 
-        # group_mean = group_rewards.mean(dim=0, keepdim=True)
-        # group_std  = group_rewards.std(dim=0, keepdim=True)
-        # group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
+        group_mean = group_rewards.mean(dim=0, keepdim=True)
+        group_std  = group_rewards.std(dim=0, keepdim=True)
+        group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
 
-        # for i, ins in enumerate(self.group):
-        #     ins.reward = group_rewards[i]
+        for i, ins in enumerate(self.group):
+            ins.reward = group_rewards[i]
 
     def get_instances(self):
         return [ins.get() for ins in self.group]
@@ -73,9 +73,9 @@ class GRPOActor(nn.Module):
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
 
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True):
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=False):
         curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
-        policy_probs = self.policy_net(*curr_feats, training=training)
+        policy_probs = self.policy_net(*curr_feats, training=training, return_logits=return_logits)
         return policy_probs
 
 class GRPOAgent(BasePOAgent):
@@ -119,7 +119,6 @@ class GRPOAgent(BasePOAgent):
         self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
 
         self.await_group = None
-        self.priority = deque(maxlen=buffer_size)
 
         # For distributed training
         self.rank = 0
@@ -143,11 +142,6 @@ class GRPOAgent(BasePOAgent):
         self.await_group.finalize()
         new_normalized_instances = self.await_group.get_instances()
         self.replay_buffer.extend(new_normalized_instances)
-        for ins in new_normalized_instances:
-            if ins[2] == 0: # If action = 0 (add without skip), then assign lower priority
-                self.priority.append(0.25)
-            else:
-                self.priority.append(1.0)
     
     @torch.no_grad()
     def select_action(self, state, valid_actions, num_samples=1, training=False):
@@ -159,11 +153,16 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
-        action_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training).squeeze(0)
-        action_probs = action_probs.detach().cpu()
+        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
+        action_logits = action_logits.detach().cpu()
+        action_dist = Categorical(logits=action_logits)
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
-        valid_probs = action_probs.gather(0, valid_actions)
+        valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
+        valid_probs = valid_dist.probs
+        
+        # if not training:
+        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
             # main_action_idx = torch.argmax(valid_probs)
@@ -173,7 +172,7 @@ class GRPOAgent(BasePOAgent):
             return {
                 "main_action": valid_actions[main_action_idx].item(),
                 "action": valid_actions[action_idx].tolist(),
-                "log_probs": action_probs.log()[action_idx].tolist()
+                "log_probs": valid_probs.log()[action_idx].tolist()
             }
         else:
             # action_idx = torch.argmax(valid_probs)
@@ -242,9 +241,9 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
-            reward_mean = rewards.mean(dim=0, keepdim=True)
-            reward_std  = rewards.std(dim=0, keepdim=True)
-            rewards = (rewards - reward_mean) / (reward_std + 1e-8)
+            # reward_mean = rewards.mean(dim=0, keepdim=True)
+            # reward_std  = rewards.std(dim=0, keepdim=True)
+            # rewards = (rewards - reward_mean) / (reward_std + 1e-8)
             
             # for action in actions.unique():
             #     action_rewards = rewards.squeeze()[actions.squeeze() == action].mean()
@@ -252,18 +251,20 @@ class GRPOAgent(BasePOAgent):
                 # metric_logger.update(**{str(action.item()): action_rewards})
             
             with torch.enable_grad():
-                policy_probs = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True)
-                action_probs = policy_probs.gather(1, actions)
-                log_probs = torch.log(policy_probs)
+                policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
+                policy_dist = Categorical(logits=policy_logits)
+                action_probs = policy_dist.probs.gather(1, actions)
                 log_action_probs = torch.log(action_probs)
+                log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-                minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True).mean()
-                policy_loss = 200 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+                # minus_entropy = (policy_dist.probs * log_probs).sum(dim=1, keepdim=True).mean()
+                minus_entropy = -policy_dist.entropy().mean()
+                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=1.0)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
 
             total_policy_loss += policy_loss.detach()
