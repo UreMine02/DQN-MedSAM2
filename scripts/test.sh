@@ -22,14 +22,15 @@ ckpt=(
     # output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
     # output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
 
-    output/msd_task02+grpo+icl+uniform_sampling+add_reward/2026-02-27-14-39-53/best.pth
+    # output/msd_task02+grpo+icl+uniform_sampling+add_reward/2026-02-27-14-39-53/best.pth
+    output/hpc/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
-    for shot in 5;
+    for shot in 1;
     do
         python eval_3d.py \
             -pretrain $pretrain \
