@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms.functional import normalize 
 
 
-def normalization(image):
+def scale(image):
     image_min = np.min(image)
     image_max = np.max(image)
     image = ((image - image_min)/(image_max-image_min))*255
@@ -123,7 +123,7 @@ class BTCV(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
-        image_3d = normalization(image_3d)
+        image_3d = scale(image_3d)
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
 

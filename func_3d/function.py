@@ -374,19 +374,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             # HYPOTHESIS TESTING
             if args.ablation:
                 for frame_idx in train_state["output_dict"]["dice_drop"].keys():
-                    
-                    # if train_state["output_dict"]["drop_frame"][frame_idx] < 0:
-                    #     continue
-                    
                     drop_frame = train_state["output_dict"]["drop_frame"][frame_idx]
-                    # print(name, frame_idx, train_state["output_dict"]["dice_drop"][frame_idx].keys())
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"] = {}
-                    # argsort = torch.argsort(torch.Tensor(dice_drop_list), descending=True)
-                    # ranking = torch.empty_like(argsort, dtype=argsort.dtype).scatter(0, argsort, torch.arange(argsort.shape[0]))
-                    # dropped_rank = ranking[drop_frame].item()
 
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["delta"] = train_state["output_dict"]["dice_drop"][frame_idx]
-                    # ablation_data[f"{name}_{cls_id}_{frame_idx}"]["rank"] = dropped_rank
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["drop_frame"] = drop_frame
 
@@ -422,8 +413,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         df.to_csv(f"{csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
         print(f"Ablation save to {csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
-    ths = np.arange(0, 1.0, 0.01)
-    # ths = [0.5]
+    # ths = np.arange(0, 1.0, 0.01)
+    ths = [0.5]
     for name in preds.keys():
         best_iou = 0
         best_dice = 0
