@@ -22,11 +22,17 @@ ckpt=(
     # output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
     # output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
 
-    output/sarcoma+grpo+icl/2026-02-28-18-49-55/best.pth
-    # output/sarcoma+no_agent+icl/2026-03-03-20-51-26/best.pth
+    # output/sarcoma+grpo+icl/2026-03-03-22-24-08/best.pth
+    output/sarcoma+no_agent+icl/2026-03-03-20-51-26/best.pth
+
+    # output/msd_task09+grpo+icl/2026-03-02-21-58-22/best.pth
+    # output/msd_task09+no_agent+icl+augmentation/2026-03-02-17-35-55/best.pth
+
+    # output/msd_task06+grpo+icl/2026-03-03-22-25-28/best.pth
+    # output/msd_task06+no_agent+icl/2026-03-03-20-51-01/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]};
 do
@@ -41,6 +47,6 @@ do
             -num_support $shot \
             -vis \
             -ablation \
-            # -no_agent
+            -no_agent
     done
 done
