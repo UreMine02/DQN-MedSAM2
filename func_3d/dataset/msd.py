@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 
 from torchvision.transforms import v2
 from torchvision import tv_tensors
-
+import torchshow as ts
 from monai import transforms
 
 
@@ -116,8 +116,8 @@ class MSD(Dataset):
         # image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
         # data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
         
-        # if self.mode == "train":
-        if False:
+        if self.mode == "train":
+        # if False:
             image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
             data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
             support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
@@ -128,12 +128,8 @@ class MSD(Dataset):
             support_image_3d = tv_tensors.Image(support_image_3d)
             support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
             
-            (
-                image_3d,
-                data_seg_3d,
-                support_image_3d,
-                support_data_seg_3d
-            ) = self.transform(image_3d, data_seg_3d, support_image_3d, support_data_seg_3d)
+            image_3d, data_seg_3d = self.transform(image_3d, data_seg_3d)
+            support_image_3d, support_data_seg_3d = self.transform(support_image_3d, support_data_seg_3d)
             
             image_3d = image_3d.unsqueeze(0)
             data_seg_3d = data_seg_3d.unsqueeze(0)
