@@ -14,23 +14,22 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+no_agent+bbox+base
-export CUDA_VISIBLE_DEVICES=0
+EXP=msd_task02+grpo+icl+single_channel_norm
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_config sam2_hiera_b+ \
-    -sam_ckpt ./checkpoints/sam2_hiera_base_plus.pt \
-    -rl_config rl_modules/config/ppo_po_agent.yaml \
+    -sam_config sam2_hiera_t \
+    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/nii/MSD \
-    -lr 5e-5 \
+    -lr 1e-4 \
     -val_freq 1 \
-    -ep 500 \
-    -q_updates_per_step 50 \
+    -ep 50 \
+    -q_updates_per_step 5 \
     -lazy_penalty 0.0 \
     -num_support 3 \
-    -no_agent \
     -wandb_enabled

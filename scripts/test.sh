@@ -15,24 +15,25 @@
 
 declare -a ckpt=(
     # output/msd_task02+grpo+icl/2026-02-28-18-09-06/best.pth
-    output/msd_task02+no_agent+bbox+base/2026-03-04-10-08-34/best.pth
+    # output/msd_task02+no_agent+bbox+base/2026-03-04-10-08-34/best.pth
+    output/msd_task02+grpo+icl/2026-03-04-23-57-33/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]}
 do
-    for shot in 1;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain $pretrain \
-            -sam_config sam2_hiera_b+ \
+            -sam_config sam2_hiera_t \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
             -task "Task02" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -no_agent 
+            # -no_agent
             # -vis
     done
 done

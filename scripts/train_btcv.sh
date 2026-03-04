@@ -14,9 +14,10 @@
 # conda init
 # conda activate rlsam2
 
-EXP=btcv+no_agent+icl
+EXP=btcv+grpo+icl
 export CUDA_VISIBLE_DEVICES=0
 
+sleep 2h
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
@@ -24,12 +25,11 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset btcv \
     -data_path /data/datasets/nii/BTCV \
-    -lr 5e-5 \
+    -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 5 \
-    -no_agent \
+    -num_support 3 \
     -wandb_enabled
