@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchshow as ts
+from torchvision.ops import masks_to_boxes
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
