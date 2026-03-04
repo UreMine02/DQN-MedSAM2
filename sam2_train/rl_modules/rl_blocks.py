@@ -107,8 +107,8 @@ class QFormerBlock(nn.Module):
 class PerceiverResampler(nn.Module):
     def __init__(self, hidden_dim=256, num_heads=1, dropout=0.):
         super().__init__()
-        # self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
-        self.attn = nn.MultiheadAttention(hidden_dim, num_heads, dropout=dropout, batch_first=True)
+        self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
+        # self.attn = nn.MultiheadAttention(hidden_dim, num_heads, dropout=dropout, batch_first=True)
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
@@ -131,7 +131,7 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
-        x = x + self.attention(self.norm1(x), context=torch.cat([x_f, x], dim=1))
+        x = x + self.attn(self.norm1(x), context=torch.cat([x_f, x], dim=1))
         x = x + self.mlp(self.norm2(x))
         return x
     

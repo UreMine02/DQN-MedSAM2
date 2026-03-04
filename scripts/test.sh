@@ -14,7 +14,7 @@
 # conda activate rlsam2
 
 ckpt=(
-    # output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
+    output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
     # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
     # output/msd_task02+grpo+icl+agent_only/2026-02-22-15-36-52/best.pth
 
@@ -23,7 +23,7 @@ ckpt=(
     # output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
 
     # output/sarcoma+grpo+icl/2026-03-03-22-24-08/best.pth
-    output/sarcoma+no_agent+icl/2026-03-03-20-51-26/best.pth
+    # output/sarcoma+no_agent+icl/2026-03-03-20-51-26/best.pth
 
     # output/msd_task09+grpo+icl/2026-03-02-21-58-22/best.pth
     # output/msd_task09+no_agent+icl+augmentation/2026-03-02-17-35-55/best.pth
@@ -41,12 +41,12 @@ do
         python eval_3d.py \
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset sarcoma \
-            -task "" \
-            -data_path /data/datasets/nii/Sarcoma \
+            -dataset msd \
+            -task "Task02" \
+            -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -vis \
             -ablation \
-            -no_agent
+            # -no_agent
     done
 done
