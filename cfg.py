@@ -17,14 +17,14 @@ def parse_args():
     parser.add_argument('-out_size', type=int, default=1024, help='output_size')
     parser.add_argument('-distributed', action="store_true", help='multi GPU ids to use')
     parser.add_argument('-dataset', default='btcv' ,type=str,help='dataset name')
-    parser.add_argument('-sam_ckpt', type=str, default=None, help='sam checkpoint address')
+    parser.add_argument('-sam_ckpt', type=str, default="/mnt/12T/cuong/medsam2-icl-ql/output/msdTask2+bbox+grpo+entropy1e-1+num_support10+clip_grad0.1/2026-02-23-18-58-50/epoch_14_dice0.8247.pth", help='sam checkpoint address')
     parser.add_argument('-sam_config', type=str, default="sam2_hiera_t" , help='sam checkpoint address')
     parser.add_argument('-video_length', type=int, default=16, help='sam checkpoint address')
     parser.add_argument('-b', type=int, default=1, help='batch size for dataloader')
     parser.add_argument('-lr', type=float, default=1e-4, help='initial learning rate')
     parser.add_argument('-weights', type=str, default=0, help='the weights file you want to test')
     parser.add_argument('-multimask_output', type=int, default=1 , help='the number of masks output for multi-class segmentation')
-    parser.add_argument('-memory_bank_size', type=int, default=16, help='sam 2d memory bank size')
+    parser.add_argument('-memory_bank_size', type=int, default=32, help='sam 2d memory bank size')
     parser.add_argument('-support_instance', type=str, default="img0039", help='support instance'),
     parser.add_argument('-data_path', type=str, default='/mnt/12T/cuong/AAAI/Combined_Dataset', help='The path of segmentation data'),
     parser.add_argument('-num_support', type=int, default=10, help='saving trained checkpoints')

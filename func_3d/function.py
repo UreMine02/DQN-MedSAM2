@@ -96,26 +96,51 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     #     )
 
             
+                    # for frame_idx in range(masks_tensor.shape[0]):
+                    #     gt_mask = masks_tensor[frame_idx]
+                    #     point_inputs = build_point_inputs(
+                    #         gt_mask=gt_mask,
+                    #         fg_points=10,
+                    #         bg_points=5,
+                    #         video_H=train_state["video_height"],
+                    #         video_W=train_state["video_width"],
+                    #         image_size=net.image_size,
+                    #         device=GPUdevice,
+                    #     )
+                    #     _, _, _ = net.train_add_new_points(
+                    #         inference_state=train_state,
+                    #         frame_idx=frame_idx,
+                    #         obj_id=obj_id,
+                    #         points=point_inputs["point_coords"].to(device=GPUdevice),
+                    #         labels=point_inputs["point_labels"].to(device=GPUdevice),
+                    #         normalize_coords=False,
+                    #     )
+                    #     break
+
                     for frame_idx in range(masks_tensor.shape[0]):
-                        gt_mask = masks_tensor[frame_idx]
-                        point_inputs = build_point_inputs(
-                            gt_mask=gt_mask,
-                            fg_points=10,
-                            bg_points=5,
-                            video_H=train_state["video_height"],
-                            video_W=train_state["video_width"],
-                            image_size=net.image_size,
-                            device=GPUdevice,
-                        )
-                        _, _, _ = net.train_add_new_points(
+                        gt_mask = masks_tensor[frame_idx]  # shape: [H, W] (binary mask)
+
+                        ys, xs = torch.where(gt_mask > 0)
+
+                        if len(xs) == 0 or len(ys) == 0:
+                            continue
+
+                        x_min = xs.min().item()
+                        y_min = ys.min().item()
+                        x_max = xs.max().item()
+                        y_max = ys.max().item()
+
+                        bbox = [x_min, y_min, x_max, y_max]
+
+                        _, _, _ = net.train_add_new_bbox(
                             inference_state=train_state,
                             frame_idx=frame_idx,
                             obj_id=obj_id,
-                            points=point_inputs["point_coords"].to(device=GPUdevice),
-                            labels=point_inputs["point_labels"].to(device=GPUdevice),
-                            normalize_coords=False,
+                            bbox=bbox,
+                            normalize_coords=False,  
                         )
                         break
+
 
                     video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -205,6 +230,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     
     return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
 
+
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
     if args.distributed:
         net = net.module
@@ -249,7 +275,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
                     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
                     continue
-                if obj_id not in score_per_class.keys():
+                if f"{task}_{obj_id}" not in score_per_class.keys():
                     score_per_class[f"{task}_{obj_id}"] = copy.deepcopy(metrics)
                 imgs_tensor = pack['image']
                 masks_tensor = pack['label']
