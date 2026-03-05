@@ -111,46 +111,46 @@ class MSD(Dataset):
             is_support=True
         )
         
-        if self.mode == "train":
-            # image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0)
-            # data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0)
-            # support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0)
-            # support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0)
+        # if self.mode == "train":
+        #     # image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0)
+        #     # data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0)
+        #     # support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0)
+        #     # support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0)
             
-            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
-            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
-            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
-            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
+        #     image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
+        #     data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
+        #     support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
+        #     support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
             
-            image_3d = tv_tensors.Image(image_3d)
-            data_seg_3d = tv_tensors.Mask(data_seg_3d)
-            support_image_3d = tv_tensors.Image(support_image_3d)
-            support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        #     image_3d = tv_tensors.Image(image_3d)
+        #     data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        #     support_image_3d = tv_tensors.Image(support_image_3d)
+        #     support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
             
-            (
-                image_3d,
-                data_seg_3d,
-                support_image_3d,
-                support_data_seg_3d
-            ) = self.transform(image_3d, data_seg_3d, support_image_3d, support_data_seg_3d)
+        #     (
+        #         image_3d,
+        #         data_seg_3d,
+        #         support_image_3d,
+        #         support_data_seg_3d
+        #     ) = self.transform(image_3d, data_seg_3d, support_image_3d, support_data_seg_3d)
             
-            image_3d = image_3d.unsqueeze(0)
-            data_seg_3d = data_seg_3d.unsqueeze(0)
-            support_image_3d = support_image_3d.unsqueeze(0)
-            support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
-        else:
-            # image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     image_3d = image_3d.unsqueeze(0)
+        #     data_seg_3d = data_seg_3d.unsqueeze(0)
+        #     support_image_3d = support_image_3d.unsqueeze(0)
+        #     support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
+        # else:
+        #     # image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     # data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     # support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     # support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
             
-            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        #     support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
             
-        image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
-        support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
+        # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
@@ -200,7 +200,16 @@ class MSD(Dataset):
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
-        image_3d = scaling(image_3d, scale=1)
+        # image_3d = scaling(image_3d, scale=1)
+        
+        image_3d = scaling(image_3d, scale=255)
+        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+
+        image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
+        data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
+        image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
+        data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
         
         return image_3d, data_seg_3d
     
