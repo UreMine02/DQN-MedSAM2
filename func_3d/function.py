@@ -7,7 +7,10 @@ import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.utils import draw_segmentation_masks, save_image
 import torchshow as ts
+
+
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -339,25 +342,27 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 if args.vis:
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    save_prefix = f"{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
-                    mask *= 2
-                    # ts.save(imgs_tensor[frame_idx], save_prefix + "image.png")
-                    # ts.overlay(
-                    #     [save_prefix + "image.png", pred_mask], [1, 0.4],
-                    #     save_as=save_prefix + "pred.png",
-                    #     cmap="jet"
-                    # )
-                    # ts.overlay(
-                    #     [save_prefix + "image.png", mask], [1, 0.4],
-                    #     save_as=save_prefix + "mask.png",
-                    #     cmap="jet"
-                    # )
-                    
-                    ts.overlay(
-                        [imgs_tensor[frame_idx], pred_mask, mask], [1, 0.4, 0.4],
-                        save_as=save_prefix + ".png",
-                        cmap="jet"
+                    save_prefix = f"{save_dir}/vis_new/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    # mask *= 2
+                    im = imgs_tensor[frame_idx]
+                    im = (im - im.min()) / (im.max() - im.min()) * 255
+                    im = im.to(torch.uint8)
+                    image_with_gt = draw_segmentation_masks(
+                        im, 
+                        masks=mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
                     )
+                    
+                    image_with_pred = draw_segmentation_masks(
+                        im, 
+                        masks=pred_mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
+                    )
+                    
+                    save_image(image_with_gt.float() / 255.0, save_prefix + "gt.png")
+                    save_image(image_with_pred.float() / 255.0, save_prefix + "pred.png")
 
             average_score(class_score)
             update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
