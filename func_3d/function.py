@@ -336,14 +336,19 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         fb_iou,
                     ) = eval_seg(pred, mask)
                     
+                    score_dict = score_per_class[f"{task}_{obj_id}"]
+                    score_dict["iou"] = torch.cat([score_dict["iou"], iou]) 
+                    score_dict["dice"] = torch.cat([score_dict["dice"], dice]) 
+                    score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou]) 
+                    
                     video_segments[frame_idx]["dice"] = dice.detach().cpu().item()
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice)
 
                 if args.vis:
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    os.makedirs(f"{save_dir}/vis", exist_ok=True)
-                    save_prefix = f"{save_dir}/vis/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    os.makedirs(f"{save_dir}/vis_lin", exist_ok=True)
+                    save_prefix = f"{save_dir}/vis_lin/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
                     # mask *= 2
                     im = imgs_tensor[frame_idx]
                     im = (im - im.min()) / (im.max() - im.min()) * 255
@@ -371,8 +376,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             instance_score["num_step"] += 1
             
             
-            volume_masks = torch.stack(volume_masks).flatten(1) # [D,H,W]
-            volume_preds = torch.stack(volume_preds).flatten(1) # [D,H,W]
+            volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+            volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
             
             masks[f"{task}_{obj_id}"].append(volume_masks)
             preds[f"{task}_{obj_id}"].append(volume_preds)
@@ -419,8 +424,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         df.to_csv(f"{csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
         print(f"Ablation save to {csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
-    # ths = np.arange(0, 1.0, 0.01)
-    ths = [0.5]
+    ths = np.arange(0, 1.0, 0.01)
+    # ths = [0.5]
     for name in preds.keys():
         best_iou = 0
         best_dice = 0
@@ -441,12 +446,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 dices = torch.cat([dices, dice])
                 fb_ious = torch.cat([fb_ious, fb_iou])
             
-            # print(dices)
             ious = ious.mean(dim=0, keepdim=True)
             dices = dices.mean(dim=0, keepdim=True)
             fb_ious = fb_ious.mean(dim=0, keepdim=True)
-            
-            # print(th, dices)
             
             if dices > best_dice:
                 best_iou = ious
@@ -474,11 +476,12 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             metrics_dict["dice"].item(),
             metrics_dict["fb_iou"].item(),
             metrics_dict["th"]
+            # 0.5
         ))
 
-        avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"]])
-        avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"]])
-        avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])
+        avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"]])#.mean(dim=0, keepdim=True)])
+        avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"]])#.mean(dim=0, keepdim=True)])
+        avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])#.mean(dim=0, keepdim=True)])
         avg["th"] = None
         
     # print(avg["iou"])
