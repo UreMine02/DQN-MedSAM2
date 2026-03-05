@@ -35,7 +35,15 @@ ckpt=(
     # output/output/msd_task08+no_agent+icl/2026-03-03-17-16-27/best.pth
 
     # output/output/msd_task03+no_agent+icl/2026-03-04-21-27-05/best.pth
-    output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
+    # output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
+
+    # output/output/msd_task04+no_agent+icl/2026-03-04-21-27-18/best.pth
+    # output/output/msd_task04+grpo+icl/2026-02-28-21-24-19/best.pth
+    # output/msd_task04+grpo+icl/2026-02-22-23-57-22/best.pth
+
+    # output/msd_task09+grpo+icl/2026-03-02-21-58-22/best.pth
+
+    output/msd_task10+grpo+icl/2026-02-24-15-34-45/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -48,7 +56,7 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task03" \
+            -task "Task10" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             # -no_agent
