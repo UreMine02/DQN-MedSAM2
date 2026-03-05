@@ -186,7 +186,7 @@ class MSD(Dataset):
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
                 s = image_3d.shape[-1] // (max_slices + 1)
-                slice_indices = np.linspace(0, image_3d.shape[-1], max_slices).round()
+                slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
