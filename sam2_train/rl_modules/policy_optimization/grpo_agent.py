@@ -161,8 +161,8 @@ class GRPOAgent(BasePOAgent):
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
-        if not training:
-            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+        # if not training:
+        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
             # main_action_idx = torch.argmax(valid_probs)

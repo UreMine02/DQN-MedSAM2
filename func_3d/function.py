@@ -424,8 +424,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         df.to_csv(f"{csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
         print(f"Ablation save to {csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
 
-    ths = np.arange(0, 1.0, 0.01)
-    # ths = [0.5]
+    # ths = np.arange(0, 1.0, 0.01)
+    ths = [0.5]
     for name in preds.keys():
         best_iou = 0
         best_dice = 0
