@@ -14,13 +14,8 @@
 # conda activate rlsam2
 
 ckpt=(
-    output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
+    # output/msd_task02+grpo+icl/2026-02-22-10-36-54/best.pth
     # output/msd_task02+no_agent+icl+freeze/2026-02-19-20-33-41/best.pth
-    # output/msd_task02+grpo+icl+agent_only/2026-02-22-15-36-52/best.pth
-
-    # output/msd_task02+grpo+icl/2026-02-26-12-37-46/best.pth
-    # output/msd_task02+grpo+icl/2026-02-26-19-17-03/best.pth
-    # output/msd_task02+grpo+icl/2026-02-26-17-39-36/best.pth
 
     # output/sarcoma+grpo+icl/2026-03-03-22-24-08/best.pth
     # output/sarcoma+no_agent+icl/2026-03-03-20-51-26/best.pth
@@ -30,9 +25,20 @@ ckpt=(
 
     # output/msd_task06+grpo+icl/2026-03-03-22-25-28/best.pth
     # output/msd_task06+no_agent+icl/2026-03-03-20-51-01/best.pth
+
+    # output/output/msd_task05+grpo+icl/2026-02-28-17-32-43/best.pth
+    # output/output/msd_task05+no_agent+icl/2026-03-04-21-27-17/best.pth
+
+    # output/output/msd_task07+grpo+icl/2026-03-02-22-01-45/best.pth
+    # output/output/msd_task07+no_agent+icl/2026-03-03-16-50-01/best.pth
+
+    # output/output/msd_task08+no_agent+icl/2026-03-03-17-16-27/best.pth
+
+    # output/output/msd_task03+no_agent+icl/2026-03-04-21-27-05/best.pth
+    output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
@@ -42,11 +48,11 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task02" \
+            -task "Task03" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            # -vis \
             # -no_agent
+            # -vis \
             # -ablation \
     done
 done
