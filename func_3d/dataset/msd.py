@@ -116,8 +116,8 @@ class MSD(Dataset):
         # image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
         # data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
         
-        if self.mode == "train":
-        # if False:
+        # if self.mode == "train":
+        if False:
             image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
             data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
             support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
@@ -186,7 +186,7 @@ class MSD(Dataset):
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
                 s = image_3d.shape[-1] // (max_slices + 1)
-                slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
+                slice_indices = np.linspace(0, image_3d.shape[-1], max_slices).round()
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:

@@ -129,8 +129,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # Calculate the loss
                     obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                     iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                    # pred_mask = (torch.sigmoid(pred) > 0.5).float()
-                    iou_gt = iou_score(pred, mask, smoothing=1e-8)
+                    pred_mask = (torch.sigmoid(pred) > 0.5).float()
+                    iou_gt = iou_score(pred_mask, mask, smoothing=1e-8)
                     dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                     class_loss["num_step"] += 1
                     # Update the loss of the class
@@ -318,8 +318,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                     if mask is not None:
                         mask = mask.to(dtype=torch.float32, device=GPUdevice)                        
-                        # volume_masks.append(mask)
-                        # volume_preds.append(pred)
+                        volume_masks.append(mask)
+                        volume_preds.append(pred)
                         
                         (
                             iou,
@@ -343,18 +343,20 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             cmap="jet"
                         )
                 
-                # volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
-                # volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+                volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+                volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
                 
-                # (
-                #     iou,
-                #     dice,
-                #     fb_iou,
-                # ) = eval_seg(volume_preds, volume_masks)
+                (
+                    iou,
+                    dice,
+                    fb_iou,
+                ) = eval_seg(volume_preds, volume_masks)
 
-                # iou = iou.mean(dim=0, keepdim=True)
-                # dice = dice.mean(dim=0, keepdim=True)
-                # fb_iou = fb_iou.mean(dim=0, keepdim=True)
+                iou = iou.mean(dim=0, keepdim=True)
+                dice = dice.mean(dim=0, keepdim=True)
+                fb_iou = fb_iou.mean(dim=0, keepdim=True)
+                
+                print(f"Name: {name}_{obj_id} Dice score: {dice.item()} IoU score: {iou.item()}")
                 
                 score_dict = score_per_class[f"{task}_{obj_id}"]
 
@@ -364,8 +366,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 
                 # masks[f"{task}_{obj_id}"].append(volume_masks)
                 # preds[f"{task}_{obj_id}"].append(volume_preds)
-                
-                # print(f"Name: {task}_{obj_id} Dice score: {dice_score} IoU score: {iou_score}")
 
             pbar.update()
 
