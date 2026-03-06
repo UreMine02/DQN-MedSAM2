@@ -34,21 +34,23 @@ ckpt=(
     # output/output/msd_task07+no_agent+icl/2026-03-03-16-50-01/best.pth # new + rot
 
     # output/output/msd_task08+no_agent+icl/2026-03-03-17-16-27/best.pth # new + rot
-
-    # output/output/msd_task03+no_agent+icl/2026-03-04-21-27-05/best.pth
-    # output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
+    # output/output/msd_task08+grpo+icl/2026-02-28-19-16-27/best.pth
 
     # output/output/msd_task04+no_agent+icl/2026-03-04-21-27-18/best.pth # new + rot
     # output/output/msd_task04+grpo+icl/2026-02-28-21-24-19/best.pth
     # output/msd_task04+grpo+icl/2026-02-22-23-57-22/best.pth
 
-    # output/msd_task09+grpo+icl/2026-03-02-21-58-22/best.pth
+    # output/msd_task10+no_agent+icl/2026-03-04-21-14-49/best.pth
+    # output/msd_task10+grpo+icl/2026-03-06-00-16-26/epoch_24_dice0.5176.pth
 
-    # output/msd_task10+grpo+icl/2026-02-24-15-34-45/best.pth
-    output/msd_task10+grpo+icl/2026-03-06-00-16-26/epoch_42_dice0.5443.pth
+    
+    # output/output/msd_task03+no_agent+icl/2026-03-04-21-27-05/best.pth
+    # output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/best.pth
+    # output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/epoch_0_dice0.5179.pth
+    output/output/msd_task03+grpo+icl/2026-02-28-19-16-27/epoch_29_dice0.6861.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for pretrain in ${ckpt[@]};
 do
@@ -58,11 +60,11 @@ do
             -pretrain $pretrain \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task10" \
+            -task "Task03" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
+            # -ablation \
             # -no_agent
             # -vis \
-            # -ablation \
     done
 done
