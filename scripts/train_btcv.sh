@@ -16,6 +16,7 @@ conda activate rlsam2
 
 EXP=btcv+grpo+icl
 
+sleep 2h
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
