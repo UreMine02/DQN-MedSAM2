@@ -1,11 +1,10 @@
 declare -a DATASET=(
+    msd03
+    msd04
     msd05
     msd06
     msd07
     msd08
-    msd01
-    msd03
-    msd04
 )
 
 for dataset in ${DATASET[@]};

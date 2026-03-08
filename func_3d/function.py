@@ -230,176 +230,137 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     agent_act = not args.no_agent
     # lossfunc = paper_loss
 
-    with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
-        for packs in val_loader:
-            whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
-            task = packs["task"][0]
-            name = packs["name"][0]
-            # cls_id = packs["obj_id"][0]
-            # Log initial slice stats for validation
-            # print(f"[VALIDATION PACK] Name: {name}")
-            # print(f"  Query Total Slices: {whole_masks_tensor.shape[0]}, Classes: {torch.unique(whole_masks_tensor)}")
-            # print(f"  Support Total Slices: {whole_support_masks_tensor.shape[0]}, Classes: {torch.unique(whole_support_masks_tensor)}")
+    # with tqdm(total=n_val, desc='Validation round', unit='batch', leave=False) as pbar:
+    for packs in val_loader:
+        whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
+        whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
+        whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
+        whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
+        task = packs["task"][0]
+        name = packs["name"][0]
+        # cls_id = packs["obj_id"][0]
+        # Log initial slice stats for validation
+        # print(f"[VALIDATION PACK] Name: {name}")
+        # print(f"  Query Total Slices: {whole_masks_tensor.shape[0]}, Classes: {torch.unique(whole_masks_tensor)}")
+        # print(f"  Support Total Slices: {whole_support_masks_tensor.shape[0]}, Classes: {torch.unique(whole_support_masks_tensor)}")
 
-            obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
-            instance_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
-            for obj_id in obj_list:
-                pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
-                                      obj_id=obj_id, video_length=None, num_support=args.num_support)
-                if pack is None:
-                    print(f"[Validation] [PACK]: No valid for pack for obj_id={obj_id}. Skipping...")
-                    # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
-                    # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
-                    continue
-                if f"{task}_{obj_id}" not in score_per_class.keys():
-                    score_per_class[f"{task}_{obj_id}"] = {
-                        "iou": torch.FloatTensor([]).to(device=GPUdevice),
-                        "dice": torch.FloatTensor([]).to(device=GPUdevice),
-                        "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
-                    }
-                    preds[f"{task}_{obj_id}"] = []
-                    masks[f"{task}_{obj_id}"] = []
+        obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
+        instance_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
+        for obj_id in obj_list:
+            pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
+                                    obj_id=obj_id, video_length=None, num_support=args.num_support)
+            if pack is None:
+                print(f"[Validation] [PACK]: No valid for pack for obj_id={obj_id}. Skipping...")
+                # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
+                # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
+                continue
+            if f"{task}_{obj_id}" not in score_per_class.keys():
+                score_per_class[f"{task}_{obj_id}"] = {
+                    "iou": torch.FloatTensor([]).to(device=GPUdevice),
+                    "dice": torch.FloatTensor([]).to(device=GPUdevice),
+                    "fb_iou": torch.FloatTensor([]).to(device=GPUdevice),
+                }
+                preds[f"{task}_{obj_id}"] = []
+                masks[f"{task}_{obj_id}"] = []
 
-                imgs_tensor = pack['image']
-                masks_tensor = pack['label']
+            imgs_tensor = pack['image']
+            masks_tensor = pack['label']
 
-                # selected_support_frames = torch.randint(0, len(masks_tensor), size=(10,)).tolist()
-                # support_imgs_tensor = pack["image"][selected_support_frames]
-                # support_masks_tensor = pack["label"][selected_support_frames]
+            # selected_support_frames = torch.randint(0, len(masks_tensor), size=(10,)).tolist()
+            # support_imgs_tensor = pack["image"][selected_support_frames]
+            # support_masks_tensor = pack["label"][selected_support_frames]
 
-                support_imgs_tensor = pack["support_image"]
-                support_masks_tensor = pack["support_label"]
-                # support_bbox_dict = pack["support_bbox"]
-                if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
-                    print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                    continue  # Skip empty tensors
+            support_imgs_tensor = pack["support_image"]
+            support_masks_tensor = pack["support_label"]
+            # support_bbox_dict = pack["support_bbox"]
+            if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
+                print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                continue  # Skip empty tensors
 
-                if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                    print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                    continue
+            if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
+                print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                continue
 
-                train_state = net.val_init_state(
-                    args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
-                )
+            train_state = net.val_init_state(
+                args=args,
+                imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
+            )
 
-                with torch.no_grad():
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                        for frame_idx in range(support_masks_tensor.shape[0]):
-                            mask = support_masks_tensor[frame_idx]
-                            _, _, _ = net.train_add_new_mask(
-                                inference_state=train_state,
-                                frame_idx=frame_idx,
-                                obj_id=obj_id,
-                                mask=mask.to(device=GPUdevice),
-                            )
+            with torch.no_grad():
+                with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    for frame_idx in range(support_masks_tensor.shape[0]):
+                        mask = support_masks_tensor[frame_idx]
+                        _, _, _ = net.train_add_new_mask(
+                            inference_state=train_state,
+                            frame_idx=frame_idx,
+                            obj_id=obj_id,
+                            mask=mask.to(device=GPUdevice),
+                        )
 
-                        video_segments = {}  # video_segments contains the per-frame segmentation results
+                    video_segments = {}  # video_segments contains the per-frame segmentation results
 
-                        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act):
-                            video_segments[out_frame_idx] = {
-                                out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
-                                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
-                                for i, out_obj_id in enumerate(out_obj_ids)
-                            }
+                    for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in net.train_propagate_in_video(train_state, agent_act=agent_act):
+                        video_segments[out_frame_idx] = {
+                            out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
+                            "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
+                            for i, out_obj_id in enumerate(out_obj_ids)
+                        }
 
-                # Record the loss in this step
-                volume_masks = []
-                volume_preds = []
-                dices = torch.FloatTensor([]).to(device=GPUdevice)
-                ious = torch.FloatTensor([]).to(device=GPUdevice)
-                fbious = torch.FloatTensor([]).to(device=GPUdevice)
-                for frame_idx in video_segments.keys():
-                    pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
-                    mask = video_segments[frame_idx][obj_id]["image_label"]
+            # Record the loss in this step
+            volume_masks = []
+            volume_preds = []
+            dices = torch.FloatTensor([]).to(device=GPUdevice)
+            ious = torch.FloatTensor([]).to(device=GPUdevice)
+            fbious = torch.FloatTensor([]).to(device=GPUdevice)
+            for frame_idx in video_segments.keys():
+                pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
+                mask = video_segments[frame_idx][obj_id]["image_label"]
+                
+                if mask is not None:
+                    mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                    # masks[f"{task}_{obj_id}"].append(mask.cpu())
+                    # preds[f"{task}_{obj_id}"].append(pred.cpu())
                     
-                    if mask is not None:
-                        mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                        # masks[f"{task}_{obj_id}"].append(mask.cpu())
-                        # preds[f"{task}_{obj_id}"].append(pred.cpu())
-                        
-                        volume_masks.append(mask)
-                        volume_preds.append(pred)
-                        
-                        # (
-                        #     iou,
-                        #     dice,
-                        #     fb_iou,
-                        # ) = eval_seg(pred, mask)
+                    # volume_masks.append(mask)
+                    # volume_preds.append(pred)
+                    
+                    (
+                        iou,
+                        dice,
+                        fb_iou,
+                    ) = eval_seg(pred, mask)
 
-                        # ious = torch.cat([ious, iou.detach()])
-                        # dices = torch.cat([dices, dice.detach()])
-                        # fbious = torch.cat([fbious, fb_iou.detach()])
-                    else:
-                        mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
-                
-                volume_masks = torch.stack(volume_masks).flatten(1) # [D,H,W]
-                volume_preds = torch.stack(volume_preds).flatten(1) # [D,H,W]
-                
-                (
-                    iou,
-                    dice,
-                    fb_iou,
-                ) = eval_seg(volume_preds, volume_masks)
-
-                iou = iou.mean(dim=0, keepdim=True)
-                dice = dice.mean(dim=0, keepdim=True)
-                fb_iou = fb_iou.mean(dim=0, keepdim=True)
-                
-                score_dict = score_per_class[f"{task}_{obj_id}"]
-
-                score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
-                score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
-                score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
-                
-                masks[f"{task}_{obj_id}"].append(volume_masks)
-                preds[f"{task}_{obj_id}"].append(volume_preds)
-                
-                # print(f"Name: {task}_{obj_id} Dice score: {dice_score} IoU score: {iou_score}")
-
-            pbar.update()
-
-    # ths = np.arange(0, 1.0, 0.01)
-    # # ths = [0.5]s
-    # for name in preds.keys():
-    #     best_iou = 0
-    #     best_dice = 0
-    #     best_fbiou = 0
-    #     best_th = ths[0]
-        
-    #     for th in ths:
-    #         ious = torch.FloatTensor([]).to(device=GPUdevice)
-    #         dices = torch.FloatTensor([]).to(device=GPUdevice)
-    #         fb_ious = torch.FloatTensor([]).to(device=GPUdevice)
+                    ious = torch.cat([ious, iou.detach()])
+                    dices = torch.cat([dices, dice.detach()])
+                    fbious = torch.cat([fbious, fb_iou.detach()])
+                else:
+                    mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
             
-    #         for i in range(len(preds[name])):
-    #             pred = preds[name][i].to(GPUdevice)
-    #             mask = masks[name][i].to(GPUdevice)
-    #             iou, dice, fb_iou = eval_seg(pred, mask, thr=th)
-                
-    #             ious = torch.cat([ious, iou])
-    #             dices = torch.cat([dices, dice])
-    #             fb_ious = torch.cat([fb_ious, fb_iou])
+            # volume_masks = torch.stack(volume_masks).flatten(1) # [D,H,W]
+            # volume_preds = torch.stack(volume_preds).flatten(1) # [D,H,W]
             
-    #         # print(ious)
-    #         ious = ious.mean(dim=0, keepdim=True)
-    #         dices = dices.mean(dim=0, keepdim=True)
-    #         fb_ious = fb_ious.mean(dim=0, keepdim=True)
-    #         # print(th, ious)
+            # (
+            #     iou,
+            #     dice,
+            #     fb_iou,
+            # ) = eval_seg(volume_preds, volume_masks)
+
+            # iou = iou.mean(dim=0, keepdim=True)
+            # dice = dice.mean(dim=0, keepdim=True)
+            # fb_iou = fb_iou.mean(dim=0, keepdim=True)
             
-    #         if dices > best_dice:
-    #             best_iou = ious
-    #             best_dice = dices
-    #             best_fbiou = fb_ious
-    #             best_th = th
-                
-    #     score_per_class[name]["iou"] = best_iou
-    #     score_per_class[name]["dice"] = best_dice
-    #     score_per_class[name]["fb_iou"] = best_fbiou
-    #     score_per_class[name]["th"] = best_th
+            score_dict = score_per_class[f"{task}_{obj_id}"]
+
+            score_dict["iou"] = torch.cat([score_dict["iou"], ious.detach()])
+            score_dict["dice"] = torch.cat([score_dict["dice"], dices.detach()])
+            score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fbious.detach()])
+            
+            masks[f"{task}_{obj_id}"].append(volume_masks)
+            preds[f"{task}_{obj_id}"].append(volume_preds)
+            
+            # print(f"Name: {task}_{obj_id} Dice score: {dice_score} IoU score: {iou_score}")
+
+            # pbar.update()
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
