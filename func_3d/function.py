@@ -151,11 +151,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 optimizer.zero_grad()
                 avg_loss.backward()
                 grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                if args.distributed:
-                    for param in net.parameters():
-                        if param.grad is not None:
-                            torch.distributed.all_reduce(param.grad.data, op=torch.distributed.ReduceOp.SUM)
-                            param.grad.data /= torch.distributed.get_world_size()
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
