@@ -322,9 +322,15 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             fb_iou,
                         ) = eval_seg(pred, mask)
 
-                        ious = torch.cat([ious, iou.detach()])
-                        dices = torch.cat([dices, dice.detach()])
-                        fbious = torch.cat([fbious, fb_iou.detach()])
+                        # ious = torch.cat([ious, iou.detach()])
+                        # dices = torch.cat([dices, dice.detach()])
+                        # fbious = torch.cat([fbious, fb_iou.detach()])
+                        
+                        score_dict = score_per_class[f"{task}_{obj_id}"]
+
+                        score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
+                        score_dict["dice"] = torch.cat([score_dict["dice"], dice.detach()])
+                        score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
 
@@ -338,26 +344,26 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             cmap="jet"
                         )
                 
-                volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
-                volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+                # volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+                # volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
                 
-                (
-                    iou,
-                    dice,
-                    fb_iou,
-                ) = eval_seg(volume_preds, volume_masks)
+                # (
+                #     iou,
+                #     dice,
+                #     fb_iou,
+                # ) = eval_seg(volume_preds, volume_masks)
 
-                iou = iou.mean(dim=0, keepdim=True)
-                dice = dice.mean(dim=0, keepdim=True)
-                fb_iou = fb_iou.mean(dim=0, keepdim=True)
+                # iou = iou.mean(dim=0, keepdim=True)
+                # dice = dice.mean(dim=0, keepdim=True)
+                # fb_iou = fb_iou.mean(dim=0, keepdim=True)
                 
-                print(f"Name: {name}_{obj_id} Dice score: {dice.item()} IoU score: {iou.item()}")
+                # print(f"Name: {name}_{obj_id} Dice score: {dice.item()} IoU score: {iou.item()}")
                 
-                score_dict = score_per_class[f"{task}_{obj_id}"]
+                # score_dict = score_per_class[f"{task}_{obj_id}"]
 
-                score_dict["iou"] = torch.cat([score_dict["iou"], ious.detach()])
-                score_dict["dice"] = torch.cat([score_dict["dice"], dices.detach()])
-                score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fbious.detach()])
+                # score_dict["iou"] = torch.cat([score_dict["iou"], ious.detach()])
+                # score_dict["dice"] = torch.cat([score_dict["dice"], dices.detach()])
+                # score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fbious.detach()])
                 
                 # masks[f"{task}_{obj_id}"].append(volume_masks)
                 # preds[f"{task}_{obj_id}"].append(volume_preds)
@@ -420,9 +426,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             0.5
         ))
 
-        avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"]])
-        avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"]])
-        avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"]])
+        avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"].mean(dim=0, keepdim=True)])
+        avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"].mean(dim=0, keepdim=True)])
+        avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"].mean(dim=0, keepdim=True)])
         avg["th"] = 0.5
         
         if args.wandb_enabled:

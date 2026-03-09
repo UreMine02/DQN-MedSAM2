@@ -14,6 +14,7 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
+    # output/msd_task05+grpo+icl/2026-03-08-21-48-51/best.pth
     output/msd_task05+grpo+icl/2026-03-08-21-48-51/epoch_0_dice0.4411.pth
     output/msd_task05+grpo+icl/2026-03-08-21-48-51/epoch_1_dice0.5408.pth
     output/msd_task05+grpo+icl/2026-03-08-21-48-51/epoch_2_dice0.5816.pth
