@@ -149,11 +149,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 optimizer.zero_grad()
                 avg_loss.backward()
                 grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                # if args.distributed:
-                #     for param in net.parameters():
-                #         if param.grad is not None:
-                #             torch.distributed.all_reduce(param.grad.data, op=torch.distributed.ReduceOp.SUM)
-                #             param.grad.data /= torch.distributed.get_world_size()
                 optimizer.step()
 
                 metric_logger.update(loss=loss_value, **losses_reduced)
@@ -306,8 +301,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         }
 
             # Record the loss in this step
-            volume_masks = []
-            volume_preds = []
             dices = torch.FloatTensor([]).to(device=GPUdevice)
             ious = torch.FloatTensor([]).to(device=GPUdevice)
             fbious = torch.FloatTensor([]).to(device=GPUdevice)
@@ -354,11 +347,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             # dice = dice.mean(dim=0, keepdim=True)
             # fb_iou = fb_iou.mean(dim=0, keepdim=True)
             
-            score_dict = score_per_class[f"{task}_{obj_id}"]
+            # score_dict = score_per_class[f"{task}_{obj_id}"]
 
-            score_dict["iou"] = torch.cat([score_dict["iou"], ious.detach()])
-            score_dict["dice"] = torch.cat([score_dict["dice"], dices.detach()])
-            score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fbious.detach()])
+            # score_dict["iou"] = torch.cat([score_dict["iou"], ious.detach()])
+            # score_dict["dice"] = torch.cat([score_dict["dice"], dices.detach()])
+            # score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fbious.detach()])
             
             # masks[f"{task}_{obj_id}"].append(volume_masks)
             # preds[f"{task}_{obj_id}"].append(volume_preds)

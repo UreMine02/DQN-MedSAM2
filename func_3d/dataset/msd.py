@@ -164,7 +164,7 @@ class MSD(Dataset):
         if self.mode == "train" and not is_support:
             pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
             
-            from_idx, to_idx = pos_slices.min() - (max_slices - 1), pos_slices.max() + (max_slices - 1)
+            from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)
             image_3d = image_3d[:, :, max(from_idx, 0):to_idx]
             data_seg_3d = data_seg_3d[:, :, max(from_idx, 0):to_idx]
         else:
