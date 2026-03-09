@@ -41,7 +41,6 @@ def train(rank=0, world_size=0):
 
     if args.distributed:
         setup(rank, world_size)
-        # os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
         torch.cuda.set_device(rank)
         GPUdevice = torch.device('cuda', rank)
     else:

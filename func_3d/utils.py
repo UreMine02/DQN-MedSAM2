@@ -553,8 +553,8 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
         print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
         return None
     min_slice, max_slice = channels_with_true.min(), channels_with_true.max()
-    obj_mask = obj_mask[min_slice:max_slice+1]
-    obj_image = images_tensor[min_slice:max_slice+1]
+    obj_mask = obj_mask#[min_slice:max_slice+1]
+    obj_image = images_tensor#[min_slice:max_slice+1]
 
     if video_length is not None and obj_mask.shape[0] > video_length:
         starting_frame = np.random.randint(low=0, high=obj_mask.shape[0]-video_length)
