@@ -208,7 +208,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
     if args.distributed:
-        net = net.module
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
