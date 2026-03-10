@@ -276,7 +276,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 )
 
                 with torch.no_grad():
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                    with torch.cuda.amp.autocast():
                         for frame_idx in range(support_masks_tensor.shape[0]):
                             mask = support_masks_tensor[frame_idx]
                             _, _, _ = net.train_add_new_mask(
