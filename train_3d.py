@@ -35,8 +35,12 @@ class SAM2Wrapper(nn.Module):
         
         self.net = net
     
-    def forward(self, args, optimizer, nice_train_loader, epoch, rank=0):
-        output = function.train_sam(args, self.net, optimizer, nice_train_loader, epoch, rank=rank)
+    def forward(self, args, loader, epoch, optimizer=None, rank=0, training=True):
+        if training:
+            assert optimizer is not None
+            output = function.train_sam(args, self.net, optimizer, loader, epoch, rank=rank)
+        else:
+            output = function.validation_sam(args, loader, epoch, self.net, rank=rank)
         return output
 
 def setup(rank, world_size):
@@ -151,7 +155,7 @@ def train(rank=0, world_size=0):
             mae_loss,
             bce_loss,
             agent_loss
-        ) = net(args, optimizer, nice_train_loader, epoch, rank=rank)
+        ) = net(args, nice_train_loader, epoch, optimizer=optimizer, rank=rank, training=True)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
@@ -177,7 +181,7 @@ def train(rank=0, world_size=0):
         net.eval()
         new_best = False
         if epoch % args.val_freq == 0 or epoch == args.ep-1:
-            iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
+            iou, dice = net(args, nice_test_loader, epoch, net, rank=rank, training=False)
 
             if args.distributed:
                 dist.all_reduce(iou), dist.all_reduce(dice)
