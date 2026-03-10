@@ -114,7 +114,7 @@ def train(rank=0, world_size=0):
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.net.agent.to_distributed(rank=rank)
-        print("Wrapped agent for distributed training")
+            print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
