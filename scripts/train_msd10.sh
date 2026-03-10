@@ -24,7 +24,7 @@ python train_3d.py \
     -dataset msd \
     -task Task10 \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
-    -lr 2e-4 \
+    -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
     -q_updates_per_step 5 \

@@ -16,27 +16,10 @@ conda init
 conda activate rlsam2
 
 declare -a ckpt=(
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_0_dice0.4087.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_1_dice0.4827.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_2_dice0.4879.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_3_dice0.5046.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_4_dice0.4988.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_5_dice0.4983.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_6_dice0.5405.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_7_dice0.5431.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_8_dice0.5441.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_9_dice0.5253.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_10_dice0.4989.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_11_dice0.4807.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_12_dice0.5277.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_13_dice0.5470.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_14_dice0.5667.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_15_dice0.5499.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_16_dice0.5369.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_17_dice0.5123.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_18_dice0.5641.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_19_dice0.5502.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_20_dice0.5659.pth
+    # NOTE: FINAL
+    # output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_14_dice0.5667.pth
+
+    # NOTE: TESTING
     output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_21_dice0.5718.pth
     output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_22_dice0.5671.pth
     output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_23_dice0.5417.pth
