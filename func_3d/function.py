@@ -73,9 +73,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         for obj_id in obj_list:
             pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
                                     obj_id=obj_id, video_length=args.video_length, num_support=args.num_support)
-            if pack is None:
-                print(f"[PACK SKIP] obj_id={obj_id}\n")
-                continue
+            # if pack is None:
+            #     print(f"[PACK SKIP] obj_id={obj_id}\n")
+            #     continue
             # torch.cuda.empty_cache()
             if obj_id not in dice_loss_per_class.keys():
                 dice_loss_per_class[obj_id] = {"dice_loss":0, "num_step": 0}
@@ -84,19 +84,19 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
             support_imgs_tensor = pack["support_image"]
             support_masks_tensor = pack["support_label"]
-            if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
-                print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                continue  # Skip empty tensors
-            if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-                print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-                continue
+            # if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
+            #     print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+            #     continue  # Skip empty tensors
+            # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
+            #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+            #     continue
 
             train_state = net.train_init_state(
                 args=args,
                 imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
             )
 
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+            with torch.cuda.amp.autocast():
                 for frame_idx in range(support_masks_tensor.shape[0]):
                     mask = support_masks_tensor[frame_idx]
                     _, _, _ = net.train_add_new_mask(
