@@ -547,19 +547,26 @@ def average_score(score_dict):
     score_dict["total_score"] += score_dict["dice_score"] + score_dict["iou_score"]
 
 def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
+    # return {
+    #     "image": images_tensor,
+    #     "label": masks_tensor,
+    #     "support_image": support_images_tensor,
+    #     "support_label": support_masks_tensor,
+    # }
+    
     obj_mask = masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
-    if channels_with_true.numel() == 0:
-        print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
-        return None
-    min_slice, max_slice = channels_with_true.min(), channels_with_true.max()
+    # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
+    # if channels_with_true.numel() == 0:
+    #     print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
+    #     return None
+    # min_slice, max_slice = channels_with_true.min(), channels_with_true.max()
     obj_mask = obj_mask#[min_slice:max_slice+1]
     obj_image = images_tensor#[min_slice:max_slice+1]
 
-    if video_length is not None and obj_mask.shape[0] > video_length:
-        starting_frame = np.random.randint(low=0, high=obj_mask.shape[0]-video_length)
-        obj_mask = obj_mask[starting_frame:starting_frame+video_length]
-        obj_image = obj_image[starting_frame:starting_frame+video_length]
+    # if video_length is not None and obj_mask.shape[0] > video_length:
+    #     starting_frame = np.random.randint(low=0, high=obj_mask.shape[0]-video_length)
+    #     obj_mask = obj_mask[starting_frame:starting_frame+video_length]
+    #     obj_image = obj_image[starting_frame:starting_frame+video_length]
     
     # channels_class_4 = torch.argwhere(torch.any(obj_mask == 4, axis=(1, 2))).flatten()
     # channels_class_12 = torch.argwhere(torch.any(obj_mask == 12, axis=(1, 2))).flatten()
@@ -596,21 +603,21 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
     #     class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
     obj_mask = support_masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
-    if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
-        print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
-        return None
-    if len(channels_with_true) > num_support:
-        selected_indices = torch.tensor(np.random.choice(channels_with_true.cpu(), size=num_support, replace=False))
-    else:
-        selected_indices = channels_with_true
+    # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
+    # if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
+    #     print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
+    #     return None
+    # if len(channels_with_true) > num_support:
+    #     selected_indices = torch.tensor(np.random.choice(channels_with_true.cpu(), size=num_support, replace=False))
+    # else:
+    #     selected_indices = channels_with_true
 
-    selected_obj_mask = obj_mask[selected_indices, ...]
-    selected_obj_image = support_images_tensor[selected_indices, ...]
+    selected_obj_mask = obj_mask#[selected_indices, ...]
+    selected_obj_image = support_images_tensor#[selected_indices, ...]
     # Support slices after resampling
     # Debugging slice counts for obj_id 4 and 12
-    if obj_id in [4, 12]:
-        num_slices = torch.sum(selected_obj_mask == 1, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
+    # if obj_id in [4, 12]:
+        # num_slices = torch.sum(selected_obj_mask == 1, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"[EXTRACT SUPPORT - AFTER RESAMPLING] Class {obj_id}")
         # print(f"  Total Slices: {num_slices}")
 

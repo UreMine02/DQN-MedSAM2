@@ -192,7 +192,7 @@ class SAM2VideoPredictor(SAM2Base):
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty
         }
-        
+
         return inference_state
 
     # @torch.inference_mode()
@@ -1587,7 +1587,7 @@ class SAM2VideoPredictor(SAM2Base):
                 gt_masks = gt_masks.to(torch.float32)
 
                 loss_before = compute_loss(pred_masks, gt_masks, inference_state)
-        
+
         if agent_act or generate_rl_samples:
             state, action_frame_map = prepare_rl_state(
                 current_vision_feats,
@@ -1669,7 +1669,7 @@ class SAM2VideoPredictor(SAM2Base):
                     "reward": reward,
                     "log_probs": log_prob,
                 }
-                
+
                 # print(replay_instance_info["action"], replay_instance_info["reward"])
 
                 self.agent.add_new_instance_to_group(**replay_instance_info)
@@ -1818,3 +1818,24 @@ class SAM2VideoPredictor(SAM2Base):
         )
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
+
+    def forward(self, imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act, device="cpu"):
+        for frame_idx in range(support_masks_tensor.shape[0]):
+            mask = support_masks_tensor[frame_idx]
+            _, _, _ = self.train_add_new_mask(
+                inference_state=train_state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask.to(device=device),
+            )
+
+        video_segments = {}  # video_segments contains the per-frame segmentation results
+
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in self.train_propagate_in_video(train_state, agent_act=agent_act):
+            video_segments[out_frame_idx] = {
+                out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
+                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+
+        return video_segments

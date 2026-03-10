@@ -18,33 +18,8 @@ conda activate rlsam2
 declare -a ckpt=(
     # NOTE: FINAL
     # output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_14_dice0.5667.pth
-
-    # NOTE: TESTING
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_21_dice0.5718.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_22_dice0.5671.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_23_dice0.5417.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_24_dice0.5717.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_25_dice0.5779.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_26_dice0.5628.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_27_dice0.5435.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_28_dice0.5764.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_29_dice0.5392.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_30_dice0.5656.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_31_dice0.5865.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_32_dice0.5733.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_33_dice0.5645.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_34_dice0.5636.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_35_dice0.5451.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_36_dice0.5706.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_37_dice0.5646.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_38_dice0.5887.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_39_dice0.5654.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_40_dice0.5774.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_41_dice0.5738.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_42_dice0.5798.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_43_dice0.5770.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_44_dice0.5754.pth
-    output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_45_dice0.5663.pth
+    
+    output/msd_task10+grpo+icl/2026-03-10-19-22-49/best.pth
 )
 
 declare -a dataset=(
@@ -60,13 +35,13 @@ declare -a dataset=(
 
 for idx in ${!ckpt[@]}
 do
-    for shot in 5;
+    for shot in 1 5;
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task07" \
+            -task "Task10" \
             -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
             -num_support $shot
             # -no_agent

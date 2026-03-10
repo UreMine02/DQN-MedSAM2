@@ -121,6 +121,7 @@ class PerceiverResampler(nn.Module):
         self.dropout = dropout
         
     def attention(self, x: torch.Tensor, context: torch.Tensor):
+        # attn = self.attn(x, context=context)
         attn = self.attn(x, context, context, need_weights=False)[0]
         return attn
         

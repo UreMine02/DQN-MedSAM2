@@ -21,12 +21,27 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as torch_optim
+import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from timm import optim as timm_optim
 
 import numpy as np
+
+class SAM2Wrapper(nn.Module):
+    def __init__(self, net):
+        super().__init__()
+        
+        self.net = net
+    
+    def forward(self, args, loader, epoch, optimizer=None, rank=0, training=True):
+        if training:
+            assert optimizer is not None
+            output = function.train_sam(args, self.net, optimizer, loader, epoch, rank=rank)
+        else:
+            output = function.validation_sam(args, loader, epoch, self.net, rank=rank)
+        return output
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -37,21 +52,25 @@ def cleanup():
     dist.destroy_process_group()
 
 def train(rank=0, world_size=0):
+    print("rank", rank)
     args = cfg.parse_args()
 
     if args.distributed:
         setup(rank, world_size)
-        torch.cuda.set_device(rank)
         GPUdevice = torch.device('cuda', rank)
+        torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
+
+    print("device", GPUdevice)
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
     agent = getattr(net, "agent", None)
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
-
+        
+    print(f"Net to GPU {GPUdevice}")
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
@@ -83,12 +102,14 @@ def train(rank=0, world_size=0):
     print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
+    # net = SAM2Wrapper(net)
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
-        print("Wrapped agent for distributed training")
+            # net.module.net.agent.to_distributed(rank=rank)
+            print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
@@ -129,14 +150,15 @@ def train(rank=0, world_size=0):
             mae_loss,
             bce_loss,
             agent_loss
-        ) = function.train_sam(
-            args,
-            net,
-            optimizer,
-            nice_train_loader,
-            epoch,
-            rank=rank
-        )
+        ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
+        # (
+        #     loss,
+        #     dice_loss,
+        #     focal_loss,
+        #     mae_loss,
+        #     bce_loss,
+        #     agent_loss
+        # ) = net(args, nice_train_loader, epoch, optimizer=optimizer, rank=rank, training=True)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
@@ -153,13 +175,14 @@ def train(rank=0, world_size=0):
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
 
-        if args.distributed:
-            torch.distributed.barrier()
+        # if args.distributed:
+            # torch.distributed.barrier()
 
         net.eval()
         new_best = False
         if epoch % args.val_freq == 0 or epoch == args.ep-1:
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
+            # iou, dice = net(args, nice_test_loader, epoch, net, rank=rank, training=False)
 
             if args.distributed:
                 dist.all_reduce(iou), dist.all_reduce(dice)
@@ -222,6 +245,7 @@ def main():
 
     if args.distributed:
         world_size = torch.cuda.device_count()
+        print(world_size)
         mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
     else:
         train()

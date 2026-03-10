@@ -135,10 +135,15 @@ class MSD(Dataset):
             support_image_3d = support_image_3d.unsqueeze(0)
             support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
         else:
-            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            
+            # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
             
         image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
         support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
@@ -161,7 +166,8 @@ class MSD(Dataset):
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
         
-        if self.mode == "train" and not is_support:
+        # if self.mode == "train" and not is_support:
+        if False:
             pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
             
             from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)

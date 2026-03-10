@@ -24,7 +24,7 @@ python train_3d.py \
     -dataset msd \
     -task Task09 \
     -data_path /data/datasets/nii/MSD \
-    -lr 5e-5 \
+    -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
     -q_updates_per_step 2 \

@@ -185,6 +185,7 @@ class BasePolicyNetwork(nn.Module):
         self.hidden_dim = hidden_dim
 
         scale = hidden_dim ** -0.5
+        # self.non_drop_embed = nn.Parameter(scale * torch.rand(1, 1, self.hidden_dim))
         self.non_drop_embed = nn.Parameter(scale * torch.rand(self.hidden_dim))
         self.action_decoder = nn.ModuleList(
             [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.0) for _ in range(n_layers)]
@@ -210,12 +211,12 @@ class BasePolicyNetwork(nn.Module):
 
         actions_logits = self.action_proj(action_query)
         
-        if return_logits:
-            return actions_logits.squeeze(-1)
+        return actions_logits.squeeze(-1)
+        # if return_logits:
         
-        actions_probs = torch.softmax(actions_logits, dim=1)
+        # actions_probs = torch.softmax(actions_logits, dim=1)
 
-        return actions_probs.squeeze(-1)
+        # return actions_probs.squeeze(-1)
 
 class BaseValueNetwork(nn.Module):
     def __init__(

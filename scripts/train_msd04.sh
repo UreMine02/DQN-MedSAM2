@@ -2,7 +2,7 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:1 # num gpus
+#SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd04 # job name
@@ -27,7 +27,8 @@ python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 2 \
+    -q_updates_per_step 5 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
+    -distributed
