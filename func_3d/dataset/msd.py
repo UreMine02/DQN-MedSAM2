@@ -136,6 +136,11 @@ class MSD(Dataset):
             support_image_3d = support_image_3d.unsqueeze(0)
             support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
         else:
+            # image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            # support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+            
             image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
             data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
             support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
