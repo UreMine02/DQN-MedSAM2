@@ -20,10 +20,11 @@ declare -a ckpt=(
     # output/msd_task05+grpo+icl/2026-03-08-21-48-51/epoch_24_dice0.6512.pth
     # output/msd_task06+grpo+icl/2026-03-03-22-25-28/best.pth
 
-    output/hpc/msd_task08+grpo+icl/2026-02-28-19-16-27/best.pth    
+    # output/hpc/msd_task08+grpo+icl/2026-02-28-19-16-27/best.pth    
+    output/msd_task04+grpo+icl/2026-02-22-23-57-22/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for pretrain in ${ckpt[@]}
 do
