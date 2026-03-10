@@ -12,7 +12,6 @@ from torch.utils.data import Dataset
 
 from torchvision.transforms import v2
 from torchvision import tv_tensors
-import torchshow as ts
 from monai import transforms
 
 

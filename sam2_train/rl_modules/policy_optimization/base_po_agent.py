@@ -211,12 +211,12 @@ class BasePolicyNetwork(nn.Module):
 
         actions_logits = self.action_proj(action_query)
         
-        if return_logits:
-            return actions_logits.squeeze(-1)
+        return actions_logits.squeeze(-1)
+        # if return_logits:
         
-        actions_probs = torch.softmax(actions_logits, dim=1)
+        # actions_probs = torch.softmax(actions_logits, dim=1)
 
-        return actions_probs.squeeze(-1)
+        # return actions_probs.squeeze(-1)
 
 class BaseValueNetwork(nn.Module):
     def __init__(

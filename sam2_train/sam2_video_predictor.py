@@ -192,7 +192,7 @@ class SAM2VideoPredictor(SAM2Base):
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty
         }
-        
+
         return inference_state
 
     # @torch.inference_mode()
@@ -1587,7 +1587,7 @@ class SAM2VideoPredictor(SAM2Base):
                 gt_masks = gt_masks.to(torch.float32)
 
                 loss_before = compute_loss(pred_masks, gt_masks, inference_state)
-        
+
         if agent_act or generate_rl_samples:
             state, action_frame_map = prepare_rl_state(
                 current_vision_feats,
@@ -1669,7 +1669,7 @@ class SAM2VideoPredictor(SAM2Base):
                     "reward": reward,
                     "log_probs": log_prob,
                 }
-                
+
                 # print(replay_instance_info["action"], replay_instance_info["reward"])
 
                 self.agent.add_new_instance_to_group(**replay_instance_info)
@@ -1753,37 +1753,31 @@ class SAM2VideoPredictor(SAM2Base):
             ) # ask agent
 
         action = action_out["action"]
-        state.offload_to_cpu()
+        # state.offload_to_cpu()
 
         reward = 0
         drop_frame = None
         storage_key = "non_cond_frame_outputs"
         if action == 0:
             # Add
-            if bank_full:
-                raise RuntimeError("Try to add while bank is full")
-                reward = inference_state["rl_config"]["invalid_penalty"]
-            else:
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
-            reward = 0.0
+            drop_frame = frame_idx - 1
         else:
-            # Add the new frame and skip a specific frame
-            if action not in action_frame_map.keys():
-                # penalty for dropping blank
-                raise RuntimeError("Dropping a blank frame")
-                reward = inference_state["rl_config"]["invalid_penalty"]
-                # raise ValueError(
-                    # f"action {action} valid {valid_actions} bank_size {bank_size} frame {action_frame_map.keys()}")
-            else:
-                # drop_frame = list(output_dict[storage_key].keys())[drop_key]
-                drop_frame = action_frame_map[action]
-                output_dict[storage_key].pop(drop_frame)
-                output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            # Add the new frame and drop a specific frame
+            drop_frame = action_frame_map[action]
+            output_dict[storage_key].pop(drop_frame)
+            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        # if not train_agent:
-        #     print(f"[Q] frame {frame_idx-1} action {action} drop_frame {drop_frame} bank_size {bank_size} penalty {reward}")
+        if not train_agent:
+            print(
+                f"[Q] frame {frame_idx-1} "
+                f"action {action} "
+                f" drop_frame {drop_frame} "
+                f" bank_size {bank_size} "
+                f" penalty {reward} "
+            )
 
         if train_agent:
             replay_instance_info = {
@@ -1824,3 +1818,24 @@ class SAM2VideoPredictor(SAM2Base):
         )
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
+
+    def forward(self, imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act, device="cpu"):
+        for frame_idx in range(support_masks_tensor.shape[0]):
+            mask = support_masks_tensor[frame_idx]
+            _, _, _ = self.train_add_new_mask(
+                inference_state=train_state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask.to(device=device),
+            )
+
+        video_segments = {}  # video_segments contains the per-frame segmentation results
+
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in self.train_propagate_in_video(train_state, agent_act=agent_act):
+            video_segments[out_frame_idx] = {
+                out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
+                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+
+        return video_segments

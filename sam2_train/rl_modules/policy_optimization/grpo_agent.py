@@ -184,10 +184,15 @@ class GRPOAgent(BasePOAgent):
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        # print(f"[Rank {self.rank}] local_count {local_count}")
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
-
-        if local_count < self.batch_size or num_update <= 0:
+            # print(local_count)
+            
+        # if local_count < self.batch_size:
+            # return None
+        
+        if local_count < self.replay_buffer.maxlen:
             return None
 
         np.random.seed(self.rank + self.epoch * 100)
@@ -222,16 +227,16 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
-            with torch.enable_grad():
-                policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
-                policy_dist = Categorical(logits=policy_logits)
-                action_probs = policy_dist.probs.gather(1, actions)
-                log_action_probs = torch.log(action_probs)
-                log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
+            # with torch.enable_grad():
+            policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
+            policy_dist = Categorical(logits=policy_logits)
+            action_probs = policy_dist.probs.gather(1, actions)
+            log_action_probs = torch.log(action_probs)
+            log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
 
-                policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-                minus_entropy = -policy_dist.entropy().mean()
-                policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+            policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
+            minus_entropy = -policy_dist.entropy().mean()
+            policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
@@ -275,6 +280,7 @@ class GRPOAgent(BasePOAgent):
         self.distributed = True
         self.rank = rank
         self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)
+        print(f"Agent at rank {rank}")
 
     def num_parameters(self):
         """This function expect modules didn't wrapped by DDP"""
