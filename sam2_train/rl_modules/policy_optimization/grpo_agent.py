@@ -191,31 +191,12 @@ class GRPOAgent(BasePOAgent):
             return None
 
         np.random.seed(self.rank + self.epoch * 100)
-        # print(f"Update agent for {num_update} steps")
         self.actor.train()
 
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
-            
-            # n_actions = {}
-            # for sample in self.replay_buffer:
-            #     action = sample[2]
-            #     if action not in n_actions.keys():
-            #         n_actions[action] = 0
-            #     n_actions[action] += 1
-
-            # p = []
-            # for sample in self.replay_buffer:
-            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
-
-            # p = np.asanyarray(p)
-            # p = p / p.sum()
-            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            # batch = []
-            # for idx in batch_idx:
-            #     batch.append(self.replay_buffer[idx])
 
             states, old_log_probs, actions, rewards, dones = zip(*batch)
 
@@ -241,15 +222,6 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
-            # reward_mean = rewards.mean(dim=0, keepdim=True)
-            # reward_std  = rewards.std(dim=0, keepdim=True)
-            # rewards = (rewards - reward_mean) / (reward_std + 1e-8)
-            
-            # for action in actions.unique():
-            #     action_rewards = rewards.squeeze()[actions.squeeze() == action].mean()
-
-                # metric_logger.update(**{str(action.item()): action_rewards})
-            
             with torch.enable_grad():
                 policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
                 policy_dist = Categorical(logits=policy_logits)
@@ -258,7 +230,6 @@ class GRPOAgent(BasePOAgent):
                 log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
 
                 policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-                # minus_entropy = (policy_dist.probs * log_probs).sum(dim=1, keepdim=True).mean()
                 minus_entropy = -policy_dist.entropy().mean()
                 policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 

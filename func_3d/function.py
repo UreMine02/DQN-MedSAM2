@@ -38,7 +38,6 @@ metric_values = []
 
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
-        net = net.module
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)

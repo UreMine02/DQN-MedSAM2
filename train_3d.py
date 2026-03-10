@@ -21,12 +21,23 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.optim as torch_optim
+import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from timm import optim as timm_optim
 
 import wandb
+
+class SAM2Wrapper(nn.Module):
+    def __init__(self, net):
+        super().__init__()
+        
+        self.net = net
+    
+    def forward(self, args, optimizer, nice_train_loader, epoch, rank=0):
+        output = function.train_sam(args, self.net, optimizer, nice_train_loader, epoch, rank=rank)
+        return output
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -41,7 +52,6 @@ def train(rank=0, world_size=0):
 
     if args.distributed:
         setup(rank, world_size)
-        # os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
         torch.cuda.set_device(rank)
         GPUdevice = torch.device('cuda', rank)
     else:
@@ -94,6 +104,7 @@ def train(rank=0, world_size=0):
     print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
+    net = SAM2Wrapper(net)
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
@@ -140,14 +151,7 @@ def train(rank=0, world_size=0):
             mae_loss,
             bce_loss,
             agent_loss
-        ) = function.train_sam(
-            args,
-            net,
-            optimizer,
-            nice_train_loader,
-            epoch,
-            rank=rank
-        )
+        ) = net(args, optimizer, nice_train_loader, epoch, rank=rank)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
