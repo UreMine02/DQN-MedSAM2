@@ -217,10 +217,10 @@ def train(rank=0, world_size=0):
                 ckpt = {
                     'dice': dice,
                     'epoch': epoch,
-                    'model': net.net.state_dict(),
+                    'model': net.state_dict(),
                 }
                 if not args.no_agent:
-                    ckpt['agent'] = net.net.agent.state_dict()
+                    ckpt['agent'] = net.agent.state_dict()
 
                 torch.save(ckpt, os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
 
