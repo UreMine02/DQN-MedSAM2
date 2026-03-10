@@ -109,7 +109,7 @@ def train(rank=0, world_size=0):
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
-            net.module.agent.to_distributed(rank=rank)
+            net.net.module.agent.to_distributed(rank=rank)
         print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
