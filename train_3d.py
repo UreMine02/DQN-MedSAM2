@@ -175,8 +175,8 @@ def train(rank=0, world_size=0):
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
 
-        if args.distributed:
-            torch.distributed.barrier()
+        # if args.distributed:
+            # torch.distributed.barrier()
 
         net.eval()
         new_best = False
