@@ -29,6 +29,8 @@ from timm import optim as timm_optim
 
 import numpy as np
 
+import wandb
+
 class SAM2Wrapper(nn.Module):
     def __init__(self, net):
         super().__init__()
@@ -52,7 +54,6 @@ def cleanup():
     dist.destroy_process_group()
 
 def train(rank=0, world_size=0):
-    print("rank", rank)
     args = cfg.parse_args()
 
     if args.distributed:
@@ -61,8 +62,13 @@ def train(rank=0, world_size=0):
         torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
-
-    print("device", GPUdevice)
+    
+    if args.wandb_enabled:
+        wandb.init(
+            project="dqn-medsam2",
+            name=args.exp_name,              # Experiment name from args
+            config=args
+        )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -70,7 +76,6 @@ def train(rank=0, world_size=0):
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
         
-    print(f"Net to GPU {GPUdevice}")
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
@@ -151,14 +156,6 @@ def train(rank=0, world_size=0):
             bce_loss,
             agent_loss
         ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
-        # (
-        #     loss,
-        #     dice_loss,
-        #     focal_loss,
-        #     mae_loss,
-        #     bce_loss,
-        #     agent_loss
-        # ) = net(args, nice_train_loader, epoch, optimizer=optimizer, rank=rank, training=True)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
@@ -171,6 +168,9 @@ def train(rank=0, world_size=0):
         }
         scheduler.step()
 
+        if args.wandb_enabled and loss is not None:
+            wandb.log(loss_dict, step=epoch)
+            
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
@@ -198,7 +198,10 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-
+            
+            if args.wandb_enabled:
+                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
+            
         if args.save_ckpt:
             if args.distributed and rank == 0:
                 ckpt = {
