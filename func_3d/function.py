@@ -19,6 +19,7 @@ from func_3d.utils import (
     extract_object_multiple
 )
 from func_3d.misc import MetricLogger, reduce_dict
+import wandb
 
 args = cfg.parse_args()
 
@@ -122,7 +123,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     #         for i, out_obj_id in enumerate(out_obj_ids)
                     #     }
 
-                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act, device=GPUdevice)
+                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, train_agent=train_agent, agent_act=agent_act, generate_rl_samples=generate_rl_samples, device=GPUdevice)
                     # Record the loss in this step
                     class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
 
@@ -356,6 +357,9 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"].mean(dim=0, keepdim=True)])
         avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"].mean(dim=0, keepdim=True)])
         avg["th"] = 0.5
+        
+        if args.wandb_enabled:
+            wandb.log({f"val/{name}.Dice": metrics_dict["dice"].mean()}, step=epoch)
         
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()

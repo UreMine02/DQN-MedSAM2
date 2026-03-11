@@ -301,8 +301,7 @@ class SAM2VideoPredictor(SAM2Base):
         allow_new_object = not inference_state["tracking_has_started"]
         if allow_new_object:
             # get the next object slot
-            # obj_idx = len(inference_state["obj_id_to_idx"])
-            obj_idx = obj_id - 1
+            obj_idx = len(inference_state["obj_id_to_idx"])
             inference_state["obj_id_to_idx"][obj_id] = obj_idx
             inference_state["obj_idx_to_id"][obj_idx] = obj_id
             inference_state["obj_ids"] = list(inference_state["obj_id_to_idx"])
@@ -1820,7 +1819,13 @@ class SAM2VideoPredictor(SAM2Base):
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 
-    def forward(self, imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act, device="cpu"):
+    def forward(
+        self, 
+        imgs_tensor, masks_tensor, support_masks_tensor, 
+        train_state, obj_id, 
+        train_agent=False, agent_act=True, generate_rl_samples=False,
+        device="cpu"
+    ):
         for frame_idx in range(support_masks_tensor.shape[0]):
             mask = support_masks_tensor[frame_idx]
             _, _, _ = self.train_add_new_mask(
@@ -1832,7 +1837,7 @@ class SAM2VideoPredictor(SAM2Base):
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
 
-        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in self.train_propagate_in_video(train_state, agent_act=agent_act):
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
             video_segments[out_frame_idx] = {
                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                 "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
