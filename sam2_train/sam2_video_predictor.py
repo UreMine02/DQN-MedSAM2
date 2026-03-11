@@ -301,7 +301,8 @@ class SAM2VideoPredictor(SAM2Base):
         allow_new_object = not inference_state["tracking_has_started"]
         if allow_new_object:
             # get the next object slot
-            obj_idx = len(inference_state["obj_id_to_idx"])
+            # obj_idx = len(inference_state["obj_id_to_idx"])
+            obj_idx = obj_id - 1
             inference_state["obj_id_to_idx"][obj_id] = obj_idx
             inference_state["obj_idx_to_id"][obj_idx] = obj_id
             inference_state["obj_ids"] = list(inference_state["obj_id_to_idx"])
