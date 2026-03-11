@@ -10,10 +10,10 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/eval-task03-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
+# conda init
+# conda activate rlsam2
 
 declare -a ckpt=(
     # NOTE: FINAL
@@ -123,16 +123,7 @@ declare -a ckpt=(
     output/msd_task03+grpo+icl/2026-03-10-19-48-14/epoch_99_dice0.5973.pth
 )
 
-declare -a dataset=(
-    # Task03
-    # Task04
-    Task05
-    # Task06
-    # Task07
-    # Task08
-)
-
-# export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpt[@]}
 do

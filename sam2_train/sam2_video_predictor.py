@@ -301,7 +301,8 @@ class SAM2VideoPredictor(SAM2Base):
         allow_new_object = not inference_state["tracking_has_started"]
         if allow_new_object:
             # get the next object slot
-            obj_idx = len(inference_state["obj_id_to_idx"])
+            # obj_idx = len(inference_state["obj_id_to_idx"])
+            obj_idx = obj_id - 1
             inference_state["obj_id_to_idx"][obj_id] = obj_idx
             inference_state["obj_idx_to_id"][obj_idx] = obj_id
             inference_state["obj_ids"] = list(inference_state["obj_id_to_idx"])
@@ -1694,11 +1695,11 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-            # if not train_agent:
-            #     print(f"[Q] frame {frame_idx-1} "
-            #         f"action {action} "
-            #         f"drop_frame {drop_frame} "
-            #         f"bank_size {bank_size} ")
+            if not train_agent:
+                print(f"[Q] frame {frame_idx-1} "
+                    f"action {action} "
+                    f"drop_frame {drop_frame} "
+                    f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

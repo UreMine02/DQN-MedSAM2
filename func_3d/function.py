@@ -130,6 +130,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
                         if mask is not None:
+                            mask = mask == obj_id
                             mask = mask.to(dtype=torch.float32, device=GPUdevice)
                         else:
                             mask = torch.zeros_like(pred).to(device=GPUdevice)
@@ -317,6 +318,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 mask = video_segments[frame_idx][obj_id]["image_label"]
                 pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                 if mask is not None:
+                    mask = mask == obj_id
                     mask = mask.to(dtype=torch.float32, device=GPUdevice)
 
                     (
