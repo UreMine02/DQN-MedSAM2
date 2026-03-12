@@ -184,9 +184,10 @@ class GRPOAgent(BasePOAgent):
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        print(f"Local buffer size {local_count}")
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
-            
+        
         if local_count < self.replay_buffer.maxlen:
             return None
 
