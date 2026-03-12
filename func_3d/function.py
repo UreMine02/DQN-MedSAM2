@@ -312,7 +312,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     #         for i, out_obj_id in enumerate(out_obj_ids)
                     #     }
                     
-                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act, device=GPUdevice)
+                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
             # Record the loss in this step
             for frame_idx in video_segments.keys():
                 pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)

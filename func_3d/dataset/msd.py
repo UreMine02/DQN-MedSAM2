@@ -55,8 +55,6 @@ class MSD(Dataset):
             v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
             v2.RandomHorizontalFlip(0.5),
             v2.RandomAffine(degrees=25),
-            # v2.GaussianNoise(),
-            # v2.GaussianBlur(kernel_size=3),
             v2.ColorJitter(brightness=0.25, contrast=0.25)
         ])
         
@@ -125,6 +123,12 @@ class MSD(Dataset):
         data_seg_3d = tv_tensors.Mask(data_seg_3d)
         support_image_3d = tv_tensors.Image(support_image_3d)
         support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        
+        # image_3d = v2.functional.adjust_gamma(image_3d, gamma=1.5)
+        # image_3d = scaling(image_3d, scale=1)
+        
+        support_image_3d = v2.functional.adjust_gamma(support_image_3d, gamma=1.5)
+        support_image_3d = scaling(support_image_3d, scale=1)
         
         if self.mode == "train":
             transform = self.tr_transform
