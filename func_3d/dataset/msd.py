@@ -52,11 +52,11 @@ class MSD(Dataset):
         self.max_slices = args.video_length
         
         self.tr_transform = v2.Compose([
+            # v2.Resize(size=(self.image_size, self.image_size)),
+            
             v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
             v2.RandomHorizontalFlip(0.5),
             v2.RandomAffine(degrees=25),
-            # v2.GaussianNoise(),
-            # v2.GaussianBlur(kernel_size=3),
             v2.ColorJitter(brightness=0.25, contrast=0.25)
         ])
         

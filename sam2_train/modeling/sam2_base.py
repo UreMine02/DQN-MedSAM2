@@ -529,8 +529,7 @@ class SAM2Base(torch.nn.Module):
         output_dict,
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
-        agent_act=True,
-        return_attn=False
+        agent_act=True
     ):
         # print("output_dict", output_dict["non_cond_frame_outputs"].keys())
         """Fuse the current frame's visual feature map with previous memory."""
@@ -697,13 +696,12 @@ class SAM2Base(torch.nn.Module):
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
         
-        pix_feat_with_mem, attn_scores = self.memory_attention(
+        pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
             memory=memory,
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
-            return_attn=return_attn,
         )
             
         # reshape the output (HW)BC => BCHW
@@ -771,7 +769,6 @@ class SAM2Base(torch.nn.Module):
         # The previously predicted SAM mask logits (which can be fed together with new clicks in demo).
         prev_sam_mask_logits=None,
         agent_act=True,
-        return_attn=False
     ):
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
@@ -802,7 +799,6 @@ class SAM2Base(torch.nn.Module):
                 num_frames=num_frames,
                 track_in_reverse=track_in_reverse,
                 agent_act=agent_act,
-                return_attn=return_attn
             )
             # apply SAM-style segmentation head
             # here we might feed previously predicted low-res SAM mask logits into the SAM mask decoder,

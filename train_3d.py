@@ -29,8 +29,6 @@ from timm import optim as timm_optim
 
 import numpy as np
 
-import wandb
-
 class SAM2Wrapper(nn.Module):
     def __init__(self, net):
         super().__init__()
@@ -62,13 +60,6 @@ def train(rank=0, world_size=0):
         torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
-    
-    if args.wandb_enabled:
-        wandb.init(
-            project="dqn-medsam2",
-            name=args.exp_name,              # Experiment name from args
-            config=args
-        )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     net.to(dtype=torch.bfloat16)
@@ -167,9 +158,6 @@ def train(rank=0, world_size=0):
             "train/lr": optimizer.param_groups[0]['lr'],
         }
         scheduler.step()
-
-        if args.wandb_enabled and loss is not None:
-            wandb.log(loss_dict, step=epoch)
             
         time_end = time.time()
         print(loss_dict)
@@ -198,9 +186,6 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-            
-            if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
             
         if args.save_ckpt:
             if args.distributed and rank == 0:

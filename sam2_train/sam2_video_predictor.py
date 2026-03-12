@@ -1395,8 +1395,7 @@ class SAM2VideoPredictor(SAM2Base):
             track_in_reverse=reverse,
             run_mem_encoder=run_mem_encoder,
             prev_sam_mask_logits=prev_sam_mask_logits,
-            agent_act=agent_act,
-            return_attn=not agent_act
+            agent_act=agent_act
         )
 
         # optionally offload the output to CPU memory to save GPU space
@@ -1694,11 +1693,11 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-            if not train_agent:
-                print(f"[Q] frame {frame_idx-1} "
-                    f"action {action} "
-                    f"drop_frame {drop_frame} "
-                    f"bank_size {bank_size} ")
+            # if not train_agent:
+            #     print(f"[Q] frame {frame_idx-1} "
+            #         f"action {action} "
+            #         f"drop_frame {drop_frame} "
+            #         f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
