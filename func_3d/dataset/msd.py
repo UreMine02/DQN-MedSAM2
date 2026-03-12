@@ -84,14 +84,16 @@ class MSD(Dataset):
             image_3d,
             data_seg_3d,
             support_image_3d,
-            support_data_seg_3d
+            support_data_seg_3d,
+            orig_size
         ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
         
         output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
             "task": task, "obj_id": obj_id, 
-            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path)
+            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path),
+            "orig_size": tuple(orig_size)
         }
         
         return output_dict
@@ -119,6 +121,8 @@ class MSD(Dataset):
         support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
         
+        orig_size = image_3d.shape[-2:]
+        
         image_3d = tv_tensors.Image(image_3d)
         data_seg_3d = tv_tensors.Mask(data_seg_3d)
         support_image_3d = tv_tensors.Image(support_image_3d)
@@ -138,7 +142,7 @@ class MSD(Dataset):
         image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
         support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
 
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
     def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
