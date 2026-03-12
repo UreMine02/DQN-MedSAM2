@@ -184,17 +184,15 @@ class GRPOAgent(BasePOAgent):
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
-        # print(f"[Rank {self.rank}] local_count {local_count}")
+        
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
-            # print(local_count)
-            
-        # if local_count < self.batch_size:
-            # return None
         
-        if local_count < self.replay_buffer.maxlen:
+        if local_count < self.batch_size:
             return None
 
+        print(f"Train agent for {num_update} steps")
+        
         np.random.seed(self.rank + self.epoch * 100)
         self.actor.train()
 
@@ -280,7 +278,6 @@ class GRPOAgent(BasePOAgent):
         self.distributed = True
         self.rank = rank
         self.actor = DDP(self.actor, device_ids=[rank], output_device=rank)
-        print(f"Agent at rank {rank}")
 
     def num_parameters(self):
         """This function expect modules didn't wrapped by DDP"""

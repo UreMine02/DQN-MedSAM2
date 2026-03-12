@@ -1,12 +1,12 @@
 """ function for training and validation in one epoch
     Yunli Qi
 """
-
+import os
 import copy
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-# import torchshow as ts
+from torchvision.utils import draw_segmentation_masks, save_image
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
@@ -165,7 +165,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # metric_logger.update(lr=optimizer.param_groups[0]["lr"])
                     # metric_logger.update(grad_norm=grad_total_norm)
 
-                    agent = getattr(net, "agent", None)
+                    if not args.distributed:
+                        agent = getattr(net, "agent", None)
+                    else:
+                        agent = getattr(net.module, "agent", None)
+                        
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
@@ -241,6 +245,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
         task = packs["task"][0]
         name = packs["name"][0]
+        orig_size = packs["orig_size"]
         # cls_id = packs["obj_id"][0]
         # Log initial slice stats for validation
         # print(f"[VALIDATION PACK] Name: {name}")
@@ -320,13 +325,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 if mask is not None:
                     mask = mask == obj_id
                     mask = mask.to(dtype=torch.float32, device=GPUdevice)
-
+                    
                     (
                         iou,
                         dice,
                         fb_iou,
                     ) = eval_seg(pred, mask)
-
+                    
                     score_dict = score_per_class[f"{task}_{obj_id}"]
 
                     score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
@@ -334,6 +339,31 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
+                    
+                if args.vis:
+                    save_dir = "/".join(args.pretrain.split("/")[:-1])
+                    os.makedirs(f"{save_dir}/vis_lin", exist_ok=True)
+                    save_prefix = f"{save_dir}/vis_lin/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    # mask *= 2
+                    im = imgs_tensor[frame_idx]
+                    im = (im - im.min()) / (im.max() - im.min()) * 255
+                    im = im.to(torch.uint8)
+                    image_with_gt = draw_segmentation_masks(
+                        im, 
+                        masks=mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
+                    )
+                    
+                    image_with_pred = draw_segmentation_masks(
+                        im, 
+                        masks=pred_mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
+                    )
+                    
+                    save_image(image_with_gt.float() / 255.0, save_prefix + "gt.png")
+                    save_image(image_with_pred.float() / 255.0, save_prefix + "pred.png")
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),

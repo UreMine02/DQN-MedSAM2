@@ -24,7 +24,7 @@ declare -a ckpt=(
     
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpt[@]}
 do

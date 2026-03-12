@@ -10,12 +10,13 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/sarcoma-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
 EXP=sarcoma+grpo+icl
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -23,11 +24,12 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/Sarcoma \
-    -lr 5e-5 \
+    -data_path /data/datasets/nii/Sarcoma \
+    -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
     -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
+    -wandb_enabled
