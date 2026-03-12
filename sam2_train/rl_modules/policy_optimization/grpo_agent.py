@@ -184,17 +184,14 @@ class GRPOAgent(BasePOAgent):
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
-        # print(f"[Rank {self.rank}] local_count {local_count}")
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
-            # print(local_count)
             
-        # if local_count < self.batch_size:
-            # return None
-        
         if local_count < self.replay_buffer.maxlen:
             return None
 
+        print(f"Train agent for {num_update} steps")
+        
         np.random.seed(self.rank + self.epoch * 100)
         self.actor.train()
 
