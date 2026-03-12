@@ -166,9 +166,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # metric_logger.update(lr=optimizer.param_groups[0]["lr"])
                     # metric_logger.update(grad_norm=grad_total_norm)
 
-                    agent = getattr(net, "agent", None)
+                    if not args.distributed:
+                        agent = getattr(net, "agent", None)
+                    else:
+                        agent = getattr(net.module, "agent", None)
+                        
                     if agent is not None:
-                        print("Agent is not None")
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
