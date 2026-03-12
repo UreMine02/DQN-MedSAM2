@@ -168,6 +168,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     agent = getattr(net, "agent", None)
                     if agent is not None:
+                        print("Agent is not None")
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
