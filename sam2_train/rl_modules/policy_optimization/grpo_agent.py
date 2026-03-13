@@ -191,7 +191,7 @@ class GRPOAgent(BasePOAgent):
         if local_count < self.batch_size:
             return None
 
-        print(f"Train agent for {num_update} steps")
+        # print(f"Train agent for {num_update} steps")
         
         np.random.seed(self.rank + self.epoch * 100)
         self.actor.train()
