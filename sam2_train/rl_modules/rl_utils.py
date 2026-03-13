@@ -1,15 +1,51 @@
 """
 Q-learning utilities cho SAM2 memory management.
 """
-
+import math
 import random
 import torch
 import numpy as np
+from functools import partial
 from monai.losses import DiceLoss, FocalLoss
 from sam2_train.rl_modules.rl_components import RLStates
+from sam2_train.modeling.position_encoding import compute_axial_cis
 
 EPS = 1e-6
 
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[-2], x.shape[-1])
+    shape = [d if i >= ndim - 2 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+def apply_rotary_enc(
+    xq: torch.Tensor,
+    freqs_cis: torch.Tensor
+):
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+    
+    return xq_out.type_as(xq).to(xq.device)
+
+
+def rotary_emb(x, internal_dim=256, num_heads=1, rope_theta=10000.0):
+    compute_cis = partial(
+        compute_axial_cis, dim=internal_dim // num_heads, theta=rope_theta
+    )
+    
+    # Apply rotary position encoding
+    w = h = math.sqrt(x.shape[-2])
+    freqs_cis = freqs_cis.to(x.device)
+    freqs_cis = compute_cis(end_x=w, end_y=h).to(x.device)
+
+    x = apply_rotary_enc(
+        x,
+        freqs_cis=freqs_cis
+    )
+    
+    return x
 
 def prepare_rl_state(
     current_vision_feats,
@@ -21,11 +57,11 @@ def prepare_rl_state(
     offload_to_cpu=True,
     training=False
 ):
-    next_image_feat = current_vision_feats[-1].clone().detach() + current_vision_pos_embeds[-1].clone().detach()
-    next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64).clone().detach()
+    next_image_feat = current_vision_feats[-1] + current_vision_pos_embeds[-1]
+    next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64)
     curr_memory_feat = output_dict["await_outputs"][frame_idx-1]
-    curr_memory_feat = curr_memory_feat["maskmem_features"].clone().detach() + curr_memory_feat["maskmem_pos_enc"][0].clone().detach()
-    curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"].clone().detach()
+    curr_memory_feat = curr_memory_feat["maskmem_features"] + curr_memory_feat["maskmem_pos_enc"][0]
+    curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"]
     
     # Add non_cond memory
     cond_bank_list = list(output_dict["cond_frame_outputs"].values())
@@ -36,8 +72,8 @@ def prepare_rl_state(
     prev_memory_bank = []
     prev_obj_ptr = []
     for feat in non_cond_bank_list:
-        mem_feat = feat["maskmem_features"].clone().detach() + feat["maskmem_pos_enc"][0].clone().detach()
-        obj_ptr = feat["obj_ptr"].clone().detach()
+        mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
+        obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()
             obj_ptr = obj_ptr.cpu()
@@ -51,8 +87,8 @@ def prepare_rl_state(
 
     # Add cond memory
     for feat in cond_bank_list:
-        mem_feat = feat["maskmem_features"].clone().detach() + feat["maskmem_pos_enc"][0].clone().detach()
-        obj_ptr = feat["obj_ptr"].clone().detach()
+        mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
+        obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()
             obj_ptr = obj_ptr.cpu()
@@ -64,8 +100,8 @@ def prepare_rl_state(
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
     
-    prev_memory_bank = torch.stack(prev_memory_bank, dim=1).clone().detach()
-    prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1).clone().detach()
+    prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
+    prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
     
     #TODO: Finding out why this part affecting testing
     # if training:
@@ -80,14 +116,14 @@ def prepare_rl_state(
         
     rl_state = {
         "frame_idx": frame_idx,
-        "next_image_feat": next_image_feat,
+        "next_image_feat": next_image_feat.clone().detach(),
         "curr_memory_feat": {
-            "mem_feat": curr_memory_feat,
-            "obj_ptr": curr_obj_ptr,
+            "mem_feat": curr_memory_feat.clone().detach(),
+            "obj_ptr": curr_obj_ptr.clone().detach(),
         },
         "prev_memory_bank": {
-            "mem_feat": prev_memory_bank,
-            "obj_ptr": prev_obj_ptr,
+            "mem_feat": prev_memory_bank.clone().detach(),
+            "obj_ptr": prev_obj_ptr.clone().detach(),
         }
     }
     
