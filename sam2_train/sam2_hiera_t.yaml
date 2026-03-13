@@ -102,7 +102,7 @@ model:
   # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
   use_obj_ptrs_in_encoder: true
   add_tpos_enc_to_obj_ptrs: false
-  only_obj_ptrs_in_the_past_for_eval: true
+  only_obj_ptrs_in_the_past_for_eval: false
   # object occlusion prediction
   pred_obj_scores: true
   pred_obj_scores_mlp: true
