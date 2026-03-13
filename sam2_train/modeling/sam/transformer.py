@@ -292,17 +292,6 @@ class RoPEAttention(Attention):
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
     ) -> Tensor:
-        
-        # NOTE: TEST GATING
-        if num_k_exclude_rope > 0:
-            m = num_k_exclude_rope // 4
-            b, d = k.shape[0], k.shape[-1]
-            mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
-            
-            mem = mem.reshape(b, m, -1, d) # [1,m,4096,64]
-            ptr = ptr.reshape(b, m, -1, d) # [1,m,4,64]
-            # print(k.shape[-2] - num_k_exclude_rope, (k.shape[-2] - num_k_exclude_rope) / (num_k_exclude_rope / 2), num_k_exclude_rope)
-        
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
