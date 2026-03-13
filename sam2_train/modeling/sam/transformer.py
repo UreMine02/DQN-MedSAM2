@@ -285,10 +285,24 @@ class RoPEAttention(Attention):
         freqs_cis = self.compute_cis(end_x=feat_sizes[0], end_y=feat_sizes[1])
         self.freqs_cis = freqs_cis
         self.rope_k_repeat = rope_k_repeat
+        
+        self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
+        self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
 
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
     ) -> Tensor:
+        
+        # NOTE: TEST GATING
+        if num_k_exclude_rope > 0:
+            m = num_k_exclude_rope // 4
+            b, d = k.shape[0], k.shape[-1]
+            mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
+            
+            mem = mem.reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr = ptr.reshape(b, m, -1, d) # [1,m,4,64]
+            # print(k.shape[-2] - num_k_exclude_rope, (k.shape[-2] - num_k_exclude_rope) / (num_k_exclude_rope / 2), num_k_exclude_rope)
+        
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
