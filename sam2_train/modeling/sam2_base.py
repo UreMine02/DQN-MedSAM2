@@ -558,6 +558,7 @@ class SAM2Base(torch.nn.Module):
             selected_cond_outputs, unselected_cond_outputs = select_closest_cond_frames(
                 frame_idx, cond_outputs, self.max_cond_frames_in_attn
             )
+            
             t_pos_and_prevs = [(0, out) for out in selected_cond_outputs.values()]
 
             # Add last (self.num_maskmem - 1) frames before current frame for non-conditioning memory
@@ -598,7 +599,7 @@ class SAM2Base(torch.nn.Module):
                         out = unselected_cond_outputs.get(prev_frame_idx, None)
                     if out is not None:
                         memory_pos.append(prev_frame_idx)
-                        
+                    print(t_pos)
                     t_pos_and_prevs.append((t_pos, out))
                 
                 # print("FIFO:", memory_pos)
@@ -607,6 +608,7 @@ class SAM2Base(torch.nn.Module):
                 t_pos_and_prevs.extend(
                     [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )
+                print([t[0] for t in t_pos_and_prevs])
 
             for t_pos, prev in t_pos_and_prevs:
                 if prev is None:
@@ -637,6 +639,10 @@ class SAM2Base(torch.nn.Module):
                     }
                 else:
                     ptr_cond_outputs = selected_cond_outputs
+                
+                # for t, out in ptr_cond_outputs.items():
+                    # print(t, out["obj_ptr"].shape)
+                    
                 pos_and_ptrs = [
                     # Temporal pos encoding contains how far away each pointer is from current frame
                     (0, out["obj_ptr"])
@@ -652,7 +658,7 @@ class SAM2Base(torch.nn.Module):
                     )
                     if out is not None:
                         pos_and_ptrs.append((t_diff, out["obj_ptr"]))
-                
+                print([t[0] for t in pos_and_ptrs])
                 # If we have at least one object pointer, add them to the across attention
                 if len(pos_and_ptrs) > 0:
                     pos_list, ptrs_list = zip(*pos_and_ptrs)
