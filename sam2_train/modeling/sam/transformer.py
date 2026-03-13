@@ -286,8 +286,8 @@ class RoPEAttention(Attention):
         self.freqs_cis = freqs_cis
         self.rope_k_repeat = rope_k_repeat
         
-        self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
-        self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
+        self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
 
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
@@ -299,9 +299,20 @@ class RoPEAttention(Attention):
             b, d = k.shape[0], k.shape[-1]
             mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
             
-            mem = mem.reshape(b, m, -1, d) # [1,m,4096,64]
-            ptr = ptr.reshape(b, m, -1, d) # [1,m,4,64]
-            # print(k.shape[-2] - num_k_exclude_rope, (k.shape[-2] - num_k_exclude_rope) / (num_k_exclude_rope / 2), num_k_exclude_rope)
+            mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr_ = ptr.reshape(b, m, -1, d) # [1,m,4,64]
+
+            mem_ = self.ctx_gating_mem_proj(mem_)
+            ptr_ = self.ctx_gating_ptr_proj(ptr_)
+            
+            ptr_ = ptr_.sum(dim=2, keepdim=True)
+            gating_logits = mem_ + ptr_ # [1,m,4096,64]
+            gating_score = gating_logits.sigmoid() # [1,m,4096,64]
+            
+            gated_mem = mem_ * gating_score
+            gated_mem = gated_mem.reshape(b, -1, d)
+            
+            k = torch.cat([gated_mem, ptr], dim=1)
         
         # Input projections
         q = self.q_proj(q)
