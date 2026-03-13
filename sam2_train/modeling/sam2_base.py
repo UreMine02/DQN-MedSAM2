@@ -599,16 +599,14 @@ class SAM2Base(torch.nn.Module):
                         out = unselected_cond_outputs.get(prev_frame_idx, None)
                     if out is not None:
                         memory_pos.append(prev_frame_idx)
-                    print(t_pos)
                     t_pos_and_prevs.append((t_pos, out))
                 
                 # print("FIFO:", memory_pos)
             else:
                 # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(
-                    [(t_pos + 1, out) for t_pos, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
+                    [(t+1, out) for t, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )
-                print([t[0] for t in t_pos_and_prevs])
 
             for t_pos, prev in t_pos_and_prevs:
                 if prev is None:
@@ -649,16 +647,21 @@ class SAM2Base(torch.nn.Module):
                     for t, out in ptr_cond_outputs.items()
                 ]
                 # Add up to (max_obj_ptrs_in_encoder - 1) non-conditioning frames before current frame
-                for t_diff in range(1, max_obj_ptrs_in_encoder):
-                    t = frame_idx + t_diff if track_in_reverse else frame_idx - t_diff
-                    if t < 0 or (num_frames is not None and t >= num_frames):
-                        break
-                    out = output_dict["non_cond_frame_outputs"].get(
-                        t, unselected_cond_outputs.get(t, None)
+                if not agent_act:
+                    for t_diff in range(1, max_obj_ptrs_in_encoder):
+                        t = frame_idx + t_diff if track_in_reverse else frame_idx - t_diff
+                        if t < 0 or (num_frames is not None and t >= num_frames):
+                            break
+                        out = output_dict["non_cond_frame_outputs"].get(
+                            t, unselected_cond_outputs.get(t, None)
+                        )
+                        if out is not None:
+                            pos_and_ptrs.append((t_diff, out["obj_ptr"]))
+                else:
+                    pos_and_ptrs.extend(
+                        [(frame_idx - t, out["obj_ptr"]) for t, out in output_dict["non_cond_frame_outputs"].items()]
                     )
-                    if out is not None:
-                        pos_and_ptrs.append((t_diff, out["obj_ptr"]))
-                print([t[0] for t in pos_and_ptrs])
+                
                 # If we have at least one object pointer, add them to the across attention
                 if len(pos_and_ptrs) > 0:
                     pos_list, ptrs_list = zip(*pos_and_ptrs)
