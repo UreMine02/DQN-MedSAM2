@@ -56,7 +56,8 @@ class MSD(Dataset):
             v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
             v2.RandomHorizontalFlip(0.5),
             v2.RandomAffine(degrees=25),
-            v2.ColorJitter(brightness=0.25, contrast=0.25)
+            # v2.ColorJitter(brightness=0.25, contrast=0.25),
+            # v2.RandomAdjustSharpness(sharpness_factor=2, p=0.3)
         ])
         
         self.ts_transform = v2.Compose([
@@ -153,10 +154,10 @@ class MSD(Dataset):
                 
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
-        data_seg_3d[data_seg_3d != obj_id] = 0
+        data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0)
         
-        if self.mode == "train" and not is_support:
-        # if False:
+        # if self.mode == "train" and not is_support:
+        if False:
             pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
             
             from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)

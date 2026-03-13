@@ -190,8 +190,6 @@ class GRPOAgent(BasePOAgent):
         
         if local_count < self.batch_size:
             return None
-
-        print(f"Train agent for {num_update} steps")
         
         np.random.seed(self.rank + self.epoch * 100)
         self.actor.train()
@@ -227,13 +225,15 @@ class GRPOAgent(BasePOAgent):
             
             # with torch.enable_grad():
             policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
-            policy_dist = Categorical(logits=policy_logits)
-            action_probs = policy_dist.probs.gather(1, actions)
+            # policy_dist = Categorical(logits=policy_logits)
+            policy_probs = policy_logits.softmax(dim=1)
+            action_probs = policy_probs.gather(1, actions)
             log_action_probs = torch.log(action_probs)
-            log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
+            # log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
 
             policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
-            minus_entropy = -policy_dist.entropy().mean()
+            # minus_entropy = -policy_dist.entropy().mean()
+            minus_entropy = (action_probs * log_action_probs).mean()
             policy_loss = 10 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
