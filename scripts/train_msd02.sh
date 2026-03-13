@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+inclue_obj_ptr_from_cond
+EXP=msd_task02+grpo+icl+rotary_emb
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -33,4 +33,4 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
-    # -wandb_enabled
+    -wandb_enabled
