@@ -135,7 +135,7 @@ class PerceiverResampler(nn.Module):
     def attention(self, x: torch.Tensor, context: torch.Tensor):
         # attn = self.attn(x, context=context)
         attn = self.attn(x, context, context, need_weights=False)[0]
-        # attn = self.attn(q=x, )
+        # attn = self.attn(q=x, k=context, v=context, num_k_exclude_rope={})
         return attn
         
     def forward(self, x_f, x, training=True):
@@ -198,7 +198,7 @@ class SpatialSummarizer(nn.Module):
 class BasicTransformerBlock(nn.Module):
     def __init__(self, d_model, n_heads):
         super().__init__()
-        self.attn = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads,  batch_first=True)
+        self.attn = nn.MultiheadAttention(embed_dim=d_model, num_heads=n_heads, batch_first=True)
         self.norm1 = nn.LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
@@ -328,43 +328,6 @@ class RoPEAttention(Attention):
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
     ) -> Tensor:
-        # NOTE: TEST GATING
-        if num_k_exclude_rope > 0:
-            m = num_k_exclude_rope // 4
-            b, d = k.shape[0], k.shape[-1]
-            mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
-
-            # CW GATING
-            mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
-            ptr_ = ptr.reshape(b, m, -1, d) # [1,m,4,64]
-
-            mem_ = self.ctx_gating_mem_proj(mem_)
-            ptr_ = self.ctx_gating_ptr_proj(ptr_)
-
-            ptr_ = ptr_.sum(dim=2, keepdim=True)
-            gating_logits = mem_ + ptr_ # [1,m,4096,64]
-            gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-
-            gated_mem = mem_ * gating_score
-            gated_mem = gated_mem.reshape(b, -1, d)
-
-            k = torch.cat([gated_mem, ptr], dim=1)
-
-            # # SW GATING
-            # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
-            # ptr_ = ptr.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4]
-
-            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
-            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
-
-            # gating_logits = mem_ + ptr_ # [1,m,64,4096]
-            # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
-            # gated_mem = mem_ * gating_score
-            # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
-
-            # k = torch.cat([gated_mem, ptr], dim=1)
-
-
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
