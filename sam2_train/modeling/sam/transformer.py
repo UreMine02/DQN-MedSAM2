@@ -285,15 +285,15 @@ class RoPEAttention(Attention):
         freqs_cis = self.compute_cis(end_x=feat_sizes[0], end_y=feat_sizes[1])
         self.freqs_cis = freqs_cis
         self.rope_k_repeat = rope_k_repeat
-        
-        # # CW GATING BEFORE PROJ
-        # self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-        # self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-        
-        # CW GATING AFTER POS EMBED
-        self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
-        self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
-        
+
+        # CW GATING BEFORE PROJ
+        self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+
+        # # CW GATING AFTER POS EMBED
+        # self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
+        # self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
+
         # SW GATING
         # self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
         # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
@@ -313,31 +313,31 @@ class RoPEAttention(Attention):
 
             mem_ = self.ctx_gating_mem_proj(mem_)
             ptr_ = self.ctx_gating_ptr_proj(ptr_)
-            
+
             ptr_ = ptr_.sum(dim=2, keepdim=True)
             gating_logits = mem_ + ptr_ # [1,m,4096,64]
             gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-            
+
             gated_mem = mem_ * gating_score
             gated_mem = gated_mem.reshape(b, -1, d)
-            
+
             k = torch.cat([gated_mem, ptr], dim=1)
-            
+
             # # SW GATING
             # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
             # ptr_ = ptr.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4]
-            
+
             # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
             # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
-            
+
             # gating_logits = mem_ + ptr_ # [1,m,64,4096]
             # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
             # gated_mem = mem_ * gating_score
             # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
-            
+
             # k = torch.cat([gated_mem, ptr], dim=1)
-            
-        
+
+
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
@@ -363,7 +363,7 @@ class RoPEAttention(Attention):
             freqs_cis=self.freqs_cis,
             repeat_freqs_k=self.rope_k_repeat,
         )
-        
+
         # # NOTE: TEST GATING
         # if num_k_exclude_rope > 0:
         #     m = num_k_exclude_rope // 4
@@ -376,39 +376,39 @@ class RoPEAttention(Attention):
 
         #     mem_ = self.ctx_gating_mem_proj(mem_)
         #     ptr_ = self.ctx_gating_ptr_proj(ptr_)
-            
+
         #     ptr_ = ptr_.sum(dim=-2, keepdim=True)
         #     gating_logits = mem_ + ptr_ # [1,m,4096,64]
         #     gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-            
+
         #     gated_mem = mem_ * gating_score
         #     gated_mem = gated_mem.reshape(b, h, -1, d)
-            
+
         #     k = torch.cat([gated_mem, ptr], dim=2)
-            
+
             # # SW GATING
             # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
             # ptr_ = ptr.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4]
-            
+
             # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
             # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
-            
+
             # gating_logits = mem_ + ptr_ # [1,m,64,4096]
             # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
             # gated_mem = mem_ * gating_score
             # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
-            
+
             # k = torch.cat([gated_mem, ptr], dim=1)
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        
+
         # Compute attn_weight for later use
         attn_weight = None
         if return_attn:
             scale_factor = 1 / math.sqrt(q.size(-1))
             attn_weight = q @ k.transpose(-2, -1) * scale_factor
-        
+
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
