@@ -637,9 +637,6 @@ class SAM2Base(torch.nn.Module):
                     }
                 else:
                     ptr_cond_outputs = selected_cond_outputs
-                
-                # for t, out in ptr_cond_outputs.items():
-                    # print(t, out["obj_ptr"].shape)
                     
                 pos_and_ptrs = [
                     # Temporal pos encoding contains how far away each pointer is from current frame
