@@ -72,7 +72,6 @@ def prepare_rl_state(
     prev_obj_ptr = []
     for feat in non_cond_bank_list:
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        mem_feat = rotary_emb(mem_feat)
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()
@@ -88,7 +87,6 @@ def prepare_rl_state(
     # Add cond memory
     for feat in cond_bank_list:
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        mem_feat = rotary_emb(mem_feat)
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()
