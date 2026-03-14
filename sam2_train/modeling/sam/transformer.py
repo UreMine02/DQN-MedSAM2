@@ -291,8 +291,8 @@ class RoPEAttention(Attention):
         self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
         
         # SW GATING
-        self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
-        self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
+        # self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
+        # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
 
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
