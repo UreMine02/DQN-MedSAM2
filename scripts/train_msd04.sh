@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task04+grpo+icl+include_cond_obj_ptr_during_eval
+EXP=msd_task04+grpo+icl+cw_gating
 
 python train_3d.py \
     -exp_name $EXP \
