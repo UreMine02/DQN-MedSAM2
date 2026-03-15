@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+icl
+EXP=msd_task03+grpo+only_train_on_obj_id_2
 
 python train_3d.py \
     -exp_name $EXP \
@@ -31,4 +31,5 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 3 \
-    -distributed
+    -distributed \
+    -wandb_enabled
