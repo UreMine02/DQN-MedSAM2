@@ -307,7 +307,7 @@ class RoPEAttention(Attention):
             m = num_k_exclude_rope // 4
             b, d = k.shape[0], k.shape[-1]
             mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
-
+            print(k.shape, mem.shape, ptr.shape)
             # CW GATING
             mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
             ptr_ = ptr.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
