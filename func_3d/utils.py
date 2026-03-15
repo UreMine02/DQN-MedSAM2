@@ -546,15 +546,12 @@ def average_score(score_dict):
     score_dict["iou_score"] = score_dict["iou_score"]/(score_dict["num_step"] + 1e-6)
     score_dict["total_score"] += score_dict["dice_score"] + score_dict["iou_score"]
 
-def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
-    # return {
-    #     "image": images_tensor,
-    #     "label": masks_tensor,
-    #     "support_image": support_images_tensor,
-    #     "support_label": support_masks_tensor,
-    # }
-    
-    obj_mask = masks_tensor #== obj_id
+def extract_object(
+    images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, 
+    obj_id, video_length, num_support,
+    training=False
+):   
+    obj_mask = masks_tensor == obj_id
     # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
     # if channels_with_true.numel() == 0:
     #     print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
@@ -602,18 +599,14 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
     #     # print(f"[EXTRACT SUPPORT - BEFORE RESAMPLING] obj_id={obj_id}")
     #     class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
-    obj_mask = support_masks_tensor #== obj_id
-    # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
-    # if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
-    #     print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
-    #     return None
-    # if len(channels_with_true) > num_support:
-    #     selected_indices = torch.tensor(np.random.choice(channels_with_true.cpu(), size=num_support, replace=False))
-    # else:
-    #     selected_indices = channels_with_true
+    obj_mask = support_masks_tensor == obj_id
+    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1,2))).flatten().cpu().numpy()
+    
+    n_slice = num_support if not training else np.random.randint(1, num_support + 1)
+    selected_indices = np.random.choice(channels_with_true, size=n_slice, replace=False)
 
-    selected_obj_mask = obj_mask#[selected_indices, ...]
-    selected_obj_image = support_images_tensor#[selected_indices, ...]
+    selected_obj_mask = obj_mask[selected_indices, ...]
+    selected_obj_image = support_images_tensor[selected_indices, ...]
     # Support slices after resampling
     # Debugging slice counts for obj_id 4 and 12
     # if obj_id in [4, 12]:
