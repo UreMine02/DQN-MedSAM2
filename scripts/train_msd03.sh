@@ -14,11 +14,12 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+only_train_on_obj_id_2
+EXP=msd_task03+grpo+large
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
+    -sam_config sam2_hiera_l \
+    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_large.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
