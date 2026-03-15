@@ -603,6 +603,11 @@ def extract_object(
     channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1,2))).flatten().cpu().numpy()
     
     n_slice = num_support if not training else np.random.randint(1, num_support + 1)
+    
+    if len(channels_with_true) < n_slice:
+        print(f"[SUPPORT] Not enough slice")
+        return None
+    
     selected_indices = np.random.choice(channels_with_true, size=n_slice, replace=False)
 
     selected_obj_mask = obj_mask[selected_indices, ...]
