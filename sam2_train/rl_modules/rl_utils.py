@@ -57,11 +57,9 @@ def prepare_rl_state(
     training=False
 ):
     next_image_feat = current_vision_feats[-1] + current_vision_pos_embeds[-1]
-    next_image_feat = rotary_emb(next_image_feat)
     next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64)
     curr_memory_feat = output_dict["await_outputs"][frame_idx-1]
     curr_memory_feat = curr_memory_feat["maskmem_features"] + curr_memory_feat["maskmem_pos_enc"][0]
-    curr_memory_feat = rotary_emb(curr_memory_feat)
     curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"]
     
     # Add non_cond memory
@@ -74,7 +72,6 @@ def prepare_rl_state(
     prev_obj_ptr = []
     for feat in non_cond_bank_list:
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        mem_feat = rotary_emb(mem_feat)
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()
@@ -90,7 +87,6 @@ def prepare_rl_state(
     # Add cond memory
     for feat in cond_bank_list:
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
-        mem_feat = rotary_emb(mem_feat)
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
             mem_feat = mem_feat.cpu()

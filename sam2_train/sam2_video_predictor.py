@@ -1759,6 +1759,7 @@ class SAM2VideoPredictor(SAM2Base):
         storage_key = "non_cond_frame_outputs"
         if action == 0:
             # Add
+            reward = 0.01
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
@@ -1813,7 +1814,7 @@ class SAM2VideoPredictor(SAM2Base):
             frame_idx,
             self.num_maskmem - 1,
             num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=True
+            offload_to_cpu=False
         )
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
