@@ -204,7 +204,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             )
             total_loss["num_step"] += 1
             pbar.update()
-            break
 
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
