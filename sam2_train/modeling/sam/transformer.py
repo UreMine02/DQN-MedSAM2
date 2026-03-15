@@ -286,17 +286,18 @@ class RoPEAttention(Attention):
         self.freqs_cis = freqs_cis
         self.rope_k_repeat = rope_k_repeat
 
-        # CW GATING BEFORE PROJ
-        self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-        self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-
-        # # CW GATING AFTER POS EMBED
-        # self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
-        # self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
+        # CW GATING
+        # self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        # self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
 
         # SW GATING
         # self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
         # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
+        
+        # TW GATING
+        self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=self.kv_in_dim, out_channels=self.kv_in_dim, kernel_size=4)
+        self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        
 
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
@@ -307,21 +308,21 @@ class RoPEAttention(Attention):
             b, d = k.shape[0], k.shape[-1]
             mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
 
-            # CW GATING
-            mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
-            ptr_ = ptr.reshape(b, m, -1, d) # [1,m,4,64]
+            # # CW GATING
+            # mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
+            # ptr_ = ptr.reshape(b, m, -1, d) # [1,m,4,64]
 
-            mem_ = self.ctx_gating_mem_proj(mem_)
-            ptr_ = self.ctx_gating_ptr_proj(ptr_)
+            # mem_ = self.ctx_gating_mem_proj(mem_)
+            # ptr_ = self.ctx_gating_ptr_proj(ptr_)
 
-            ptr_ = ptr_.sum(dim=2, keepdim=True)
-            gating_logits = mem_ + ptr_ # [1,m,4096,64]
-            gating_score = gating_logits.sigmoid() # [1,m,4096,64]
+            # ptr_ = ptr_.sum(dim=2, keepdim=True)
+            # gating_logits = mem_ + ptr_ # [1,m,4096,64]
+            # gating_score = gating_logits.sigmoid() # [1,m,4096,64]
 
-            gated_mem = mem_ * gating_score
-            gated_mem = gated_mem.reshape(b, -1, d)
+            # gated_mem = mem_ * gating_score
+            # gated_mem = gated_mem.reshape(b, -1, d)
 
-            k = torch.cat([gated_mem, ptr], dim=1)
+            # k = torch.cat([gated_mem, ptr], dim=1)
 
             # # SW GATING
             # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
@@ -336,6 +337,21 @@ class RoPEAttention(Attention):
             # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
 
             # k = torch.cat([gated_mem, ptr], dim=1)
+            
+            # TW GATING
+            mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr_ = ptr.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+
+            mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
+            ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+            ptr_ = ptr_.reshape(1, m, -1, 1)
+            gating_logits = mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+            gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+
+            gated_mem = mem_ * gating_score
+            gated_mem = gated_mem.reshape(b, -1, d)
+
+            k = torch.cat([gated_mem, ptr], dim=1)
 
 
         # Input projections
