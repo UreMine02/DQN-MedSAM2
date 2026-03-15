@@ -29,20 +29,6 @@ from timm import optim as timm_optim
 
 import numpy as np
 
-class SAM2Wrapper(nn.Module):
-    def __init__(self, net):
-        super().__init__()
-        
-        self.net = net
-    
-    def forward(self, args, loader, epoch, optimizer=None, rank=0, training=True):
-        if training:
-            assert optimizer is not None
-            output = function.train_sam(args, self.net, optimizer, loader, epoch, rank=rank)
-        else:
-            output = function.validation_sam(args, loader, epoch, self.net, rank=rank)
-        return output
-
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12348'
@@ -98,15 +84,14 @@ def train(rank=0, world_size=0):
     print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
     print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
 
-    # net = SAM2Wrapper(net)
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
-            # net.module.net.agent.to_distributed(rank=rank)
             print("Wrapped agent for distributed training")
 
+    assert False
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
@@ -233,7 +218,6 @@ def main():
 
     if args.distributed:
         world_size = torch.cuda.device_count()
-        print(world_size)
         mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
     else:
         train()

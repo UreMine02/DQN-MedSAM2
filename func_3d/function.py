@@ -257,6 +257,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         for obj_id in obj_list:
             pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
                                     obj_id=obj_id, video_length=None, num_support=args.num_support)
+            
+            pack = {
+                "image": whole_imgs_tensor,
+                "label": whole_masks_tensor,
+                "support_image": whole_support_imgs_tensor,
+                "support_label": whole_support_masks_tensor,
+            } 
             # if pack is None:
             #     print(f"[Validation] [PACK]: No valid for pack for obj_id={obj_id}. Skipping...")
             #     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")

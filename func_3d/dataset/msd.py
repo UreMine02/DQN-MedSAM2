@@ -118,25 +118,34 @@ class MSD(Dataset):
             is_support=True
         )
         
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
-        support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
-        support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
+        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
+        # support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        # support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
         
+        # orig_size = image_3d.shape[-2:]
+        
+        # image_3d = tv_tensors.Image(image_3d)
+        # data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        # support_image_3d = tv_tensors.Image(support_image_3d)
+        # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        
+        # if self.mode == "train":
+        #     transform = self.tr_transform
+        # else:
+        #     transform = self.ts_transform
+            
+        # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+        
+        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
         orig_size = image_3d.shape[-2:]
         
-        image_3d = tv_tensors.Image(image_3d)
-        data_seg_3d = tv_tensors.Mask(data_seg_3d)
-        support_image_3d = tv_tensors.Image(support_image_3d)
-        support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
-        
-        if self.mode == "train":
-            transform = self.tr_transform
-        else:
-            transform = self.ts_transform
-            
-        image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
-        support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+        image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
+        support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
