@@ -43,7 +43,7 @@ def train(rank=0, world_size=0):
     if args.distributed:
         setup(rank, world_size)
         GPUdevice = torch.device('cuda', rank)
-        torch.cuda.set_device(GPUdevice)
+        # torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
 
@@ -74,8 +74,8 @@ def train(rank=0, world_size=0):
         agent_n_params = agent.num_parameters()
 
     n_parameters_tot = sum(p.numel() for p in net.parameters())
-    print(f'number of sam2 params: {n_parameters_tot}')
-    print(f'number of agent params: {agent_n_params}')
+    print(f'Number of sam2 params: {n_parameters_tot}')
+    print(f'Number of agent params: {agent_n_params}')
 
     head, fix = [], []
     for k, v in net.named_parameters():
@@ -91,7 +91,6 @@ def train(rank=0, world_size=0):
             net.module.agent.to_distributed(rank=rank)
             print("Wrapped agent for distributed training")
 
-    assert False
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)

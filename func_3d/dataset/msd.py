@@ -162,7 +162,7 @@ class MSD(Dataset):
                 
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
-        data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0)
+        data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
         
         # if self.mode == "train" and not is_support:
         if False:

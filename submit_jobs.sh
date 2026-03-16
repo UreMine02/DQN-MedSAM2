@@ -14,6 +14,6 @@
 # sbatch scripts/test_msd04.sh
 
 
-sbatch scripts/train_msd03.sh
-sbatch scripts/train_msd03.sh
-sbatch scripts/train_msd03.sh
+sbatch scripts/train_msd08.sh
+sbatch scripts/train_msd08.sh
+sbatch scripts/train_msd08.sh
