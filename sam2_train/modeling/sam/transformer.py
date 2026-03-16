@@ -290,6 +290,11 @@ class RoPEAttention(Attention):
         # self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=self.kv_in_dim, out_channels=self.kv_in_dim, kernel_size=4)
         self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
         self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        
+        torch.nn.init.eye_(self.ctx_gating_ptr_proj.weight)
+        torch.nn.init.zeros_(self.ctx_gating_ptr_proj.bias)
+        torch.nn.init.eye_(self.ctx_gating_mem_proj.weight)
+        torch.nn.init.zeros_(self.ctx_gating_mem_proj.bias)
 
         # SW GATING
         # self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=self.kv_in_dim, out_channels=4096, kernel_size=4)
@@ -307,6 +312,7 @@ class RoPEAttention(Attention):
         if num_k_exclude_rope > 0:
             m = num_k_exclude_rope // 4
             b, d = k.shape[0], k.shape[-1]
+
             mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=1)
 
             # CW GATING
@@ -384,42 +390,6 @@ class RoPEAttention(Attention):
             freqs_cis=self.freqs_cis,
             repeat_freqs_k=self.rope_k_repeat,
         )
-
-        # # NOTE: TEST GATING
-        # if num_k_exclude_rope > 0:
-        #     m = num_k_exclude_rope // 4
-        #     b, h, l, d = k.shape
-        #     mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=2)
-
-        #     # CW GATING
-        #     mem_ = mem.reshape(b, h, m, -1, d) # [1,h,m,4096,256]
-        #     ptr_ = ptr.reshape(b, h, m, -1, d) # [1,h,m,4,256]
-
-        #     mem_ = self.ctx_gating_mem_proj(mem_)
-        #     ptr_ = self.ctx_gating_ptr_proj(ptr_)
-
-        #     ptr_ = ptr_.sum(dim=-2, keepdim=True)
-        #     gating_logits = mem_ + ptr_ # [1,m,4096,64]
-        #     gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-
-        #     gated_mem = mem_ * gating_score
-        #     gated_mem = gated_mem.reshape(b, h, -1, d)
-
-        #     k = torch.cat([gated_mem, ptr], dim=2)
-
-            # # SW GATING
-            # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
-            # ptr_ = ptr.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4]
-
-            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
-            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
-
-            # gating_logits = mem_ + ptr_ # [1,m,64,4096]
-            # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
-            # gated_mem = mem_ * gating_score
-            # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
-
-            # k = torch.cat([gated_mem, ptr], dim=1)
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
