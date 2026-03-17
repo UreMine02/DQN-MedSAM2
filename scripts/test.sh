@@ -22,23 +22,21 @@ declare -a ckpt=(
     # output/msd_task02+grpo+icl+test_augment/2026-03-11-15-19-11/best.pth
     # output/msd_task04+grpo+icl/best.pth
 
-    # output/msd_task02+grpo+icl+test_cw_memory_gating/2026-03-13-19-56-41/best.pth
-    # output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj/2026-03-16-17-46-10/epoch_303_dice0.8620.pth
-    # output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj/2026-03-16-17-46-10/best.pth
-    output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-01-26/best.pth
+    # output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-01-26/best.pth
+    output/msd_task09+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-03-09/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpt[@]}
 do
-    for shot in 5;
+    for shot in 1 5;
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task02" \
+            -task "Task09" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             # -vis

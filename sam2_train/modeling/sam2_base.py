@@ -715,7 +715,7 @@ class SAM2Base(torch.nn.Module):
         if to_cat_obj_ptr is not None:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0)
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
-            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid()
+            obj_gating_score = obj_ptr_.sigmoid() #.sum(dim=0, keepdim=True)
             obj_ptrs = obj_ptrs * obj_gating_score
             
             if self.mem_dim < C:
