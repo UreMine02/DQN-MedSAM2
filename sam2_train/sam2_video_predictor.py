@@ -1694,11 +1694,11 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-            if not train_agent:
-                print(f"[Q] frame {frame_idx-1} "
-                    f"action {action} "
-                    f"drop_frame {drop_frame} "
-                    f"bank_size {bank_size} ")
+            # if not train_agent:
+            #     print(f"[Q] frame {frame_idx-1} "
+            #         f"action {action} "
+            #         f"drop_frame {drop_frame} "
+            #         f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,

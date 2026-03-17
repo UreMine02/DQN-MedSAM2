@@ -689,8 +689,7 @@ class SAM2Base(torch.nn.Module):
                         # obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
                         obj_pos = obj_pos.repeat_interleave(C // self.mem_dim, dim=0)
                     # to_cat_memory.append(obj_ptrs)
-                    # NOTE: TEST SEMANTIC FILTERING
-                    to_cat_obj_ptr.append(obj_ptrs)
+                    to_cat_obj_ptr.append(obj_ptrs) # NOTE: TEST SEMANTIC FILTERING
                     to_cat_memory_pos_embed.append(obj_pos)
                     num_obj_ptr_tokens = obj_ptrs.shape[0] * (C // self.mem_dim)
                 else:
