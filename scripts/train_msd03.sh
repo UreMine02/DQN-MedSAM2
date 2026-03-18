@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+cw_gating+ptr_specific_semantic_filtering_with_proj_before_reshape
+EXP=msd_task03+grpo+icl+sw_gating+semantic_filtering_with_proj_before_reshape
 
 python train_3d.py \
     -exp_name $EXP \
