@@ -165,8 +165,8 @@ class MSD(Dataset):
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
         
-        # if self.mode == "train" and not is_support:
-        if False:
+        if self.mode == "train" and not is_support:
+        # if False:
             pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
             
             from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)
