@@ -30,4 +30,5 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -distributed
+    -distributed \
+    -wandb_enabled
