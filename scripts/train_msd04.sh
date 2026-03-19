@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task04+grpo+icl+cw_gating
+EXP=msd_task04+grpo+icl+tw_gating+semantic_filtering_with_proj_before_reshape
 
 python train_3d.py \
     -exp_name $EXP \
@@ -26,7 +26,7 @@ python train_3d.py \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 500 \
+    -ep 100 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \

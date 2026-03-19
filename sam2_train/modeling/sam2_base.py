@@ -9,7 +9,7 @@ import torch.distributed
 import torch.nn.functional as F
 from torch import nn
 
-from torch.nn.init import trunc_normal_, eye_, zeros_
+from torch.nn.init import trunc_normal_, eye_, zeros_, ones_
 
 from sam2_train.modeling.sam.mask_decoder import MaskDecoder
 from sam2_train.modeling.sam.prompt_encoder import PromptEncoder
@@ -198,8 +198,15 @@ class SAM2Base(torch.nn.Module):
         self.backboneUpdate = BackboneUpdates()
         
         self.obj_ptr_filtering_proj = nn.Linear(256, 256)
+        self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
+        # self.ctx_gating_ptr_proj = nn.Linear(64, 64)
+        self.ctx_gating_mem_proj = nn.Linear(64, 64)
         eye_(self.obj_ptr_filtering_proj.weight)
         zeros_(self.obj_ptr_filtering_proj.bias)
+        ones_(self.ctx_gating_ptr_proj.weight)
+        zeros_(self.ctx_gating_ptr_proj.bias)
+        eye_(self.ctx_gating_mem_proj.weight)
+        zeros_(self.ctx_gating_mem_proj.bias)
 
     @property
     def device(self):
@@ -683,15 +690,14 @@ class SAM2Base(torch.nn.Module):
                         # NOTE: TEST SEMANTIC FILTERING
                         # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
                         # obj_ptrs = obj_ptrs.reshape(
-                        #     -1, B, C // self.mem_dim, self.mem_dim
+                            # -1, B, C // self.mem_dim, self.mem_dim
                         # )
-                        # obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
+                        # # obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
                         obj_pos = obj_pos.repeat_interleave(C // self.mem_dim, dim=0)
                     # to_cat_memory.append(obj_ptrs)
-                    # NOTE: TEST SEMANTIC FILTERING
-                    to_cat_obj_ptr.append(obj_ptrs)
+                    to_cat_obj_ptr.append(obj_ptrs) # NOTE: TEST SEMANTIC FILTERING
                     to_cat_memory_pos_embed.append(obj_pos)
-                    num_obj_ptr_tokens = obj_ptrs.shape[0] * (C // self.mem_dim)
+                    num_obj_ptr_tokens = obj_ptrs.shape[0] * (C // self.mem_dim) # NOTE: TEST SEMANTIC FILTERING
                 else:
                     num_obj_ptr_tokens = 0
         else:
@@ -715,7 +721,7 @@ class SAM2Base(torch.nn.Module):
         if to_cat_obj_ptr is not None:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0)
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
-            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid()
+            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid() #
             obj_ptrs = obj_ptrs * obj_gating_score
             
             if self.mem_dim < C:
@@ -726,6 +732,64 @@ class SAM2Base(torch.nn.Module):
                 obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
             
             memory = torch.cat([memory, obj_ptrs], dim=0)
+        
+        # NOTE: TEST GATING
+        if num_obj_ptr_tokens > 0:
+            m = num_obj_ptr_tokens // 4
+            b, d = memory.shape[1], memory.shape[-1]
+            
+            # memory & obj_ptrs shape [L,B,D] 
+            mem, ptr = memory.tensor_split(indices=(-num_obj_ptr_tokens,), dim=0)
+
+            # CW GATING
+            mem_ = mem.reshape(m, -1, b, d).permute(2,0,1,3) # [b,m,4096,64]
+            # ptr_ = ptr.reshape(m, -1, b, d) # [m,4,1,64]
+            ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1).reshape(b*m, d, -1) # [m,64,4]
+
+            mem_ = self.ctx_gating_mem_proj(mem_)
+            ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+        
+            ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
+            # ptr_ = ptr_.sum(dim=2, keepdim=True)
+            gating_logits = mem_ + ptr_ # [1,m,4096,64]
+            gating_score = gating_logits.sigmoid() # [1,m,4096,64]
+
+            gated_mem = mem_ * gating_score
+            gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
+
+            memory = torch.cat([gated_mem, ptr], dim=0)
+
+            # # SW GATING
+            # mem_ = mem.reshape(m, -1, b, d).permute(2,0,3,1) # [1,m,64,4096]
+            # ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1) # [1,m,64,4]
+            # # ptr_ = ptr.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+
+            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
+            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
+
+            # # ptr_ = ptr_.reshape(1, m, -1, 1).permute(0,1,3,2) # [1,m,1,4096]
+            
+            # gating_logits = mem_ + ptr_ # [1,m,64,4096]
+            # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
+            # gated_mem = mem_ * gating_score
+            # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d).transpose(0, 1)
+
+            # memory = torch.cat([gated_mem, ptr], dim=0)
+            
+            # # TW GATING
+            # mem_ = mem.reshape(b, m, -1, d) # [1,m,4096,64]
+            # ptr_ = ptr.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+
+            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
+            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+            # ptr_ = ptr_.reshape(1, m, -1, 1)
+            # gating_logits = mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+            # gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+
+            # gated_mem = mem_ * gating_score
+            # gated_mem = gated_mem.reshape(b, -1, d)
+
+            # memory = torch.cat([gated_mem, ptr], dim=1)
         
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,

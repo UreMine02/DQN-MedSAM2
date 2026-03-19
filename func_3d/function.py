@@ -245,7 +245,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
         task = packs["task"][0]
         name = packs["name"][0]
-        orig_size = packs["orig_size"]
         # cls_id = packs["obj_id"][0]
         # Log initial slice stats for validation
         # print(f"[VALIDATION PACK] Name: {name}")
