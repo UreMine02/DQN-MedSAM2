@@ -14,10 +14,11 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+include_cond_ptr
+EXP=msd_task03+grpo+icl+tw_gating+semantic_filtering
 
 python train_3d.py \
     -exp_name $EXP \
+    -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
@@ -26,8 +27,8 @@ python train_3d.py \
     -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 500 \
-    -q_updates_per_step 1 \
+    -ep 100 \
+    -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \

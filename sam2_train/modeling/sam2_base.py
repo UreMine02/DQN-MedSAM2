@@ -7,8 +7,9 @@
 import torch
 import torch.distributed
 import torch.nn.functional as F
+from torch import nn
 
-from torch.nn.init import trunc_normal_
+from torch.nn.init import trunc_normal_, eye_, zeros_
 
 from sam2_train.modeling.sam.mask_decoder import MaskDecoder
 from sam2_train.modeling.sam.prompt_encoder import PromptEncoder
@@ -195,6 +196,10 @@ class SAM2Base(torch.nn.Module):
                 dynamic=False,
             )
         self.backboneUpdate = BackboneUpdates()
+        
+        self.obj_ptr_filtering_proj = nn.Linear(256, 256)
+        eye_(self.obj_ptr_filtering_proj.weight)
+        zeros_(self.obj_ptr_filtering_proj.bias)
 
     @property
     def device(self):
@@ -548,7 +553,7 @@ class SAM2Base(torch.nn.Module):
         # Step 1: condition the visual features of the current frame on previous memories
         if not is_init_cond_frame:
             # Retrieve the memories encoded with the maskmem backbone
-            to_cat_memory, to_cat_memory_pos_embed = [], []
+            to_cat_memory, to_cat_memory_pos_embed, to_cat_obj_ptr = [], [], []
             # Add conditioning frames's output first (all cond frames have t_pos=0 for
             # when getting temporal positional embedding below)
             assert len(output_dict["cond_frame_outputs"]) > 0
@@ -675,15 +680,18 @@ class SAM2Base(torch.nn.Module):
                     else:
                         obj_pos = obj_ptrs.new_zeros(len(pos_list), B, self.mem_dim)
                     if self.mem_dim < C:
+                        # NOTE: TEST SEMANTIC FILTERING
                         # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
-                        obj_ptrs = obj_ptrs.reshape(
-                            -1, B, C // self.mem_dim, self.mem_dim
-                        )
-                        obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
+                        # obj_ptrs = obj_ptrs.reshape(
+                        #     -1, B, C // self.mem_dim, self.mem_dim
+                        # )
+                        # obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
                         obj_pos = obj_pos.repeat_interleave(C // self.mem_dim, dim=0)
-                    to_cat_memory.append(obj_ptrs)
+                    # to_cat_memory.append(obj_ptrs)
+                    # NOTE: TEST SEMANTIC FILTERING
+                    to_cat_obj_ptr.append(obj_ptrs)
                     to_cat_memory_pos_embed.append(obj_pos)
-                    num_obj_ptr_tokens = obj_ptrs.shape[0]
+                    num_obj_ptr_tokens = obj_ptrs.shape[0] * (C // self.mem_dim)
                 else:
                     num_obj_ptr_tokens = 0
         else:
@@ -695,12 +703,29 @@ class SAM2Base(torch.nn.Module):
                 return pix_feat_with_mem
 
             # Use a dummy token on the first frame (to avoid emtpy memory input to tranformer encoder)
+            to_cat_obj_ptr = None
             to_cat_memory = [self.no_mem_embed.expand(1, B, self.mem_dim)]
             to_cat_memory_pos_embed = [self.no_mem_pos_enc.expand(1, B, self.mem_dim)]
 
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
+        
+        # NOTE: TEST SEMANTIC FILTERING
+        if to_cat_obj_ptr is not None:
+            obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0)
+            obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
+            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid()
+            obj_ptrs = obj_ptrs * obj_gating_score
+            
+            if self.mem_dim < C:
+                # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
+                obj_ptrs = obj_ptrs.reshape(
+                    -1, B, C // self.mem_dim, self.mem_dim
+                )
+                obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
+            
+            memory = torch.cat([memory, obj_ptrs], dim=0)
         
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,

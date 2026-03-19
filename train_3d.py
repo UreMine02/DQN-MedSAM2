@@ -74,15 +74,15 @@ def train(rank=0, world_size=0):
         agent_n_params = agent.num_parameters()
 
     n_parameters_tot = sum(p.numel() for p in net.parameters())
-    print(f'Number of sam2 params: {n_parameters_tot}')
-    print(f'Number of agent params: {agent_n_params}')
+    print(f'Number of sam2 params: {n_parameters_tot:,}')
+    print(f'Number of agent params: {agent_n_params:,}')
 
     head, fix = [], []
     for k, v in net.named_parameters():
         (head if v.requires_grad else fix).append(v)
 
-    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
-    print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
+    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params:,}')
+    print(f'Parameters fixed: {sum(p.numel() for p in fix):,}')
 
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
