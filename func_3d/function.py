@@ -153,12 +153,13 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss = class_loss["total_loss"]
                     # avg_loss = class_loss["focal_loss"] + class_loss["dice_loss"] + class_loss["mae_loss"]
 
+                    accum_step = 1
                     # Average loss of this class
                     average_loss(class_loss)
-                    avg_loss = class_loss["total_loss"] / 4
+                    avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
                     
-                    if (batch_idx + 1) % 4 == 0:
+                    if (batch_idx + 1) % accum_step == 0:
                         torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                         optimizer.step()
                         optimizer.zero_grad()
