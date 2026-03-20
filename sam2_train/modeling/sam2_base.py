@@ -720,7 +720,7 @@ class SAM2Base(torch.nn.Module):
         
         # NOTE: TEST SEMANTIC FILTERING
         if to_cat_obj_ptr is not None:
-            obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0)
+            obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
             obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid() #
             obj_ptrs = obj_ptrs * obj_gating_score

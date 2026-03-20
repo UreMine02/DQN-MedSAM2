@@ -62,7 +62,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     print_freq = 10
     
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0, miniters=10) as pbar:
-        for packs in train_loader: #metric_logger.log_every(train_loader, print_freq, header=header):
+        for batch_idx, packs in enumerate(train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -153,10 +153,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss = class_loss["total_loss"]
                     # avg_loss = class_loss["focal_loss"] + class_loss["dice_loss"] + class_loss["mae_loss"]
 
-                    optimizer.zero_grad()
+                    # Average loss of this class
+                    average_loss(class_loss)
+                    avg_loss = class_loss["total_loss"] / 4
                     avg_loss.backward()
-                    grad_total_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                    optimizer.step()
+                    
+                    if (batch_idx + 1) % 4 == 0:
+                        torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                        optimizer.step()
+                        optimizer.zero_grad()
                     
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)
