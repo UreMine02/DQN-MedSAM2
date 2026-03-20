@@ -14,10 +14,11 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task04+grpo+icl+tw_gating+semantic_filtering_with_proj_before_reshape
+EXP=msd_task04+grpo+icl+cw_gating_before_pos+semantic_filtering+equal_prob
 
 python train_3d.py \
     -exp_name $EXP \
+    -sam_config sam2_hiera_t \
     -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \

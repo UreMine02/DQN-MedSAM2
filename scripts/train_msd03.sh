@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+sw_gating+semantic_filtering_with_proj_before_reshape
+EXP=msd_task03+grpo+icl+cw_gating_before_pos+semantic_filtering+equal_prob
 
 python train_3d.py \
     -exp_name $EXP \
@@ -24,7 +24,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task03 \
-    -data_path  /data/rlsam2/datasets/nii/MSD \
+    -data_path /data/rlsam2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
     -ep 100 \
