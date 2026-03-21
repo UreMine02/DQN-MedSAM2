@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+cw_gating_before_pos+equal_prob+grad_accum4
+EXP=msd_task02+grpo+icl+cw_gating_before_pos+unequal_prob
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -28,7 +28,7 @@ python train_3d.py \
     -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 200 \
+    -ep 500 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
