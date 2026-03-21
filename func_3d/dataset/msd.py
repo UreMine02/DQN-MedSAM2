@@ -171,7 +171,7 @@ class MSD(Dataset):
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                choices = list(range(-(max_slices-1),0)) + list(range(image_3d.shape[-1]))
+                choices = list(range(-(max_slices-2),0)) + list(range(image_3d.shape[-1] - 1))
                 start = np.random.choice(choices)
                 end = start + max_slices
                 start = max(0, start)
