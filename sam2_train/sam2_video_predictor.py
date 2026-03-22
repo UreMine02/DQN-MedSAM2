@@ -1352,7 +1352,7 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             feat_sizes,
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
-
+        
         storage_device = inference_state["device"]
 
         # Agent

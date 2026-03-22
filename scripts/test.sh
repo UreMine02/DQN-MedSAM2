@@ -24,7 +24,9 @@ declare -a ckpt=(
 
     # output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-01-26/best.pth
     # output/msd_task09+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-03-09/best.pth
-    output/msd_task03+grpo+icl+cw_gating+semantic_filtering/2026-03-17-16-11-44/best.pth
+    # output/msd_task03+grpo+icl+cw_gating+semantic_filtering/2026-03-17-16-11-44/best.pth
+
+    output/msd_task04+grpo+icl+cw_gating_before_pos+semantic_filtering+equal_prob/2026-03-20-11-54-59/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -37,10 +39,10 @@ do
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task03" \
+            -task "Task04" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -vis
+            # -vis
             # -no_agent
     done
 done
