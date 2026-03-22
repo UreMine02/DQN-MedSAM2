@@ -14,8 +14,8 @@ from torchvision import tv_tensors
 
 
 def scaling(image ,scale=1):
-    image_min = np.min(image)
-    image_max = np.max(image)
+    image_min = image.min()
+    image_max = image.max()
     image = ((image - image_min)/(image_max-image_min))*scale
     return image
 
@@ -131,27 +131,28 @@ class BTCV(Dataset):
         # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous', is_support=False):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
         data_seg_3d = data_seg_3d.dataobj
-
+        
         if image_3d.ndim == 4:
             if image_3d.shape[-1] == 4:
                 image_3d = image_3d[..., 2]
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
-
+                
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d[data_seg_3d != obj_id] = 0
-
+        
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]
+            
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
@@ -162,26 +163,25 @@ class BTCV(Dataset):
                 image_3d = image_3d[..., start:end]
                 data_seg_3d = data_seg_3d[..., start:end]
             elif slice_selection == 'random':
-                n_slice = max_slices if self.subset != 'train' else np.random.randint(1, max_slices + 1)
+                n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
-                s = image_3d.shape[-1] // (max_slices + 1)
-                slice_indices = np.arange(s, image_3d.shape[-1], s)[:max_slices]
+                slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
-
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
+        
         image_3d = scaling(image_3d, scale=1)
-
+        
         return image_3d, data_seg_3d
-
+    
     def resize(self, image_3d, data_seg_3d):
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-
+        
         return image_3d, data_seg_3d

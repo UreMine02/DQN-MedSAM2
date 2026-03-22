@@ -55,8 +55,10 @@ class MSD(Dataset):
             v2.Resize(size=(self.image_size, self.image_size)),
             # v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
             v2.RandomHorizontalFlip(0.5),
-            v2.RandomAffine(degrees=25),
+            # v2.RandomAffine(degrees=25),
             v2.ColorJitter(brightness=0.25, contrast=0.25),
+            v2.GaussianBlur(kernel_size=5),
+            v2.GaussianNoise()
         ])
         
         self.ts_transform = v2.Compose([
@@ -148,7 +150,7 @@ class MSD(Dataset):
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous', is_support=False):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -170,7 +172,7 @@ class MSD(Dataset):
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                choices = list(range(-(max_slices-2),0)) + list(range(image_3d.shape[-1] - 1))
+                choices = list(range(-(max_slices - 2),0)) + list(range(image_3d.shape[-1] - 1))
                 start = np.random.choice(choices)
                 end = start + max_slices
                 start = max(0, start)
@@ -187,7 +189,7 @@ class MSD(Dataset):
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
-
+        
         image_3d = scaling(image_3d, scale=1)
         
         return image_3d, data_seg_3d
