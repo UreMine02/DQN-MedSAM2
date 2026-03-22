@@ -637,7 +637,8 @@ class SAM2Base(torch.nn.Module):
 
             # Construct the list of past object pointers
             if self.use_obj_ptrs_in_encoder:
-                max_obj_ptrs_in_encoder = min(num_frames, self.max_obj_ptrs_in_encoder)
+                # max_obj_ptrs_in_encoder = min(num_frames, self.max_obj_ptrs_in_encoder)
+                max_obj_ptrs_in_encoder = min(num_frames, self.num_maskmem)
                 # First add those object pointers from selected conditioning frames
                 # (optionally, only include object pointers in the past during evaluation)
                 if not self.training and self.only_obj_ptrs_in_the_past_for_eval:

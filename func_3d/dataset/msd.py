@@ -42,7 +42,6 @@ class MSD(Dataset):
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
         
         df = pd.concat(df)
-        # df = df[df["obj_id"] == 2]
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])
@@ -55,9 +54,9 @@ class MSD(Dataset):
         self.tr_transform = v2.Compose([
             v2.Resize(size=(self.image_size, self.image_size)),
             # v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
-            # v2.RandomHorizontalFlip(0.5),
-            # v2.RandomAffine(degrees=25),
-            # v2.ColorJitter(brightness=0.25, contrast=0.25),
+            v2.RandomHorizontalFlip(0.5),
+            v2.RandomAffine(degrees=25),
+            v2.ColorJitter(brightness=0.25, contrast=0.25),
         ])
         
         self.ts_transform = v2.Compose([
@@ -165,31 +164,24 @@ class MSD(Dataset):
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
         
-        # if self.mode == "train" and not is_support:
-        if False:
-            pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
-            
-            from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)
-            image_3d = image_3d[:, :, max(from_idx, 0):to_idx]
-            data_seg_3d = data_seg_3d[:, :, max(from_idx, 0):to_idx]
-        else:
-            pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
-            image_3d = image_3d[:, :, pos_slices]
-            data_seg_3d = data_seg_3d[:, :, pos_slices]
-            
+        pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
+        image_3d = image_3d[:, :, pos_slices]
+        data_seg_3d = data_seg_3d[:, :, pos_slices]
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                choices = list(range(-(max_slices-2),0)) + list(range(image_3d.shape[-1] - 1))
+                start = np.random.choice(choices)
+                end = start + max_slices
+                start = max(0, start)
+                image_3d = image_3d[..., start:end]
+                data_seg_3d = data_seg_3d[..., start:end]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
-                s = image_3d.shape[-1] // (max_slices + 1)
                 slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
