@@ -42,7 +42,7 @@ class MSD(Dataset):
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
         
         df = pd.concat(df)
-        # df = df[df["obj_id"] == 2]
+        df = df[df["obj_id"] == 2]
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])
@@ -58,8 +58,8 @@ class MSD(Dataset):
             v2.RandomHorizontalFlip(0.5),
             # v2.RandomAffine(degrees=25),
             v2.ColorJitter(brightness=0.25, contrast=0.25),
-            v2.GaussianBlur(kernel_size=5),
-            v2.GaussianNoise()
+            # v2.GaussianBlur(kernel_size=5),
+            # v2.GaussianNoise()
         ])
         
         self.ts_transform = v2.Compose([

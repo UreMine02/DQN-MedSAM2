@@ -14,17 +14,20 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+tw_gating_before_pos+semantic_filtering+equal_prob+augment
+EXP=msd_task03+grpo+icl+obj_id2+tw_gating_sim+semantic_filtering
+SAM_CKPT=/data/rlsam2/checkpoints/sam2_hiera_tiny.pt
+DATA=/data/rlsam2/datasets/nii/MSD
+# export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
-    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
+    -sam_ckpt $SAM_CKPT \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task03 \
-    -data_path /data/rlsam2/datasets/nii/MSD \
+    -data_path $DATA \
     -lr 2e-4 \
     -val_freq 1 \
     -ep 500 \
@@ -32,5 +35,5 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
+    -wandb_enabled \
     -distributed \
-    -wandb_enabled

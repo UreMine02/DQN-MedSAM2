@@ -200,18 +200,18 @@ class SAM2Base(torch.nn.Module):
         # NOTE: TEST GATING
         self.obj_ptr_filtering_proj = nn.Linear(256,256)
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
-        # self.ctx_gating_ptr_proj = nn.Linear(64, 64)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
+        self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
         
-        self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
-        self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+        # self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
+        # self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
         
         # Init layers
-        eye_(self.obj_ptr_filtering_proj.weight)
+        ones_(self.obj_ptr_filtering_proj.weight)
         zeros_(self.obj_ptr_filtering_proj.bias)
         ones_(self.ctx_gating_ptr_proj.weight)
         zeros_(self.ctx_gating_ptr_proj.bias)
-        eye_(self.ctx_gating_mem_proj.weight)
+        ones_(self.ctx_gating_mem_proj.weight)
         zeros_(self.ctx_gating_mem_proj.bias)
 
     @property
@@ -740,6 +740,7 @@ class SAM2Base(torch.nn.Module):
             
             memory = torch.cat([memory, obj_ptrs], dim=0)
         
+        gated_indices = None
         # NOTE: TEST GATING
         if num_obj_ptr_tokens > 0:
             m = num_obj_ptr_tokens // 4
@@ -792,14 +793,24 @@ class SAM2Base(torch.nn.Module):
             mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
             ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
             ptr_ = ptr_.reshape(1, m, -1, 1)
-            gating_logits = mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+            
+            mem_ = F.normalize(mem_, p=2, dim=-1)
+            ptr_ = F.normalize(ptr_, p=2, dim=-2)
+            
+            gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
             gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+            # gating_score = (gating_score > 0.5).to(torch.bfloat16)
 
             gated_mem = mem_ * gating_score
             gated_mem = gated_mem.reshape(b, -1, d)
             gated_mem = gated_mem.transpose(0,1)
 
             memory = torch.cat([gated_mem, ptr], dim=0)
+            
+            # gating_score = gating_score.reshape(-1)
+            # gated_indices = torch.argwhere(gating_score > 0.5)
+            
+            # print(gating_score, gating_score.shape, gated_indices)
         
         pix_feat_with_mem, attn_scores = self.memory_attention(
             curr=current_vision_feats,
@@ -808,6 +819,7 @@ class SAM2Base(torch.nn.Module):
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             return_attn=return_attn,
+            gated_indices=gated_indices
         )
             
         # reshape the output (HW)BC => BCHW
