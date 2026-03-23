@@ -153,6 +153,7 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
+        
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_probs = Categorical(logits=action_logits)
@@ -231,7 +232,7 @@ class GRPOAgent(BasePOAgent):
 
             policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
             minus_entropy = -policy_dist.entropy().mean()
-            policy_loss = 10 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+            policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()

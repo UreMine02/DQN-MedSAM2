@@ -163,7 +163,7 @@ class SpatialSummarizer(nn.Module):
         self.spatial_query = nn.Parameter(scale * torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
         
-        # self.initialize_parameters()
+        self.initialize_parameters()
         
     def forward(self, x, training=True):
         """x: [B,C,H,W]"""
@@ -188,10 +188,8 @@ class SpatialSummarizer(nn.Module):
         attn_std = self.spatial_dim ** -0.5
         fc_std = (2 * self.spatial_dim) ** -0.5
         for block in self.qformer:
-            nn.init.normal_(block.attn.to_q.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_k.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_v.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_out[0].weight, std=proj_std)
+            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
+            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
             nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
             nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
     

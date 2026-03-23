@@ -207,11 +207,11 @@ class SAM2Base(torch.nn.Module):
         # self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
         
         # Init layers
-        ones_(self.obj_ptr_filtering_proj.weight)
+        eye_(self.obj_ptr_filtering_proj.weight)
         zeros_(self.obj_ptr_filtering_proj.bias)
         ones_(self.ctx_gating_ptr_proj.weight)
         zeros_(self.ctx_gating_ptr_proj.bias)
-        ones_(self.ctx_gating_mem_proj.weight)
+        eye_(self.ctx_gating_mem_proj.weight)
         zeros_(self.ctx_gating_mem_proj.bias)
 
     @property
