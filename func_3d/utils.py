@@ -516,11 +516,12 @@ class CombinedLoss(nn.Module):
         
         return self.dice_weight*dice, self.focal_weight*focal, self.mae_weight*mae, self.bce_weight*bce
 
-def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss):
+def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss):
     loss_dict["focal_loss"] += focal_loss
     loss_dict["dice_loss"] += dice_loss
     loss_dict["mae_loss"] += mae_loss
     loss_dict["bce_loss"] += bce_loss
+    loss_dict["aux_loss"] += aux_loss
 
 def average_loss(loss_dict):
     if loss_dict["num_step"] == 0:
@@ -535,7 +536,8 @@ def average_loss(loss_dict):
     loss_dict["dice_loss"] = loss_dict["dice_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["mae_loss"] = loss_dict["mae_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["bce_loss"] = loss_dict["bce_loss"]/(loss_dict["num_step"]+ 1e-6)
-    loss_dict["total_loss"] += loss_dict["focal_loss"] + loss_dict["dice_loss"] + loss_dict["mae_loss"] + loss_dict["bce_loss"]
+    loss_dict["aux_loss"] = loss_dict["aux_loss"]/(loss_dict["num_step"]+ 1e-6)
+    loss_dict["total_loss"] += loss_dict["focal_loss"] + loss_dict["dice_loss"] + loss_dict["mae_loss"] + loss_dict["bce_loss"] + loss_dict["aux_loss"]
 
 def update_score(score_dict, dice_score, iou_score):
     score_dict["dice_score"] += dice_score
