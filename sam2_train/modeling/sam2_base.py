@@ -207,12 +207,12 @@ class SAM2Base(torch.nn.Module):
         # self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
         
         # Init layers
-        eye_(self.obj_ptr_filtering_proj.weight)
-        zeros_(self.obj_ptr_filtering_proj.bias)
-        ones_(self.ctx_gating_ptr_proj.weight)
-        zeros_(self.ctx_gating_ptr_proj.bias)
-        eye_(self.ctx_gating_mem_proj.weight)
-        zeros_(self.ctx_gating_mem_proj.bias)
+        # eye_(self.obj_ptr_filtering_proj.weight)
+        # ones_(self.obj_ptr_filtering_proj.bias)
+        # zeros_(self.ctx_gating_ptr_proj.weight)
+        # zeros_(self.ctx_gating_ptr_proj.bias)
+        # eye_(self.ctx_gating_mem_proj.weight)
+        # zeros_(self.ctx_gating_mem_proj.bias)
 
     @property
     def device(self):
@@ -763,7 +763,8 @@ class SAM2Base(torch.nn.Module):
             # # ptr_ = ptr_.sum(dim=2, keepdim=True)
             # gating_logits = mem_ + ptr_ # [1,m,4096,64]
             # gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-
+            # gating_score = (gating_score > 0.5).to(torch.bfloat16)
+            
             # gated_mem = mem_ * gating_score
             # gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
 
@@ -799,7 +800,13 @@ class SAM2Base(torch.nn.Module):
             
             gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
             gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-            # gating_score = (gating_score > 0.5).to(torch.bfloat16)
+            gating_score = (gating_score > 0.5).to(torch.bfloat16)
+            
+            # # NOTE: GUMBEL SOFTMAX
+            # temperature = 0.1
+            # g1 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
+            # g2 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
+            # gating_score = torch.sigmoid((torch.log(gating_logits) + g1 - g2) / temperature)
 
             gated_mem = mem_ * gating_score
             gated_mem = gated_mem.reshape(b, -1, d)
@@ -809,8 +816,6 @@ class SAM2Base(torch.nn.Module):
             
             # gating_score = gating_score.reshape(-1)
             # gated_indices = torch.argwhere(gating_score > 0.5)
-            
-            # print(gating_score, gating_score.shape, gated_indices)
         
         pix_feat_with_mem, attn_scores = self.memory_attention(
             curr=current_vision_feats,

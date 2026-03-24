@@ -397,8 +397,8 @@ class RoPEAttention(Attention):
             repeat_freqs_k=self.rope_k_repeat,
         )
         
-        if gated_indices is not None:
-            k = k[:, :, gated_indices]
+        # if gated_indices is not None:
+        #     k = k[:, :, gated_indices]
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)

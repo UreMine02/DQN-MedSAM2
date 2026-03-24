@@ -14,10 +14,10 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+obj_id2+tw_gating_sim+semantic_filtering
+EXP=msd_task03+grpo+icl+obj_id2+tw_threshold_hard_gating_sim+semantic_filtering+force_add
 SAM_CKPT=/data/rlsam2/checkpoints/sam2_hiera_tiny.pt
 DATA=/data/rlsam2/datasets/nii/MSD
-# export CUDA_VISIBLE_DEVICES=1
+# export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -36,4 +36,4 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -wandb_enabled \
-    -distributed \
+    -distributed

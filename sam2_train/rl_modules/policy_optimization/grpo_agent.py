@@ -166,7 +166,7 @@ class GRPOAgent(BasePOAgent):
             # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
-            main_action_idx = torch.multinomial(valid_probs, num_samples=1) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
@@ -174,7 +174,7 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            action_idx = torch.multinomial(valid_probs, num_samples=1) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
 
             return {
                 "main_action": valid_actions[action_idx].item(),

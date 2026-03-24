@@ -1608,7 +1608,8 @@ class SAM2VideoPredictor(SAM2Base):
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
-                    num_samples=6,
+                    num_samples=10,
+                    bank_is_full=bank_full,
                     training=train_agent,
                 ) # ask agent
 
@@ -1631,7 +1632,7 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
-                    reward = 0.01
+                    reward = 0.001
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
