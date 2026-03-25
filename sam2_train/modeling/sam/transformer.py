@@ -7,7 +7,7 @@
 import math
 import warnings
 from functools import partial
-from typing import Tuple, Type
+from typing import Tuple, Type, Optional
 
 import torch
 import torch.nn.functional as F
@@ -296,16 +296,23 @@ class RoPEAttention(Attention):
         # self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
         # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
         
-        # TW GATING
-        # self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=self.kv_in_dim, out_channels=self.kv_in_dim, kernel_size=4)
-        # self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
+        # # TW GATING
+        # self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=self.internal_dim, out_channels=self.internal_dim, kernel_size=4)
+        # self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
+        
+        # torch.nn.init.ones_(self.ctx_gating_ptr_proj.weight)
+        # torch.nn.init.zeros_(self.ctx_gating_ptr_proj.bias)
+        # torch.nn.init.eye_(self.ctx_gating_mem_proj.weight)
+        # torch.nn.init.zeros_(self.ctx_gating_mem_proj.bias)
+        
         
         # SDPA GATING
         # self.gating_proj = nn.Linear(self.internal_dim, self.internal_dim)
         
 
     def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
+        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0,
+        gated_indices: Optional[Tensor] = None
     ) -> Tensor:
         # # NOTE: TEST GATING
         # if num_k_exclude_rope > 0:
@@ -364,7 +371,6 @@ class RoPEAttention(Attention):
 
             # k = torch.cat([gated_mem, ptr], dim=1)
 
-
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
@@ -390,6 +396,9 @@ class RoPEAttention(Attention):
             freqs_cis=self.freqs_cis,
             repeat_freqs_k=self.rope_k_repeat,
         )
+        
+        # if gated_indices is not None:
+        #     k = k[:, :, gated_indices]
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
@@ -403,10 +412,6 @@ class RoPEAttention(Attention):
         # ):
         #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         
-        # # NOTE: TEST SDPA GATING
-        # gating_score = self.gating_proj(q).sigmoid()
-        # out = out * gating_score
-
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 

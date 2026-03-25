@@ -129,6 +129,7 @@ def train(rank=0, world_size=0):
             focal_loss,
             mae_loss,
             bce_loss,
+            aux_loss,
             agent_loss
         ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
         loss_dict = {
@@ -137,6 +138,7 @@ def train(rank=0, world_size=0):
             'train/focal loss': focal_loss,
             'train/mae_loss': mae_loss,
             'train/bce_loss': bce_loss,
+            'train/aux_loss': aux_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
             "train/lr": optimizer.param_groups[0]['lr'],

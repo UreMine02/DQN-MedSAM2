@@ -153,27 +153,28 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
+        
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
-        action_dist = Categorical(logits=action_logits)
+        action_probs = Categorical(logits=action_logits)
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
         # if not training:
-        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+            # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
-            main_action_idx = torch.multinomial(valid_probs, num_samples=1) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
                 "action": valid_actions[action_idx].tolist(),
-                "log_probs": valid_probs.log()[action_idx].tolist()
+                "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            action_idx = torch.multinomial(valid_probs, num_samples=1) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
 
             return {
                 "main_action": valid_actions[action_idx].item(),
@@ -235,9 +236,9 @@ class GRPOAgent(BasePOAgent):
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
             self.policy_optimizer.step()
-
+            
             total_policy_loss += policy_loss.detach()
             total_policy_gradnorm += gradnorm
 

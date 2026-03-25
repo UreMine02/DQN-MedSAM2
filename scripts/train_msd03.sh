@@ -14,8 +14,8 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+obj_id2+cw_gating_before_pos+semantic_filtering+highres_gating
-
+EXP=msd_task03+grpo+icl+tw_gating+obj_ptr+highres_gating
+# EXP=msd_task03+grpo+no_agent
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -32,4 +32,10 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -distributed
+    -gating_dimension "tw" \
+    -gating_softness "soft" \
+    -obj_ptr_gating \
+    -highres_gating \
+    -auxiliary_loss "no" \
+    -distributed \
+    

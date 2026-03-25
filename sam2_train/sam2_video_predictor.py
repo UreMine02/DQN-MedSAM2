@@ -1223,7 +1223,10 @@ class SAM2VideoPredictor(SAM2Base):
             _, video_res_masks = self._get_orig_video_res_output(
                 inference_state, pred_masks
             )
-            yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks
+            gating_score_dict = None
+            if "gating_score_dict" in current_out.keys():
+                gating_score_dict = current_out["gating_score_dict"]
+            yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
 
         if train_agent:
             storage_device = inference_state["device"]
@@ -1428,6 +1431,10 @@ class SAM2VideoPredictor(SAM2Base):
             "object_score_logits": object_score_logits,
             "obj_ptr": obj_ptr,
         }
+        
+        if "gating_score_dict" in current_out.keys():
+            compact_current_out["gating_score_dict"] = current_out["gating_score_dict"]
+            
         return compact_current_out, pred_masks_gpu
 
     def _run_memory_encoder(
@@ -1607,7 +1614,8 @@ class SAM2VideoPredictor(SAM2Base):
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
-                    num_samples=6,
+                    num_samples=10,
+                    bank_is_full=bank_full,
                     training=train_agent,
                 ) # ask agent
 
@@ -1630,7 +1638,7 @@ class SAM2VideoPredictor(SAM2Base):
                 valid = True
                 if action == 0:
                     # Add
-                    reward = 0.01
+                    reward = 0.001
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
@@ -1659,7 +1667,16 @@ class SAM2VideoPredictor(SAM2Base):
 
                         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-                        reward += (loss_before.detach().cpu() - loss_after.detach().cpu())
+                        loss_diff = loss_before.detach().cpu() - loss_after.detach().cpu()
+                        
+                        if loss_diff > 0:
+                            one_hot_rw = 1
+                        elif loss_diff < 0:
+                            one_hot_rw = -1
+                        else:
+                            one_hot_rw = 0
+
+                        reward += loss_diff
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
@@ -1694,10 +1711,10 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
             # if not train_agent:
-            #     print(f"[Q] frame {frame_idx-1} "
-            #         f"action {action} "
-            #         f"drop_frame {drop_frame} "
-            #         f"bank_size {bank_size} ")
+            # print(f"[Q] frame {frame_idx-1} "
+            #     f"action {action} "
+            #     f"drop_frame {drop_frame} "
+            #     f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
@@ -1837,10 +1854,11 @@ class SAM2VideoPredictor(SAM2Base):
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
 
-        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
             video_segments[out_frame_idx] = {
                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
-                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
+                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i], 
+                "gating_score_dict": gating_score_dict}
                 for i, out_obj_id in enumerate(out_obj_ids)
             }
 

@@ -42,7 +42,6 @@ class MSD(Dataset):
             df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
         
         df = pd.concat(df)
-        df = df[df["obj_id"] == 2]
         self.gt_path = np.asarray(df["gt_path"])
         self.task = np.asarray(df["task"])
         self.obj_id = np.asarray(df["obj_id"])

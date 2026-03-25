@@ -41,12 +41,13 @@ def build_sam2(
 
 
 def build_sam2_video_predictor(
+    args,
     config_file,
     ckpt_path=None,
     device="cuda",
     mode="eval",
     hydra_overrides_extra=[],
-    apply_postprocessing=True
+    apply_postprocessing=True,
 ):
     hydra_overrides = [
         "++model._target_=sam2_train.sam2_video_predictor.SAM2VideoPredictor",
@@ -62,6 +63,10 @@ def build_sam2_video_predictor(
             "++model.binarize_mask_from_pts_for_mem_enc=true",
             # fill small holes in the low-res masks up to `fill_hole_area` (before resizing them to the original video resolution)
             "++model.fill_hole_area=8",
+            f"++model.gating_dimension={args.gating_dimension}",
+            f"++model.gating_softness={args.gating_softness}",
+            f"++model.obj_ptr_gating={args.obj_ptr_gating}",
+            f"++model.highres_gating={args.highres_gating}",
         ]
     hydra_overrides.extend(hydra_overrides_extra)
 

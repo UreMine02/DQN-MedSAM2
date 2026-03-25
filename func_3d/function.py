@@ -10,6 +10,7 @@ from torchvision.utils import draw_segmentation_masks, save_image
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
+from monai.losses import DiceLoss
 
 import cfg
 from conf import settings
@@ -50,16 +51,25 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
+    aux_lossfunc = DiceLoss(sigmoid=False)
 
     # Record total loss thoroughout the entire epoch
-    total_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
+    total_loss = {
+        "total_loss": 0,
+        "focal_loss": 0,
+        "dice_loss": 0,
+        "mae_loss": 0,
+        "bce_loss": 0,
+        "aux_loss": 0,
+        "num_step": 0
+    }
     target_class = 4
     agent_loss = {"actor_loss": 0, "critic_loss": 0}
     agent_step = 0
     metric_logger = MetricLogger(delimiter=" ")
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
-    
+
     with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0, miniters=10) as pbar:
         for batch_idx, packs in enumerate(train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
             whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -69,7 +79,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             task = packs["task"][0]
             
             obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
-            instance_loss = {"total_loss": 0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
+            instance_loss = {
+                "total_loss": 0,
+                "focal_loss": 0,
+                "dice_loss": 0,
+                "mae_loss": 0,
+                "bce_loss": 0,
+                "aux_loss": 0,
+                "num_step": 0,
+            }
             # print(obj_list)
             for obj_id in obj_list:
                 # pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
@@ -119,18 +137,47 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         device=GPUdevice
                     )
                     # Record the loss in this step
-                    class_loss = {"total_loss":0, "focal_loss": 0, "dice_loss": 0, "mae_loss": 0, "bce_loss": 0, "num_step": 0}
+                    class_loss = {
+                        "total_loss":0,
+                        "focal_loss": 0,
+                        "dice_loss": 0,
+                        "mae_loss": 0,
+                        "bce_loss": 0,
+                        "aux_loss": 0,
+                        "num_step": 0
+                    }
 
                     for frame_idx in video_segments.keys():
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
-                        mask = mask == obj_id
-                        mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                        # if mask is not None:
-                            # mask = mask == obj_id
-                            # mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                        # else:
-                            # mask = torch.zeros_like(pred).to(device=GPUdevice)
+                        if mask is not None:
+                            mask = mask == obj_id
+                            mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                        else:
+                            mask = torch.zeros_like(pred).to(device=GPUdevice)
+
+                        # NOTE: TEST AUXILIARY LOSS
+                        if args.auxiliary_loss == "dice":
+                            cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
+                            cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
+                            aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
+                            
+                            non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
+                            non_cond_gating_score = list(non_cond_gating_score)
+                            if len(non_cond_gating_score) > 0:
+                                non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
+                                aux_label = []
+                                for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
+                                    aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
+                                aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
+
+                                non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
+                                aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
+
+                            aux_loss = 0.2 * aux_loss
+                        else:
+                            aux_loss = torch.Tensor([0], device=GPUdevice)
+
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
@@ -139,7 +186,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
-                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss)
+                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                         dice_loss_per_class[obj_id]["num_step"] += 1
@@ -149,12 +196,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
-                    
+
                     if (batch_idx + 1) % accum_step == 0:
-                        torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                         optimizer.step()
                         optimizer.zero_grad()
-                    
+
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)
                     # loss_value = sum(losses_reduced.values()).item()
@@ -167,7 +214,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         agent = getattr(net, "agent", None)
                     else:
                         agent = getattr(net.module, "agent", None)
-                        
+
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
                         agent_step_loss = agent.update(q_updates_per_step)
@@ -187,7 +234,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         class_loss["focal_loss"].item(),
                         class_loss["dice_loss"].item(),
                         class_loss["mae_loss"].item(),
-                        class_loss["bce_loss"].item()
+                        class_loss["bce_loss"].item(),
+                        class_loss["aux_loss"].item(),
                     )
                     instance_loss["num_step"] += 1
 
@@ -197,7 +245,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 instance_loss["focal_loss"],
                 instance_loss["dice_loss"],
                 instance_loss["mae_loss"],
-                instance_loss["bce_loss"]
+                instance_loss["bce_loss"],
+                instance_loss["aux_loss"],
             )
             total_loss["num_step"] += 1
             pbar.update()
@@ -215,7 +264,15 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             "critic_loss": 0,
         }
 
-    return total_loss["total_loss"], total_loss["dice_loss"], total_loss["focal_loss"], total_loss["mae_loss"], total_loss["bce_loss"], avg_agent_loss
+    return (
+        total_loss["total_loss"],
+        total_loss["dice_loss"],
+        total_loss["focal_loss"],
+        total_loss["mae_loss"],
+        total_loss["bce_loss"],
+        total_loss["aux_loss"],
+        avg_agent_loss
+    )
 
 def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
     if args.distributed:
@@ -319,7 +376,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     #         "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i]}
                     #         for i, out_obj_id in enumerate(out_obj_ids)
                     #     }
-                    
+
                     video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
             # Record the loss in this step
             for frame_idx in video_segments.keys():
@@ -329,13 +386,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 if mask is not None:
                     mask = mask == obj_id
                     mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                    
+
                     (
                         iou,
                         dice,
                         fb_iou,
                     ) = eval_seg(pred, mask)
-                    
+
                     score_dict = score_per_class[f"{task}_{obj_id}"]
 
                     score_dict["iou"] = torch.cat([score_dict["iou"], iou.detach()])
@@ -343,31 +400,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou.detach()])
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
-                    
-                if args.vis:
-                    save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    os.makedirs(f"{save_dir}/vis_lin", exist_ok=True)
-                    save_prefix = f"{save_dir}/vis_lin/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
-                    # mask *= 2
-                    im = imgs_tensor[frame_idx]
-                    im = (im - im.min()) / (im.max() - im.min()) * 255
-                    im = im.to(torch.uint8)
-                    image_with_gt = draw_segmentation_masks(
-                        im, 
-                        masks=mask.bool(),
-                        alpha=0.6, 
-                        colors="red" # You can specify a color or list of colors
-                    )
-                    
-                    image_with_pred = draw_segmentation_masks(
-                        im, 
-                        masks=pred_mask.bool(),
-                        alpha=0.6, 
-                        colors="red" # You can specify a color or list of colors
-                    )
-                    
-                    save_image(image_with_gt.float() / 255.0, save_prefix + "gt.png")
-                    save_image(image_with_pred.float() / 255.0, save_prefix + "pred.png")
 
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
@@ -389,8 +421,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["iou"] = torch.cat([avg["iou"], metrics_dict["iou"].mean(dim=0, keepdim=True)])
         avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"].mean(dim=0, keepdim=True)])
         avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"].mean(dim=0, keepdim=True)])
-        avg["th"] = None
-        
+        avg["th"] = 0.5
+
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()
     avg["fb_iou"] = avg["fb_iou"].mean()
