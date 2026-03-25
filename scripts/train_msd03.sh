@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+obj_id2+tw_gating+semantic_filtering+highres_gating
+EXP=msd_task03+grpo+icl+tw_gating+semantic_filtering+aux_dice_loss0.2
 SAM_CKPT=/data/rlsam2/checkpoints/sam2_hiera_tiny.pt
 DATA=/data/rlsam2/datasets/nii/MSD
 # export CUDA_VISIBLE_DEVICES=0
