@@ -201,7 +201,7 @@ class SAM2Base(torch.nn.Module):
         self.obj_ptr_filtering_proj = nn.Linear(256,256)
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
-        # self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
+        self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
         
         self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
         self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
@@ -755,31 +755,31 @@ class SAM2Base(torch.nn.Module):
             mem_ = mem.transpose(0,1)
             ptr_ = ptr.transpose(0,1)
 
-            # CW GATING
-            mem_ = mem.reshape(m, -1, b, d).permute(2,0,1,3) # [b,m,4096,64]
-            # ptr_ = ptr.reshape(m, -1, b, d) # [m,4,1,64]
-            ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1).reshape(b*m, d, -1) # [m,64,4]
+            # # CW GATING
+            # mem_ = mem.reshape(m, -1, b, d).permute(2,0,1,3) # [b,m,4096,64]
+            # # ptr_ = ptr.reshape(m, -1, b, d) # [m,4,1,64]
+            # ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1).reshape(b*m, d, -1) # [m,64,4]
 
-            mem_ = self.ctx_gating_mem_proj(mem_)
-            ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+            # mem_ = self.ctx_gating_mem_proj(mem_)
+            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
         
-            ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
-            # ptr_ = ptr_.sum(dim=2, keepdim=True)
-            gating_logits = mem_ + ptr_ # [1,m,4096,64]
-            gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-            # gating_score = (gating_score > 0.5).to(torch.bfloat16)
+            # ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
+            # # ptr_ = ptr_.sum(dim=2, keepdim=True)
+            # gating_logits = mem_ + ptr_ # [1,m,4096,64]
+            # gating_score = gating_logits.sigmoid() # [1,m,4096,64]
+            # # gating_score = (gating_score > 0.5).to(torch.bfloat16)
             
-            # # NOTE: GUMBEL SOFTMAX
-            # temperature = 0.1
-            # eps = 1e-8
-            # u = torch.rand_like(gating_logits)
-            # g = torch.log(u + eps) - torch.log(1 - u + eps)  # the difference of 2 gumbel noises equal 1 logistic noise
-            # gating_score = torch.sigmoid((gating_logits + g) / temperature)
+            # # # NOTE: GUMBEL SOFTMAX
+            # # temperature = 0.1
+            # # eps = 1e-8
+            # # u = torch.rand_like(gating_logits)
+            # # g = torch.log(u + eps) - torch.log(1 - u + eps)  # the difference of 2 gumbel noises equal 1 logistic noise
+            # # gating_score = torch.sigmoid((gating_logits + g) / temperature)
             
-            gated_mem = mem_ * gating_score
-            gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
+            # gated_mem = mem_ * gating_score
+            # gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
 
-            memory = torch.cat([gated_mem, ptr], dim=0)
+            # memory = torch.cat([gated_mem, ptr], dim=0)
 
             # # SW GATING
             # mem_ = mem.reshape(m, -1, b, d).permute(2,0,3,1) # [1,m,64,4096]
@@ -798,38 +798,38 @@ class SAM2Base(torch.nn.Module):
 
             # memory = torch.cat([gated_mem, ptr], dim=0)
             
-            # # TW GATING
-            # mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
-            # ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+            # TW GATING
+            mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
 
-            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
-            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
-            # ptr_ = ptr_.reshape(1, m, -1, 1)
+            mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
+            ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+            ptr_ = ptr_.reshape(1, m, -1, 1)
             
-            # mem_ = F.normalize(mem_, p=2, dim=-1)
-            # ptr_ = F.normalize(ptr_, p=2, dim=-2)
+            mem_ = F.normalize(mem_, p=2, dim=-1)
+            ptr_ = F.normalize(ptr_, p=2, dim=-2)
             
-            # gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
-            # gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-            # # gating_score = (gating_score > 0.5).to(torch.bfloat16)
+            gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+            gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+            # gating_score = (gating_score > 0.5).to(torch.bfloat16)
             
-            # # # NOTE: GUMBEL SOFTMAX
-            # # temperature = 0.1
-            # # g1 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-            # # g2 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-            # # gating_score = torch.sigmoid((torch.log(gating_logits) + g1 - g2) / temperature)
+            # # NOTE: GUMBEL SOFTMAX
+            # temperature = 0.1
+            # g1 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
+            # g2 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
+            # gating_score = torch.sigmoid((torch.log(gating_logits) + g1 - g2) / temperature)
 
-            # gated_mem = mem_ * gating_score
-            # gated_mem = gated_mem.reshape(b, -1, d)
-            # gated_mem = gated_mem.transpose(0,1)
+            gated_mem = mem_ * gating_score
+            gated_mem = gated_mem.reshape(b, -1, d)
+            gated_mem = gated_mem.transpose(0,1)
 
-            # memory = torch.cat([gated_mem, ptr], dim=0)
+            memory = torch.cat([gated_mem, ptr], dim=0)
             
-            # gating_score = gating_score.reshape(b, -1, 64, 64)
-            # n_support = len(output_dict["cond_frame_outputs"])
-            # gating_score_dict["cond_frames"] = gating_score[:, :n_support]
-            # for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
-            #     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
+            gating_score = gating_score.reshape(b, -1, 64, 64)
+            n_support = len(output_dict["cond_frame_outputs"])
+            gating_score_dict["cond_frames"] = gating_score[:, :n_support]
+            for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
+                gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
                 
         
         pix_feat_with_mem, attn_scores = self.memory_attention(
@@ -943,22 +943,22 @@ class SAM2Base(torch.nn.Module):
             
             current_out["gating_score_dict"] = gating_score_dict
                         
-            # NOTE; TEST HIGHRES GATING
-            # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
-            gated_high_res_features = []
-            for feats, low2high_proj, high2high_proj in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj):
-                scale = feats.shape[-1] // pix_feat_with_mem.shape[-1]
+            # # NOTE: TEST HIGHRES GATING
+            # # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
+            # gated_high_res_features = []
+            # for feats, low2high_proj, high2high_proj in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj):
+            #     scale = feats.shape[-1] // pix_feat_with_mem.shape[-1]
                 
-                upscaled_feat_with_mem = pix_feat_with_mem.repeat_interleave(scale**2, dim=1)
-                upscaled_feat_with_mem = F.pixel_shuffle(upscaled_feat_with_mem, upscale_factor=scale)
+            #     upscaled_feat_with_mem = pix_feat_with_mem.repeat_interleave(scale**2, dim=1)
+            #     upscaled_feat_with_mem = F.pixel_shuffle(upscaled_feat_with_mem, upscale_factor=scale)
                 
-                low_ = low2high_proj(upscaled_feat_with_mem)
-                high_ = high2high_proj(feats)
-                gating_score = low_ + high_
-                gating_score = gating_score.sigmoid()
-                feats = feats * gating_score
+            #     low_ = low2high_proj(upscaled_feat_with_mem)
+            #     high_ = high2high_proj(feats)
+            #     gating_score = low_ + high_
+            #     gating_score = gating_score.sigmoid()
+            #     feats = feats * gating_score
                 
-                gated_high_res_features.append(feats)
+            #     gated_high_res_features.append(feats)
             
             # apply SAM-style segmentation head
             # here we might feed previously predicted low-res SAM mask logits into the SAM mask decoder,
