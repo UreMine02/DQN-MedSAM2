@@ -131,7 +131,7 @@ class BTCV(Dataset):
         # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
     def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)

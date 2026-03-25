@@ -14,7 +14,7 @@ cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 conda init
 conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+cw_gating_before_pos+semantic_filtering+augment
+EXP=msd_task03+grpo+icl+obj_id2+cw_gating_before_pos+semantic_filtering+highres_gating
 
 python train_3d.py \
     -exp_name $EXP \
