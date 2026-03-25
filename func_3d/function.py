@@ -162,25 +162,25 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         else:
                             mask = torch.zeros_like(pred).to(device=GPUdevice)
 
-                        # NOTE: TEST AUXILIARY LOSS
-                        cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
-                        cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
-                        aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
+                        # # NOTE: TEST AUXILIARY LOSS
+                        # cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
+                        # cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
+                        # aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
                         
-                        non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
-                        non_cond_gating_score = list(non_cond_gating_score)
-                        if len(non_cond_gating_score) > 0:
-                            non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
-                            aux_label = []
-                            for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
-                                aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
-                            aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
+                        # non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
+                        # non_cond_gating_score = list(non_cond_gating_score)
+                        # if len(non_cond_gating_score) > 0:
+                        #     non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
+                        #     aux_label = []
+                        #     for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
+                        #         aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
+                        #     aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
 
-                            non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
-                            aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
+                        #     non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
+                        #     aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
 
-                        aux_loss = 0.2 * aux_loss
-                        # aux_loss = 0
+                        # aux_loss = 0.2 * aux_loss
+                        aux_loss = 0
 
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
