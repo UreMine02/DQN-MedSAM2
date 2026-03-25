@@ -207,11 +207,6 @@ class SAM2Base(torch.nn.Module):
         self.obj_ptr_gating = obj_ptr_gating
         self.highres_gating = highres_gating
         
-        print("gating_dimension", gating_dimension)
-        print("gating_softness", gating_softness)
-        print("obj_ptr_gating", obj_ptr_gating)
-        print("highres_gating", highres_gating)
-        
         self.obj_ptr_filtering_proj = nn.Linear(256,256)
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
@@ -704,13 +699,14 @@ class SAM2Base(torch.nn.Module):
                     else:
                         obj_pos = obj_ptrs.new_zeros(len(pos_list), B, self.mem_dim)
                     if self.mem_dim < C:
-                        if self.obj_ptr_gating:
+                        if not self.obj_ptr_gating:
                             # NOTE: TEST SEMANTIC FILTERING
                             # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
                             obj_ptrs = obj_ptrs.reshape(
                                 -1, B, C // self.mem_dim, self.mem_dim
                             )
                             obj_ptrs = obj_ptrs.permute(0, 2, 1, 3).flatten(0, 1)
+                            
                         obj_pos = obj_pos.repeat_interleave(C // self.mem_dim, dim=0)
                         
                     if self.obj_ptr_gating:
@@ -722,7 +718,7 @@ class SAM2Base(torch.nn.Module):
                     if self.obj_ptr_gating:
                         num_obj_ptr_tokens = obj_ptrs.shape[0] * (C // self.mem_dim) # NOTE: TEST SEMANTIC FILTERING
                     else:
-                        obj_ptrs.shape[0]
+                        num_obj_ptr_tokens = obj_ptrs.shape[0]
                 else:
                     num_obj_ptr_tokens = 0
         else:
@@ -833,12 +829,12 @@ class SAM2Base(torch.nn.Module):
 
                 memory = torch.cat([gated_mem, ptr], dim=0)
                 
+                # return gating score for auxiliary loss
                 gating_score = gating_score.reshape(b, -1, 64, 64)
                 n_support = len(output_dict["cond_frame_outputs"])
                 gating_score_dict["cond_frames"] = gating_score[:, :n_support]
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
-                
         
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,

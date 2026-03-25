@@ -9,13 +9,13 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+tw_gating+obj_ptr+highres_gating
-# EXP=msd_task03+grpo+no_agent
+EXP=msd_task03+grpo+icl+tw_soft_gating+obj_ptr+highres_gating+aux_dice_loss0.2
+
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -36,6 +36,7 @@ python train_3d.py \
     -gating_softness "soft" \
     -obj_ptr_gating \
     -highres_gating \
-    -auxiliary_loss "no" \
+    -auxiliary_loss "dice" \
     -distributed \
+    -wandb_enabled
     

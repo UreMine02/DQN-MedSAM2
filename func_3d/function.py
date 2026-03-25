@@ -176,9 +176,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                                 non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
                                 aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
 
-                            aux_loss = 0.5 * aux_loss
+                            aux_loss = 0.2 * aux_loss
                         else:
-                            aux_loss = torch.Tensor([0], device=GPUdevice)
+                            aux_loss = torch.Tensor([0]).to(device=GPUdevice)
 
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]

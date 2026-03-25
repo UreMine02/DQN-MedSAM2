@@ -14,8 +14,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+tw_soft_gating+obj_ptr_gating+aux_dice_loss0.5
-export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task02+grpo+icl+tw_soft_gating+obj_ptr_gating+highres_gating
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -36,5 +36,6 @@ python train_3d.py \
     -gating_dimension "tw" \
     -gating_softness "soft" \
     -obj_ptr_gating \
-    -auxiliary_loss "dice" \
+    -highres_gating \
+    -auxiliary_loss "no" \
     -wandb_enabled
