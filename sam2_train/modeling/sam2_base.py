@@ -203,16 +203,16 @@ class SAM2Base(torch.nn.Module):
         self.ctx_gating_mem_proj = nn.Linear(64,64)
         self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
         
-        self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
-        self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+        # self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
+        # self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
         
         # Init layers
-        # eye_(self.obj_ptr_filtering_proj.weight)
-        # ones_(self.obj_ptr_filtering_proj.bias)
-        # zeros_(self.ctx_gating_ptr_proj.weight)
-        # zeros_(self.ctx_gating_ptr_proj.bias)
-        # eye_(self.ctx_gating_mem_proj.weight)
-        # zeros_(self.ctx_gating_mem_proj.bias)
+        zeros_(self.obj_ptr_filtering_proj.weight)
+        zeros_(self.obj_ptr_filtering_proj.bias)
+        zeros_(self.ctx_gating_ptr_proj.weight)
+        zeros_(self.ctx_gating_ptr_proj.bias)
+        zeros_(self.ctx_gating_mem_proj.weight)
+        zeros_(self.ctx_gating_mem_proj.bias)
 
     @property
     def device(self):
