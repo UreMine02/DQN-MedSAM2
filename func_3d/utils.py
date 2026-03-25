@@ -42,7 +42,7 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         print(args)
         model_cfg = args.sam_config
 
-        net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
+        net = build_sam2_video_predictor(args, config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
         if not args.no_agent:
             hydra_overrides = [
@@ -286,6 +286,7 @@ def iou_score(pred, mask, smoothing=1e-6):
     interaction = torch.sum(pred * mask)
     denominator = torch.count_nonzero(pred + mask)
 
+    # NOTE: TRAINING WITH NEG
     iou = (interaction+smoothing)/(denominator+smoothing)
     return iou
 
@@ -504,12 +505,13 @@ class CombinedLoss(nn.Module):
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
         obj_pred = obj_pred.view(1, -1)
-        if (targets == 0).all():
-            bce = self.bce_loss(obj_pred, torch.zeros(obj_pred.shape).to(device=obj_pred.device))
-        else:
-            bce = self.bce_loss(obj_pred, torch.ones(obj_pred.shape).to(device=obj_pred.device))
-            
         
+        if (targets == 0).all():
+            obj_pred_target = torch.zeros_like(obj_pred, requires_grad=False).to(device=obj_pred.device)
+        else:
+            obj_pred_target = torch.ones_like(obj_pred, requires_grad=False).to(device=obj_pred.device)
+            
+        bce = self.bce_loss(obj_pred, obj_pred_target)
         dice = self.dice_loss(inputs, targets)
         focal = self.focal_loss(inputs, targets)
         mae = self.mae_loss(iou_pred, iou_gt)

@@ -5,31 +5,26 @@
 #SBATCH -n 8 # num cpus
 #SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=100GB # ram
-#SBATCH --time=1:00:00 # time
+#SBATCH --time=24:00:00 # time
 #SBATCH -J eval # job name
 #SBATCH -A strategic
-#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/eval-task07-%j.out"
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/eval-btcv-%j.out"
 
-# conda activate rlsam2
-# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
-# conda init
-# conda activate rlsam2
+conda activate rlsam2
+cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
+conda init
+conda activate rlsam2
 
 declare -a ckpt=(
     # NOTE: FINAL
     # output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_14_dice0.5667.pth
+    # output/msd_task10+grpo+icl/2026-03-10-19-22-49/best.pth
+
+    # NOTE: TESTING
     
-    # output/msd_task02+grpo+icl+test_augment/2026-03-11-15-19-11/best.pth
-    # output/msd_task04+grpo+icl/best.pth
-
-    # output/msd_task02+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-01-26/best.pth
-    # output/msd_task09+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape/2026-03-17-08-03-09/best.pth
-    # output/msd_task03+grpo+icl+cw_gating+semantic_filtering/2026-03-17-16-11-44/best.pth
-
-    output/msd_task04+grpo+icl+cw_gating_before_pos+semantic_filtering+equal_prob/2026-03-20-11-54-59/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+# export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpt[@]}
 do
@@ -38,11 +33,10 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task "Task04" \
-            -data_path /data/datasets/nii/MSD \
-            -num_support $shot \
-            # -vis
+            -dataset btcv \
+            -task "" \
+            -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/BTCV \
+            -num_support $shot
             # -no_agent
     done
 done

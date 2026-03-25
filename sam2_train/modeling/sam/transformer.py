@@ -311,7 +311,7 @@ class RoPEAttention(Attention):
         
 
     def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0,
+        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0,
         gated_indices: Optional[Tensor] = None
     ) -> Tensor:
         # # NOTE: TEST GATING
@@ -402,13 +402,7 @@ class RoPEAttention(Attention):
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-
-        # Compute attn_weight for later use
-        attn_weight = None
-        if return_attn:
-            scale_factor = 1 / math.sqrt(q.size(-1))
-            attn_weight = q @ k.transpose(-2, -1) * scale_factor
-
+        
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
@@ -421,4 +415,4 @@ class RoPEAttention(Attention):
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 
-        return out, attn_weight
+        return out

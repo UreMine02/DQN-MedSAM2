@@ -1398,8 +1398,7 @@ class SAM2VideoPredictor(SAM2Base):
             track_in_reverse=reverse,
             run_mem_encoder=run_mem_encoder,
             prev_sam_mask_logits=prev_sam_mask_logits,
-            agent_act=agent_act,
-            return_attn=not agent_act
+            agent_act=agent_act
         )
 
         # optionally offload the output to CPU memory to save GPU space

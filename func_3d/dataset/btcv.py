@@ -28,6 +28,7 @@ class BTCV(Dataset):
     def __init__(self, args, subset="train"):
         self.root = args.data_path
         self.subset = subset
+        self.mode = subset
         csv_root = "./data/BTCV"
         suffix = "Tr" if subset == "train" else "Ts"
 
@@ -41,11 +42,11 @@ class BTCV(Dataset):
         self.max_slices = args.video_length
         
         self.tr_transform = v2.Compose([
-            v2.Resize(size=(self.image_size, self.image_size)),
-            # v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
+            # v2.Resize(size=(self.image_size, self.image_size)),
+            v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
             # v2.RandomHorizontalFlip(0.5),
             # v2.RandomAffine(degrees=25),
-            # v2.ColorJitter(brightness=0.25, contrast=0.25),
+            v2.ColorJitter(brightness=0.25, contrast=0.25),
         ])
         
         self.ts_transform = v2.Compose([
@@ -130,7 +131,7 @@ class BTCV(Dataset):
         # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
     def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
@@ -156,10 +157,11 @@ class BTCV(Dataset):
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
                 choices = list(range(-(max_slices-1),0)) + list(range(image_3d.shape[-1]))
-                start_slice = np.random.choice(choices)
-                start_slice = max(0, start_slice)
-                image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                start = np.random.choice(choices)
+                end = start + max_slices
+                start = max(0, start)
+                image_3d = image_3d[..., start:end]
+                data_seg_3d = data_seg_3d[..., start:end]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)

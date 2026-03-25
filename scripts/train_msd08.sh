@@ -4,32 +4,31 @@
 #SBATCH -n 32 # num cpus
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
-#SBATCH --time=24:00:00 # time
+#SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd08 # job name
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd08-%j.out"
 
-# conda activate rlsam2
-# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-# conda init
-# conda activate rlsam2
+conda activate rlsam2
+cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+conda init
+conda activate rlsam2
 
-EXP=msd_task08+grpo+icl+cw_gating+semantic_filtering+equal_prob+augment
+EXP=msd_task08+grpo+icl+cw_gating
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
+    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task08 \
-    -data_path /data/rlsam2/datasets/nii/MSD \
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 500 \
-    -q_updates_per_step 1 \
+    -ep 200 \
+    -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -distributed \
-    -wandb_enabled
+    -distributed

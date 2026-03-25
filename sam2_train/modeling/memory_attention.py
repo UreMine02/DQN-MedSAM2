@@ -55,16 +55,16 @@ class MemoryAttentionLayer(nn.Module):
         self.pos_enc_at_cross_attn_queries = pos_enc_at_cross_attn_queries
         self.pos_enc_at_cross_attn_keys = pos_enc_at_cross_attn_keys
 
-    def _forward_sa(self, tgt, query_pos, return_attn):
+    def _forward_sa(self, tgt, query_pos):
 
         # Self-Attention
         tgt2 = self.norm1(tgt)
         q = k = tgt2 + query_pos if self.pos_enc_at_attn else tgt2
-        tgt2, attn_weight = self.self_attn(q, k, v=tgt2, return_attn=return_attn)
+        tgt2 = self.self_attn(q, k, v=tgt2)
         tgt = tgt + self.dropout1(tgt2)
-        return tgt, attn_weight
+        return tgt
 
-    def _forward_ca(self, tgt, memory, query_pos, pos, return_attn, num_k_exclude_rope=0, gated_indices=None):
+    def _forward_ca(self, tgt, memory, query_pos, pos, num_k_exclude_rope=0, gated_indices=None):
         kwds = {}
         if num_k_exclude_rope > 0:
             assert isinstance(self.cross_attn_image, RoPEAttention)
@@ -72,15 +72,14 @@ class MemoryAttentionLayer(nn.Module):
 
         # Cross-Attention
         tgt2 = self.norm2(tgt)
-        tgt2, attn_weight = self.cross_attn_image(
+        tgt2 = self.cross_attn_image(
             q=tgt2 + query_pos if self.pos_enc_at_cross_attn_queries else tgt2,
             k=memory + pos if self.pos_enc_at_cross_attn_keys else memory,
             v=memory,
-            return_attn=return_attn,
             **kwds,
         )
         tgt = tgt + self.dropout2(tgt2)
-        return tgt, attn_weight
+        return tgt
 
     def forward(
         self,
@@ -89,20 +88,19 @@ class MemoryAttentionLayer(nn.Module):
         pos: Optional[Tensor] = None,
         query_pos: Optional[Tensor] = None,
         num_k_exclude_rope: int = 0,
-        return_attn: bool = False,
         gated_indices: Optional[Tensor] = None
     ) -> torch.Tensor:
 
         # Self-Attn, Cross-Attn
         # tgt = self._forward_sa(tgt, query_pos)
         # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
-        tgt, self_attn = checkpoint(self._forward_sa, tgt, query_pos, return_attn, use_reentrant=False)
-        tgt, cross_attn = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, return_attn, num_k_exclude_rope, gated_indices, use_reentrant=False)
+        tgt, self_attn = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
+        tgt, cross_attn = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, use_reentrant=False)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
         tgt = tgt + self.dropout3(tgt2)
-        return tgt, self_attn, cross_attn
+        return tgt
 
 
 class MemoryAttention(nn.Module):
@@ -129,7 +127,6 @@ class MemoryAttention(nn.Module):
         curr_pos: Optional[Tensor] = None,  # pos_enc for self-attention inputs
         memory_pos: Optional[Tensor] = None,  # pos_enc for cross-attention inputs
         num_obj_ptr_tokens: int = 0,  # number of object pointer *tokens*
-        return_attn: bool = False,
         gated_indices: Optional[Tensor] = None
     ):
         if isinstance(curr, list):
@@ -159,29 +156,23 @@ class MemoryAttention(nn.Module):
             kwds = {}
             if isinstance(layer.cross_attn_image, RoPEAttention):
                 kwds = {"num_k_exclude_rope": num_obj_ptr_tokens}
-            # output = layer(
-            #     tgt=output,
-            #     memory=memory,
-            #     pos=memory_pos,
-            #     query_pos=curr_pos,
-            #     **kwds
-            # )
-            output, self_attn, cross_attn = checkpoint(layer,
+            output = layer(
                 tgt=output,
                 memory=memory,
                 pos=memory_pos,
                 query_pos=curr_pos,
-                return_attn=return_attn,
                 gated_indices=gated_indices,
                 **kwds,
-                use_reentrant=False
             )
-            
-            attn_scores = None
-            if cross_attn is not None:
-                maskmem_len = cross_attn.shape[-1] - num_obj_ptr_tokens
-                attn_scores = cross_attn[..., :maskmem_len].reshape(4096, -1, 4096)
-                attn_scores = attn_scores.mean(dim=0).mean(dim=-1)
+            # output, self_attn, cross_attn = checkpoint(layer,
+            #     tgt=output,
+            #     memory=memory,
+            #     pos=memory_pos,
+            #     query_pos=curr_pos,
+            #     return_attn=return_attn,
+            #     **kwds,
+            #     use_reentrant=False
+            # )
             
         normed_output = self.norm(output)
 
@@ -190,4 +181,4 @@ class MemoryAttention(nn.Module):
             normed_output = normed_output.transpose(0, 1)
             curr_pos = curr_pos.transpose(0, 1)
 
-        return normed_output, attn_scores
+        return normed_output
