@@ -200,7 +200,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss.backward()
                     
                     for name, param in net.named_parameters():
-                        if param.grad.isnan().any():
+                        if param.grad is not None and param.grad.isnan().any():
                             raise AssertionError(f"{name} grad is nan")
                             
 
