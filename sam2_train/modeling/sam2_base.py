@@ -394,7 +394,7 @@ class SAM2Base(torch.nn.Module):
                     low_res_multimasks,
                     NO_OBJ_SCORE,
                 )
-            # convert masks from possibly bfloat16 (or float16) to float32
+            # convert masks from possibly float16 (or float16) to float32
             # (older PyTorch versions before 2.1 don't support `interpolate` on bf16)
             
             # print('backbone_features', backbone_features.size())
@@ -743,7 +743,9 @@ class SAM2Base(torch.nn.Module):
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
             obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid() #
+            assert not obj_gating_score.isnan().any()
             obj_ptrs = obj_ptrs * obj_gating_score
+            assert not obj_ptrs.isnan().any()
             
             if self.mem_dim < C:
                 # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
@@ -782,7 +784,7 @@ class SAM2Base(torch.nn.Module):
                 
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
+                    gating_score = (gating_score > 0.5).to(torch.float16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
@@ -823,18 +825,22 @@ class SAM2Base(torch.nn.Module):
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
                     assert not gating_score.isnan().any()
-                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
+                    gating_score = (gating_score > 0.5).to(torch.float16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
+                    assert not g.isnan().any()
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
+                    assert not gating_score.isnan().any()
                 else:
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+                    assert not gating_score.isnan().any()
 
                 gated_mem = mem_ * gating_score
+                assert not gated_mem.isnan().any()
                 gated_mem = gated_mem.reshape(b, -1, d)
                 gated_mem = gated_mem.transpose(0,1)
 
@@ -970,6 +976,7 @@ class SAM2Base(torch.nn.Module):
                     high_ = high2high_proj(feats)
                     gating_score = low_ + high_
                     gating_score = gating_score.sigmoid()
+                    assert not gating_score.isnan().any()
                     feats = feats * gating_score
                     
                     gated_high_res_features.append(feats)
