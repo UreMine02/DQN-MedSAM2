@@ -979,7 +979,7 @@ class SAM2Base(torch.nn.Module):
                     assert not low_.isnan(). any(), scale
                     assert not high_.isnan().any(), scale
                     gating_score = low_ + high_
-                    gating_score = norm(gating_score)
+                    gating_score = norm(gating_score.permute(0,2,3,1)).permute(0,3,1,2)
                     gating_score = torch.sigmoid(gating_score)
                     assert not gating_score.isnan().any(), scale
                     highres = highres * gating_score
