@@ -743,9 +743,7 @@ class SAM2Base(torch.nn.Module):
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
             obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True).sigmoid() #
-            assert not obj_gating_score.isnan().any()
             obj_ptrs = obj_ptrs * obj_gating_score
-            assert not obj_ptrs.isnan().any()
             
             if self.mem_dim < C:
                 # split a pointer into (C // self.mem_dim) tokens for self.mem_dim < C
@@ -808,23 +806,13 @@ class SAM2Base(torch.nn.Module):
                 mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
                 ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
                 ptr_ = ptr_.reshape(1, m, -1, 1)
-                
-                assert not mem_.isnan().any()
-                assert not ptr_.isnan().any()
-                
                 mem_ = F.normalize(mem_, p=2, dim=-1)
                 ptr_ = F.normalize(ptr_, p=2, dim=-2)
                 
-                assert not mem_.isnan().any()
-                assert not ptr_.isnan().any()
-                
                 gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
-                
-                assert not gating_logits.isnan().any()
                 
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-                    assert not gating_score.isnan().any()
                     gating_score = (gating_score > 0.5).to(torch.float16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
@@ -832,15 +820,11 @@ class SAM2Base(torch.nn.Module):
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    assert not g.isnan().any()
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
-                    assert not gating_score.isnan().any()
                 else:
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-                    assert not gating_score.isnan().any()
 
                 gated_mem = mem_ * gating_score
-                assert not gated_mem.isnan().any()
                 gated_mem = gated_mem.reshape(b, -1, d)
                 gated_mem = gated_mem.transpose(0,1)
 
@@ -966,20 +950,19 @@ class SAM2Base(torch.nn.Module):
             # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
             if self.highres_gating:
                 gated_high_res_features = []
-                for feats, low2high_proj, high2high_proj in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj):
-                    scale = feats.shape[-1] // pix_feat_with_mem.shape[-1]
+                for highres, low2high_proj, high2high_proj in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj):
+                    scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
                     
-                    upscaled_feat_with_mem = pix_feat_with_mem.repeat_interleave(scale**2, dim=1)
-                    upscaled_feat_with_mem = F.pixel_shuffle(upscaled_feat_with_mem, upscale_factor=scale)
+                    upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
                     
-                    low_ = low2high_proj(upscaled_feat_with_mem)
-                    high_ = high2high_proj(feats)
-                    gating_score = low_ + high_
+                    low_ = low2high_proj(upscaled_lowres)
+                    high_ = high2high_proj(highres)
+                    gating_score = low_ + high_ + 1e-12
                     gating_score = gating_score.sigmoid()
-                    assert not gating_score.isnan().any()
-                    feats = feats * gating_score
+                    assert not gating_score.isnan().any(), f"low_: {low_.min(), low_.max()}, high_: {high_.min(), high_.max()}"
+                    highres = highres * gating_score
                     
-                    gated_high_res_features.append(feats)
+                    gated_high_res_features.append(highres)
                     
                 high_res_features = gated_high_res_features
             
