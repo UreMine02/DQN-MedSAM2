@@ -782,7 +782,7 @@ class SAM2Base(torch.nn.Module):
                 
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.float16)
+                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
@@ -813,7 +813,7 @@ class SAM2Base(torch.nn.Module):
                 
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.float16)
+                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
@@ -845,7 +845,7 @@ class SAM2Base(torch.nn.Module):
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             gated_indices=gated_indices
         )
-            
+    
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem, gating_score_dict

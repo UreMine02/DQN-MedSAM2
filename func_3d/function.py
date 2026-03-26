@@ -198,6 +198,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
+                    
+                    for name, param in net.named_parameters():
+                        if param.grad.isnan().any():
+                            raise AssertionError(f"{name} grad is nan")
+                            
 
                     if (batch_idx + 1) % accum_step == 0:
                         grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)

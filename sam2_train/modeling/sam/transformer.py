@@ -371,10 +371,18 @@ class RoPEAttention(Attention):
 
             # k = torch.cat([gated_mem, ptr], dim=1)
 
+        assert not q.isnan().any(), num_k_exclude_rope
+        assert not k.isnan().any(), num_k_exclude_rope
+        assert not v.isnan().any(), num_k_exclude_rope
         # Input projections
         q = self.q_proj(q)
         k = self.k_proj(k)
         v = self.v_proj(v)
+        
+        
+        assert not q.isnan().any(), num_k_exclude_rope
+        assert not k.isnan().any(), num_k_exclude_rope
+        assert not v.isnan().any(), num_k_exclude_rope
 
         # Separate into heads
         q = self._separate_heads(q, self.num_heads)
@@ -397,12 +405,17 @@ class RoPEAttention(Attention):
             repeat_freqs_k=self.rope_k_repeat,
         )
         
+        assert not q.isnan().any(), num_k_exclude_rope
+        assert not k.isnan().any(), num_k_exclude_rope
+        assert not v.isnan().any(), num_k_exclude_rope
+        
         # if gated_indices is not None:
         #     k = k[:, :, gated_indices]
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
         
+        assert not out.isnan().any(), num_k_exclude_rope
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
