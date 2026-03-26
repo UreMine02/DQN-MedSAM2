@@ -211,12 +211,20 @@ class SAM2Base(torch.nn.Module):
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
         
+        nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
+        nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
+        nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
+        
         if self.gating_dimension == "tw":
             self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
         
         if self.highres_gating:
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+            for layer in self.low2high_gating_proj:
+                nn.init.xavier_uniform_(layer.weight)
+            for layer in self.high2high_gating_proj:
+                nn.init.xavier_uniform_(layer.weight)
 
     @property
     def device(self):
