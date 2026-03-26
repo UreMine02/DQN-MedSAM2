@@ -207,17 +207,23 @@ class SAM2Base(torch.nn.Module):
         self.obj_ptr_gating = obj_ptr_gating
         self.highres_gating = highres_gating
         
-        self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
-        self.ctx_gating_mem_proj = nn.Linear(64,64)
         if self.gating_dimension == "cw":
+            self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
+            self.ctx_gating_mem_proj = nn.Linear(64,64)
             self.ctx_gating_bias = nn.Parameter(torch.Tensor([1] * 64))
-        elif self.gating_dimension == "tw":
-            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1]))
+            self.ctx_norm = nn.LayerNorm(64)
             
-        self.ctx_norm = nn.LayerNorm(64) if self.gating_dimension != "tw" else None
-        
-        nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
-        nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
+            nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
+            nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
+            
+        elif self.gating_dimension == "tw":
+            self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
+            self.ctx_gating_mem_proj = nn.Linear(64,64)
+            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1]))
+            self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
+            
+            nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
+            nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
         
         if self.obj_ptr_gating:
             self.obj_ptr_filtering_proj = nn.Linear(256,256)
@@ -234,9 +240,6 @@ class SAM2Base(torch.nn.Module):
                 nn.init.xavier_uniform_(layer.weight)
             for layer in self.high2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
-            
-        if self.gating_dimension == "tw":
-            self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
 
     @property
     def device(self):
@@ -452,7 +455,6 @@ class SAM2Base(torch.nn.Module):
         else:
             low_res_masks, high_res_masks = low_res_multimasks, high_res_multimasks
             best_iou = ious
-        # print('best iou', best_iou)
 
         # Extract object pointer from the SAM output token (with occlusion handling)
         obj_ptr = self.obj_ptr_proj(sam_output_token) # torch.Size([1, 256])
@@ -574,7 +576,6 @@ class SAM2Base(torch.nn.Module):
         agent_act=True,
         
     ):
-        # print("output_dict", output_dict["non_cond_frame_outputs"].keys())
         """Fuse the current frame's visual feature map with previous memory."""
         B = current_vision_feats[-1].size(1)  # batch size on this frame
         C = self.hidden_dim
