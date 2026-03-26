@@ -209,7 +209,7 @@ class SAM2Base(torch.nn.Module):
         
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
-        self.ctx_norm = nn.LayerNorm(64)
+        self.ctx_norm = nn.LayerNorm(64) if self.gating_dimension != "tw" else None
         
         nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
         nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
@@ -830,7 +830,6 @@ class SAM2Base(torch.nn.Module):
                 gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
                 
                 if self.gating_softness == "threshold":
-                    gating_score = self.ctx_norm(gating_logits)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
@@ -839,10 +838,8 @@ class SAM2Base(torch.nn.Module):
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    gating_score = self.ctx_norm(gating_logits)
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
-                    gating_score = self.ctx_norm(gating_logits)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
 
                 gated_mem = mem_ * gating_score
