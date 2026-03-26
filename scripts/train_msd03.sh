@@ -33,10 +33,10 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -gating_dimension "tw" \
-    -gating_softness "threshold" \
+    -gating_softness "soft" \
     -obj_ptr_gating \
-    -highres_gating \
     -auxiliary_loss "dice" \
     -distributed \
-    -wandb_enabled
+    -wandb_enabled \
+    # -highres_gating \
     
