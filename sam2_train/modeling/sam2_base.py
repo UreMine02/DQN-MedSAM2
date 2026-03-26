@@ -786,9 +786,10 @@ class SAM2Base(torch.nn.Module):
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
-                    g1 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-                    g2 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-                    gating_score = torch.sigmoid((torch.log(gating_logits) + g1 - g2) / temperature)
+                    eps = 1e-12
+                    u = torch.rand_like(gating_logits)
+                    g = torch.log(u + eps) - torch.log(1 - u + eps)
+                    gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
                 
@@ -806,20 +807,30 @@ class SAM2Base(torch.nn.Module):
                 ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
                 ptr_ = ptr_.reshape(1, m, -1, 1)
                 
+                assert not mem_.isnan().any()
+                assert not ptr_.isnan().any()
+                
                 mem_ = F.normalize(mem_, p=2, dim=-1)
                 ptr_ = F.normalize(ptr_, p=2, dim=-2)
                 
+                assert not mem_.isnan().any()
+                assert not ptr_.isnan().any()
+                
                 gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+                
+                assert not gating_logits.isnan().any()
                 
                 if self.gating_softness == "threshold":
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
+                    assert not gating_score.isnan().any()
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
-                    g1 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-                    g2 = -torch.log(-torch.log(torch.rand_like(gating_logits)))
-                    gating_score = torch.sigmoid((torch.log(gating_logits) + g1 - g2) / temperature)
+                    eps = 1e-12
+                    u = torch.rand_like(gating_logits)
+                    g = torch.log(u + eps) - torch.log(1 - u + eps)
+                    gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
                     gating_score = gating_logits.sigmoid() # [1,m,4096,1]
 
