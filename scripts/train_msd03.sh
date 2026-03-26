@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+tw_threshold_gating+obj_ptr+highres_gating+aux_dice_loss0.2
+EXP=msd_task03+grpo+icl+tw_soft_gating+obj_ptr+aux_dice_loss0.2
 
 python train_3d.py \
     -exp_name $EXP \
@@ -33,7 +33,7 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -gating_dimension "tw" \
-    -gating_softness "soft" \
+    -gating_softness "threshold" \
     -obj_ptr_gating \
     -auxiliary_loss "dice" \
     -distributed \
