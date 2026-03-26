@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+tw_soft_gating+obj_ptr_gating+highres_gating+aux_dice_loss0.2
+EXP=msd_task02+grpo+icl+tw_soft_gating+obj_ptr_gating+highres_gating+aux_dice_loss0.2+bias
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \

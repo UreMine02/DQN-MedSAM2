@@ -209,6 +209,11 @@ class SAM2Base(torch.nn.Module):
         
         self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_gating_mem_proj = nn.Linear(64,64)
+        if self.gating_dimension == "cw":
+            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1] * 64))
+        elif self.gating_dimension == "tw":
+            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1]))
+            
         self.ctx_norm = nn.LayerNorm(64) if self.gating_dimension != "tw" else None
         
         nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
@@ -217,11 +222,13 @@ class SAM2Base(torch.nn.Module):
         if self.obj_ptr_gating:
             self.obj_ptr_filtering_proj = nn.Linear(256,256)
             self.obj_ptr_norm = nn.LayerNorm(256)
+            self.obj_ptr_gating_bias = nn.Parameter(torch.Tensor([1] * 256))
             nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
         
         if self.highres_gating:
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+            self.highres_gating_bias = nn.ParameterList([nn.Parameter(torch.Tensor([1] * 32)), nn.Parameter(torch.Tensor([1] * 64))])
             self.highres_norm = nn.ModuleList([nn.LayerNorm(32), nn.LayerNorm(64)])
             for layer in self.low2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
@@ -755,8 +762,9 @@ class SAM2Base(torch.nn.Module):
         if self.obj_ptr_gating:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
-            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True)
+            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True) + self.obj_ptr_gating_bias
             obj_gating_score = self.obj_ptr_norm(obj_gating_score)
+            obj_gating_score = torch.clamp(obj_gating_score, -20, 20)
             obj_gating_score = torch.sigmoid(obj_gating_score)
             obj_ptrs = obj_ptrs * obj_gating_score
             
@@ -793,10 +801,11 @@ class SAM2Base(torch.nn.Module):
                 ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
             
                 ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
-                gating_logits = mem_ + ptr_ # [1,m,4096,64]
+                gating_logits = mem_ + ptr_ + self.ctx_gating_bias # [1,m,4096,64]
                 
                 if self.gating_softness == "threshold":
                     gating_score = self.ctx_norm(gating_logits)
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
@@ -806,9 +815,11 @@ class SAM2Base(torch.nn.Module):
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
                     gating_score = self.ctx_norm(gating_logits)
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
                     gating_score = self.ctx_norm(gating_logits)
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                 
                 gated_mem = mem_ * gating_score
@@ -827,9 +838,10 @@ class SAM2Base(torch.nn.Module):
                 mem_ = F.normalize(mem_, p=2, dim=-1)
                 ptr_ = F.normalize(ptr_, p=2, dim=-2)
                 
-                gating_logits = self.gating_logit_scale * mem_ @ ptr_ # [1,m,4096,64] @ [1,m,64,1]
+                gating_logits = self.gating_logit_scale * mem_ @ ptr_ + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
                 
                 if self.gating_softness == "threshold":
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
@@ -838,8 +850,10 @@ class SAM2Base(torch.nn.Module):
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
 
                 gated_mem = mem_ * gating_score
@@ -968,20 +982,17 @@ class SAM2Base(torch.nn.Module):
             # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
             if self.highres_gating:
                 gated_high_res_features = []
-                for highres, low2high_proj, high2high_proj, norm in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj, self.highres_norm):
+                for highres, low2high_proj, high2high_proj, bias, norm in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj, self.highres_gating_bias, self.highres_norm):
                     scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
-                    assert not pix_feat_with_mem.isnan().any(), scale
-                    assert not highres.isnan().any(), scale
+                    
                     upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
-                    assert not upscaled_lowres.isnan().any(), scale
+                    
                     low_ = low2high_proj(upscaled_lowres)
                     high_ = high2high_proj(highres)
-                    assert not low_.isnan(). any(), scale
-                    assert not high_.isnan().any(), scale
-                    gating_score = low_ + high_
+                    gating_score = low_ + high_ + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
                     gating_score = norm(gating_score.permute(0,2,3,1)).permute(0,3,1,2)
+                    gating_score = torch.clamp(gating_score, -20, 20)
                     gating_score = torch.sigmoid(gating_score)
-                    assert not gating_score.isnan().any(), scale
                     highres = highres * gating_score
                     
                     gated_high_res_features.append(highres)
