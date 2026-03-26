@@ -952,14 +952,17 @@ class SAM2Base(torch.nn.Module):
                 gated_high_res_features = []
                 for highres, low2high_proj, high2high_proj in zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj):
                     scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
-                    
+                    assert not pix_feat_with_mem.isnan().any(), scale
+                    assert not highres.isnan().any(), scale
                     upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
-                    
+                    assert not upscaled_lowres.isnan().any(), scale
                     low_ = low2high_proj(upscaled_lowres)
                     high_ = high2high_proj(highres)
+                    assert not low_.isnan(). any(), scale
+                    assert not high_.isnan().any(), scale
                     gating_score = low_ + high_ + 1e-12
                     gating_score = gating_score.sigmoid()
-                    assert not gating_score.isnan().any(), f"low_: {low_.min(), low_.max()}, high_: {high_.min(), high_.max()}"
+                    assert not gating_score.isnan().any(), scale
                     highres = highres * gating_score
                     
                     gated_high_res_features.append(highres)
