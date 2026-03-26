@@ -804,8 +804,8 @@ class SAM2Base(torch.nn.Module):
                 gating_logits = mem_ + ptr_ + self.ctx_gating_bias # [1,m,4096,64]
                 
                 if self.gating_softness == "threshold":
-                    gating_score = self.ctx_norm(gating_logits)
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = self.ctx_norm(gating_logits)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
@@ -814,12 +814,12 @@ class SAM2Base(torch.nn.Module):
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    gating_score = self.ctx_norm(gating_logits)
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = self.ctx_norm(gating_logits)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
-                    gating_score = self.ctx_norm(gating_logits)
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = self.ctx_norm(gating_logits)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                 
                 gated_mem = mem_ * gating_score
@@ -841,7 +841,7 @@ class SAM2Base(torch.nn.Module):
                 gating_logits = self.gating_logit_scale * mem_ @ ptr_ + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
                 
                 if self.gating_softness == "threshold":
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
                     gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
@@ -850,10 +850,10 @@ class SAM2Base(torch.nn.Module):
                     eps = 1e-12
                     u = torch.rand_like(gating_logits)
                     g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid((gating_logits + g) / temperature)
                 else:
-                    gating_score = torch.clamp(gating_score, -20, 20)
+                    gating_logits = torch.clamp(gating_logits, -20, 20)
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
 
                 gated_mem = mem_ * gating_score
