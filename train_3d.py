@@ -61,6 +61,9 @@ def train(rank=0, world_size=0):
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
         
+    if args.wandb_enabled:
+        wandb.watch(net)
+        
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
