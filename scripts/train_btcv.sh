@@ -9,12 +9,12 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/btcv-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
-EXP=btcv+grpo+icl+cw_gating_before_pos+semantic_filtering
+EXP=btcv+grpo+icl+cw_soft_gating+obj_ptr_gating
 
 python train_3d.py \
     -exp_name $EXP \
@@ -30,4 +30,10 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -distributed
+    -gating_dimension "cw" \
+    -gating_softness "soft" \
+    -auxiliary_loss "no" \
+    -distributed \
+    -wandb_enabled \
+    -obj_ptr_gating \
+    -highres_gating "no" \
