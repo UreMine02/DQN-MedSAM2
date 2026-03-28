@@ -806,59 +806,40 @@ class SAM2Base(torch.nn.Module):
             ptr_ = ptr.transpose(0,1)
 
             # CW GATING
-            mem_ = mem.reshape(m, -1, b, d).permute(2,0,1,3) # [b,m,4096,64]
-            ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1).reshape(b*m, d, -1) # [m,64,4]
+            mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
 
-            mem_ = self.ctx_channel_gating_mem_proj(mem_)
-            ptr_ = self.ctx_channel_gating_ptr_proj(ptr_) # [1*m,64,1]
+            mem_for_channel_gating = self.ctx_channel_gating_mem_proj(mem_)
+            ptr_for_channel_gating = self.ctx_channel_gating_ptr_proj(ptr_) # [1*m,64,1]
 
-            ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
-            channel_gating_logits = mem_ + ptr_# + self.ctx_gating_bias # [1,m,4096,64]
+            ptr_for_channel_gating = ptr_for_channel_gating.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
+            channel_gating_logits = mem_for_channel_gating + ptr_for_channel_gating
 
             channel_gating_score = torch.sigmoid(channel_gating_logits) # [1,m,4096,1]
 
-            gated_mem = mem_ * gating_score
+            mem_for_token_gating = self.ctx_token_gating_mem_proj(mem_) # [1,m,4096,64]
+            ptr_for_token_gating = self.ctx_token_gating_ptr_proj(ptr_) # [1*m,64,1]
+            ptr_for_token_gating = ptr_for_token_gating.reshape(1, m, -1, 1)
+            mem_for_token_gating = F.normalize(mem_for_token_gating, p=2, dim=-1)
+            ptr_for_token_gating = F.normalize(ptr_for_token_gating, p=2, dim=-2)
+
+            token_gating_logits = self.gating_logit_scale * mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
+
+            token_gating_score = torch.sigmoid(token_gating_logits) # [1,m,4096,1]
+            token_gating_score = (token_gating_score > 0.5).float()
+            
+            gating_score = token_gating_score * channel_gating_score + (1 - token_gating_score) * (1 - channel_gating_score)
+            gated_mem = gating_score * mem_
             gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
 
             memory = torch.cat([gated_mem, ptr], dim=0)
 
-            # TW GATING
-            mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
-            ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
-
-            mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
-            ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
-            ptr_ = ptr_.reshape(1, m, -1, 1)
-            mem_ = F.normalize(mem_, p=2, dim=-1)
-            ptr_ = F.normalize(ptr_, p=2, dim=-2)
-
-            gating_logits = self.gating_logit_scale * mem_ @ ptr_# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
-
-            if self.gating_softness == "threshold":
-                gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-                gating_score = (gating_score > 0.5).to(torch.bfloat16)
-            elif self.gating_softness == "gumbel":
-                # NOTE: GUMBEL SOFTMAX
-                temperature = 0.1
-                eps = 1e-12
-                u = torch.rand_like(gating_logits)
-                g = torch.log(u + eps) - torch.log(1 - u + eps)
-                gating_score = torch.sigmoid((gating_logits + g) / temperature)
-            else:
-                gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-
-            gated_mem = mem_ * gating_score
-            gated_mem = gated_mem.reshape(b, -1, d)
-            gated_mem = gated_mem.transpose(0,1)
-
-            memory = torch.cat([gated_mem, ptr], dim=0)
-
             # return gating score for auxiliary loss
-            gating_score = gating_score.reshape(b, -1, 64, 64)
+            token_gating_score = token_gating_score.reshape(b, -1, 64, 64)
             n_support = len(output_dict["cond_frame_outputs"])
-            gating_score_dict["cond_frames"] = gating_score[:, :n_support]
+            gating_score_dict["cond_frames"] = token_gating_score[:, :n_support]
             for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
-                gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
+                gating_score_dict["non_cond_frames"][prev_frame_idx] = token_gating_score[:, idx + n_support]
 
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
