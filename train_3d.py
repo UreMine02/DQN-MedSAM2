@@ -88,10 +88,16 @@ def train(rank=0, world_size=0):
     print(f'Number of sam2 params: {n_parameters_tot:,}')
     print(f'Number of agent params: {agent_n_params:,}')
 
-    head, fix = [], []
-    for k, v in net.named_parameters():
-        (head if v.requires_grad else fix).append(v)
-
+    head, fix, param_list = [], [], []
+    for name, param in net.named_parameters():
+        (head if param.requires_grad else fix).append(param)
+        param_list.append(
+            {
+                'params': param,
+                'initial_lr': args.lr*0.1 if "gating" in name else args.lr
+            }
+        )
+        
     print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params:,}')
     print(f'Parameters fixed: {sum(p.numel() for p in fix):,}')
 
@@ -102,7 +108,6 @@ def train(rank=0, world_size=0):
             net.module.agent.to_distributed(rank=rank)
             print("Wrapped agent for distributed training")
 
-    param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()

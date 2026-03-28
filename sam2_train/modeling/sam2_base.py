@@ -220,8 +220,8 @@ class SAM2Base(torch.nn.Module):
         nn.init.xavier_uniform_(self.ctx_token_gating_mem_proj.weight)
 
         if self.obj_ptr_gating:
-            self.obj_ptr_filtering_proj = nn.Linear(256,256)
-            nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
+            self.obj_ptr_gating_proj = nn.Linear(256,256)
+            nn.init.xavier_uniform_(self.obj_ptr_gating_proj.weight)
 
         if self.highres_gating == "by_lowres":
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
@@ -760,7 +760,7 @@ class SAM2Base(torch.nn.Module):
         # NOTE: TEST SEMANTIC FILTERING
         if self.obj_ptr_gating:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
-            obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
+            obj_ptr_ = self.obj_ptr_gating_proj(obj_ptrs)
             obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True)# + self.obj_ptr_gating_bias
             obj_gating_score = torch.sigmoid(obj_gating_score)
             obj_ptrs = obj_ptrs * obj_gating_score

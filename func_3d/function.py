@@ -431,7 +431,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["th"] = 0.5
         
         if args.wandb_enabled:
-            wandb.log({f"{name}.Dice": metrics_dict["dice"].mean()}, step=epoch)
+            wandb.log({f"val/{name}.Dice": metrics_dict["dice"].mean()}, step=epoch)
 
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()
