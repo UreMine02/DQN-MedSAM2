@@ -816,8 +816,8 @@ class SAM2Base(torch.nn.Module):
 
             if self.gating_dimension == "cw":
                 # CW GATING
-                mem_ = mem.reshape(m, -1, b, d).permute(2,0,1,3) # [b,m,4096,64]
-                ptr_ = ptr.reshape(m, -1, b, d).permute(2,0,3,1).reshape(b*m, d, -1) # [m,64,4]
+                mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
+                ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
 
                 mem_ = self.ctx_gating_mem_proj(mem_)
                 ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
