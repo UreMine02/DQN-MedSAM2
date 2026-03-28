@@ -1,44 +1,60 @@
-# Deep Q-Learning Agent 
+# Deep Q-Learning Agent
 import torch
+import torch.distributed as dist
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import BasePOAgent
 
 
 class PPOAgent(BasePOAgent):
     def __init__(
-        self, 
-        num_maskmem, 
-        policy_lr=0.0001, 
-        value_lr=0.001, 
-        gamma=0.99, 
+        self,
+        num_maskmem,
+        policy_lr=0.0001,
+        value_lr=0.001,
+        gamma=0.99,
         beta=0.9995,
         tau=0.9,
-        buffer_size=500, 
-        batch_size=64, 
-        device="cpu", 
+        buffer_size=500,
+        batch_size=64,
+        device="cpu",
         entropy_weight=0.1,
         epsilon=0.2,
         sam2_dim={}
     ):
         super().__init__(
-            num_maskmem=num_maskmem, 
-            policy_lr=policy_lr, 
-            value_lr=value_lr, 
-            gamma=gamma, 
+            num_maskmem=num_maskmem,
+            policy_lr=policy_lr,
+            value_lr=value_lr,
+            gamma=gamma,
             beta=beta,
             tau=tau,
-            buffer_size=buffer_size, 
-            batch_size=batch_size, 
+            buffer_size=buffer_size,
+            batch_size=batch_size,
             device=device,
             entropy_weight=entropy_weight,
             sam2_dim=sam2_dim
         )
         self.epsilon = epsilon
-    
+        
+    def clear_buffer(self):
+        self.replay_buffer.clear()
+        
+    def update(self, num_update):
+        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        if self.distributed:
+            dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
+        
+        if local_count < 200:
+            return None
+        
+        out = super().update(num_update)
+        self.clear_buffer()
+        
+        return out
+
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         ratio = (log_prob - old_log_prob).exp()
         surr_loss = ratio * advantage
         clipped_surr_loss = torch.clamp(ratio, 1.0 - self.epsilon, 1.0 + self.epsilon) * advantage
         policy_loss = -torch.min(surr_loss, clipped_surr_loss)
         return policy_loss
-        

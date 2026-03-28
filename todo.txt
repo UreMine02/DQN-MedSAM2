@@ -1,5 +1,1 @@
-Double DQN
-Dueling DQN
-
-Policy Gradient
-Actor-Critic
+squeue --me --format="%.18i %.9P %.8j %.8u %.8T %.10M %.9l %.6D %R %S" --start

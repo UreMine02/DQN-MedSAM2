@@ -14,11 +14,13 @@ from collections import defaultdict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import L1Loss, BCEWithLogitsLoss
 from torch.autograd import Function
+import torch.distributed as dist
 
 from monai.losses import DiceLoss, FocalLoss
-from monai.metrics import compute_hausdorff_distance
+from monai.metrics import compute_hausdorff_distance, compute_surface_dice
 from sklearn.cluster import KMeans
 
 import cfg
@@ -40,12 +42,16 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         print(args)
         model_cfg = args.sam_config
 
-        net = build_sam2_video_predictor(config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
+        net = build_sam2_video_predictor(args, config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
-        cfg = compose(config_name=args.rl_config)
-        print(cfg)
-        OmegaConf.resolve(cfg)
-        net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
+        if not args.no_agent:
+            hydra_overrides = [
+                f"++rl_modules.config.agent.num_support={args.num_support}",
+            ]
+            cfg = compose(config_name=args.rl_config)
+            print(cfg)
+            OmegaConf.resolve(cfg)
+            net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()
@@ -215,19 +221,16 @@ def sample_diverse_support(support_imgs_tensor, support_masks_tensor, num_sample
 
 def score_cal(seg_map, prd_map):
     '''
-    labels B * 1
     seg_map B * H * W
     prd_map B * H * W
     '''
-    assert seg_map.ndim == prd_map.ndim
-    assert seg_map.ndim >= 2
+    assert seg_map.ndim == 2 or seg_map.ndim == 3
+    assert prd_map.ndim == 2 or prd_map.ndim == 3
     if seg_map.ndim == 2:
         seg_map = seg_map.unsqueeze(0)
         prd_map = prd_map.unsqueeze(0)
-        
-    total_num = seg_map.shape[0]
     
-    hd_score = compute_hausdorff_distance(prd_map.unsqueeze(1), seg_map.unsqueeze(1)).squeeze()
+    total_num = seg_map.shape[0]
     
     seg_map = seg_map.reshape(total_num, -1)
     prd_map = prd_map.reshape(total_num, -1)
@@ -249,23 +252,22 @@ def score_cal(seg_map, prd_map):
     b_iou_score = b_sum_dot/((b_sum_seg + b_sum_prd)-b_sum_dot)
     fb_iou_score = (iou_score + b_iou_score) / 2
 
-    return (iou_score, dice_score, fb_iou_score, hd_score)
+    return iou_score, dice_score, fb_iou_score
 
-def eval_seg(pred, mask):
+def eval_seg(pred, mask, thr=0.5):
     """
     Args:
         pred: [D, H, W]
         mask: [D, H, W]
     """
-    pred = (torch.sigmoid(pred) > 0.5).float()
-    iou, dice, fb_iou, hd = score_cal(mask, pred)
+    pred = (torch.sigmoid(pred) > thr).float()
+    iou, dice, fb_iou = score_cal(mask, pred)
     
     iou[iou.isnan()] = 0. 
     dice[dice.isnan()] = 0.
     fb_iou[fb_iou.isnan()] = 0.
-    hd[torch.logical_or(hd.isnan(), hd.isinf())] = 0.
     
-    return iou, dice, fb_iou, hd
+    return iou, dice, fb_iou
 
 def dice_score(pred, mask, smoothing=1e-6):
     pred = pred.reshape(-1)
@@ -284,6 +286,7 @@ def iou_score(pred, mask, smoothing=1e-6):
     interaction = torch.sum(pred * mask)
     denominator = torch.count_nonzero(pred + mask)
 
+    # NOTE: TRAINING WITH NEG
     iou = (interaction+smoothing)/(denominator+smoothing)
     return iou
 
@@ -403,6 +406,46 @@ def dice_coeff(input, target):
 
     return s / (i + 1)
 
+def sigmoid_focal_loss(
+    inputs,
+    targets,
+    num_objects,
+    alpha: float = 0.25,
+    gamma: float = 2,
+    loss_on_multimask=False,
+):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        num_objects: Number of objects in the batch
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+        loss_on_multimask: True if multimask prediction is enabled
+    Returns:
+        focal loss tensor
+    """
+    prob = inputs.sigmoid()
+    ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    p_t = prob * targets + (1 - prob) * (1 - targets)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    if loss_on_multimask:
+        # loss is [N, M, H, W] where M corresponds to multiple predicted masks
+        assert loss.dim() == 4
+        return loss.flatten(2).mean(-1) / num_objects  # average over spatial dims
+    return loss.mean(1).sum() / num_objects
+
 class DiceCoeff(Function):
     """Dice coeff for individual examples"""
 
@@ -462,22 +505,25 @@ class CombinedLoss(nn.Module):
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
         obj_pred = obj_pred.view(1, -1)
-
+        
         if (targets == 0).all():
-            bce = self.bce_loss(obj_pred, torch.zeros(obj_pred.shape).to(device=obj_pred.device))
+            obj_pred_target = torch.zeros_like(obj_pred, requires_grad=False).to(device=obj_pred.device)
         else:
-            bce = self.bce_loss(obj_pred, torch.ones(obj_pred.shape).to(device=obj_pred.device))
+            obj_pred_target = torch.ones_like(obj_pred, requires_grad=False).to(device=obj_pred.device)
+            
+        bce = self.bce_loss(obj_pred, obj_pred_target)
         dice = self.dice_loss(inputs, targets)
         focal = self.focal_loss(inputs, targets)
         mae = self.mae_loss(iou_pred, iou_gt)
         
         return self.dice_weight*dice, self.focal_weight*focal, self.mae_weight*mae, self.bce_weight*bce
 
-def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss):
+def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss):
     loss_dict["focal_loss"] += focal_loss
     loss_dict["dice_loss"] += dice_loss
     loss_dict["mae_loss"] += mae_loss
     loss_dict["bce_loss"] += bce_loss
+    loss_dict["aux_loss"] += aux_loss
 
 def average_loss(loss_dict):
     if loss_dict["num_step"] == 0:
@@ -492,7 +538,8 @@ def average_loss(loss_dict):
     loss_dict["dice_loss"] = loss_dict["dice_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["mae_loss"] = loss_dict["mae_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["bce_loss"] = loss_dict["bce_loss"]/(loss_dict["num_step"]+ 1e-6)
-    loss_dict["total_loss"] += loss_dict["focal_loss"] + loss_dict["dice_loss"] + loss_dict["mae_loss"] + loss_dict["bce_loss"]
+    loss_dict["aux_loss"] = loss_dict["aux_loss"]/(loss_dict["num_step"]+ 1e-6)
+    loss_dict["total_loss"] += loss_dict["focal_loss"] + loss_dict["dice_loss"] + loss_dict["mae_loss"] + loss_dict["bce_loss"] + loss_dict["aux_loss"]
 
 def update_score(score_dict, dice_score, iou_score):
     score_dict["dice_score"] += dice_score
@@ -504,19 +551,26 @@ def average_score(score_dict):
     score_dict["total_score"] += score_dict["dice_score"] + score_dict["iou_score"]
 
 def extract_object(images_tensor, masks_tensor, support_images_tensor, support_masks_tensor, obj_id, video_length, num_support):
-    obj_mask = masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
-    if channels_with_true.numel() == 0:
-        print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
-        return None
-    min_slice, max_slice = channels_with_true.min(), channels_with_true.max()
-    obj_mask = obj_mask[min_slice:max_slice+1]
-    obj_image = images_tensor[min_slice:max_slice+1]
+    # return {
+    #     "image": images_tensor,
+    #     "label": masks_tensor,
+    #     "support_image": support_images_tensor,
+    #     "support_label": support_masks_tensor,
+    # }
+    
+    obj_mask = masks_tensor #== obj_id
+    # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
+    # if channels_with_true.numel() == 0:
+    #     print(f"[EXTRACT QUERY] No valid query slices found for obj_id={obj_id}.")
+    #     return None
+    # min_slice, max_slice = channels_with_true.min(), channels_with_true.max()
+    obj_mask = obj_mask#[min_slice:max_slice+1]
+    obj_image = images_tensor#[min_slice:max_slice+1]
 
-    if video_length is not None and obj_mask.shape[0] > video_length:
-        starting_frame = np.random.randint(low=0, high=obj_mask.shape[0]-video_length)
-        obj_mask = obj_mask[starting_frame:starting_frame+video_length]
-        obj_image = obj_image[starting_frame:starting_frame+video_length]
+    # if video_length is not None and obj_mask.shape[0] > video_length:
+    #     starting_frame = np.random.randint(low=0, high=obj_mask.shape[0]-video_length)
+    #     obj_mask = obj_mask[starting_frame:starting_frame+video_length]
+    #     obj_image = obj_image[starting_frame:starting_frame+video_length]
     
     # channels_class_4 = torch.argwhere(torch.any(obj_mask == 4, axis=(1, 2))).flatten()
     # channels_class_12 = torch.argwhere(torch.any(obj_mask == 12, axis=(1, 2))).flatten()
@@ -548,26 +602,26 @@ def extract_object(images_tensor, masks_tensor, support_images_tensor, support_m
     #     print(f"  Number of slices containing Class {obj_id}: {num_slices_with_obj}")
     
     # Support Processing
-    if obj_id in [4, 12]:
-        # print(f"[EXTRACT SUPPORT - BEFORE RESAMPLING] obj_id={obj_id}")
-        class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
+    # if obj_id in [4, 12]:
+    #     # print(f"[EXTRACT SUPPORT - BEFORE RESAMPLING] obj_id={obj_id}")
+    #     class_slices_before = torch.sum(support_masks_tensor == obj_id, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"  Total slices containing obj_id={obj_id}: {class_slices_before}")
-    obj_mask = support_masks_tensor == obj_id
-    channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
-    if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
-        print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
-        return None
-    if len(channels_with_true) > num_support:
-        selected_indices = torch.tensor(np.random.choice(channels_with_true.cpu(), size=num_support, replace=False))
-    else:
-        selected_indices = channels_with_true
+    obj_mask = support_masks_tensor #== obj_id
+    # channels_with_true = torch.argwhere(torch.sum(obj_mask, dim=(1, 2))).flatten()
+    # if channels_with_true.numel() == 0:  # No valid slices in the support set for the target class
+    #     print(f"[EXTRACT SUPPORT] No valid support slices found for obj_id={obj_id}.")
+    #     return None
+    # if len(channels_with_true) > num_support:
+    #     selected_indices = torch.tensor(np.random.choice(channels_with_true.cpu(), size=num_support, replace=False))
+    # else:
+    #     selected_indices = channels_with_true
 
-    selected_obj_mask = obj_mask[selected_indices, ...]
-    selected_obj_image = support_images_tensor[selected_indices, ...]
+    selected_obj_mask = obj_mask#[selected_indices, ...]
+    selected_obj_image = support_images_tensor#[selected_indices, ...]
     # Support slices after resampling
     # Debugging slice counts for obj_id 4 and 12
-    if obj_id in [4, 12]:
-        num_slices = torch.sum(selected_obj_mask == 1, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
+    # if obj_id in [4, 12]:
+        # num_slices = torch.sum(selected_obj_mask == 1, dim=(1, 2)).nonzero(as_tuple=True)[0].shape[0]
         # print(f"[EXTRACT SUPPORT - AFTER RESAMPLING] Class {obj_id}")
         # print(f"  Total Slices: {num_slices}")
 
@@ -777,6 +831,40 @@ def extract_object_multiple(images_tensor, masks_tensor, support_images_list, su
 #     )
 
 #     return output_dict
+def is_dist_avail_and_initialized():
+    if not dist.is_available():
+        return False
+    if not dist.is_initialized():
+        return False
+    return True
 
+def get_world_size():
+    if not is_dist_avail_and_initialized():
+        return 1
+    return dist.get_world_size()
 
-
+def reduce_dict(input_dict, average=True):
+    """
+    Args:
+        input_dict (dict): all the values will be reduced
+        average (bool): whether to do average or sum
+    Reduce the values in the dictionary from all processes so that all processes
+    have the averaged results. Returns a dict with the same fields as
+    input_dict, after reduction.
+    """
+    world_size = get_world_size()
+    if world_size < 2:
+        return input_dict
+    with torch.no_grad():
+        names = []
+        values = []
+        # sort the keys so that they are consistent across processes
+        for k in sorted(input_dict.keys()):
+            names.append(k)
+            values.append(input_dict[k])
+        values = torch.stack(values, dim=0)
+        dist.all_reduce(values)
+        if average:
+            values /= world_size
+        reduced_dict = {k: v for k, v in zip(names, values)}
+    return reduced_dict

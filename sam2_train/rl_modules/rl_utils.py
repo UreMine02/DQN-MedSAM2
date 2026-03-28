@@ -1,15 +1,50 @@
 """
 Q-learning utilities cho SAM2 memory management.
 """
-
+import math
 import random
 import torch
 import numpy as np
+from functools import partial
 from monai.losses import DiceLoss, FocalLoss
 from sam2_train.rl_modules.rl_components import RLStates
+from sam2_train.modeling.position_encoding import compute_axial_cis
 
 EPS = 1e-6
 
+def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
+    ndim = x.ndim
+    assert 0 <= 1 < ndim
+    assert freqs_cis.shape == (x.shape[-2], x.shape[-1])
+    shape = [d if i >= ndim - 2 else 1 for i, d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+def apply_rotary_enc(
+    xq: torch.Tensor,
+    freqs_cis: torch.Tensor
+):
+    xq_ = torch.view_as_complex(xq.float().reshape(*xq.shape[:-1], -1, 2))
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_)
+    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(3)
+    
+    return xq_out.type_as(xq).to(xq.device)
+
+
+def rotary_emb(x, internal_dim=256, num_heads=1, rope_theta=10000.0):
+    compute_cis = partial(
+        compute_axial_cis, dim=internal_dim // num_heads, theta=rope_theta
+    )
+    
+    # Apply rotary position encoding
+    w = h = math.sqrt(x.shape[-2])
+    freqs_cis = compute_cis(end_x=w, end_y=h).to(x.device)
+
+    x = apply_rotary_enc(
+        x,
+        freqs_cis=freqs_cis
+    )
+    
+    return x
 
 def prepare_rl_state(
     current_vision_feats,
@@ -17,6 +52,7 @@ def prepare_rl_state(
     output_dict,
     frame_idx,
     num_maskmem,
+    num_max_prompt=10,
     offload_to_cpu=True,
     training=False
 ):
@@ -38,8 +74,8 @@ def prepare_rl_state(
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
-            mem_feat = mem_feat.detach().cpu()
-            obj_ptr = obj_ptr.detach().cpu()
+            mem_feat = mem_feat.cpu()
+            obj_ptr = obj_ptr.cpu()
         prev_memory_bank.append(mem_feat)
         prev_obj_ptr.append(obj_ptr)
     
@@ -53,23 +89,24 @@ def prepare_rl_state(
         mem_feat = feat["maskmem_features"] + feat["maskmem_pos_enc"][0]
         obj_ptr = feat["obj_ptr"]
         if offload_to_cpu:
-            mem_feat = mem_feat.detach().cpu()
-            obj_ptr = obj_ptr.detach().cpu()
+            mem_feat = mem_feat.cpu()
+            obj_ptr = obj_ptr.cpu()
         prev_memory_bank.append(mem_feat)
         prev_obj_ptr.append(obj_ptr)
-        
+    
     # Append zero memory
-    while len(prev_memory_bank) < 16:
+    while len(prev_memory_bank) < num_maskmem + num_max_prompt:
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
     
     prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
     
-    if training:
-        randperm = np.random.permutation(num_maskmem)
-        prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
-        prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
+    #TODO: Finding out why this part affecting testing
+    # if training:
+    #     randperm = torch.randperm(num_maskmem)
+    #     prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
+    #     prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
     
     if offload_to_cpu:
         next_image_feat = next_image_feat.detach().cpu()
@@ -78,25 +115,25 @@ def prepare_rl_state(
         
     rl_state = {
         "frame_idx": frame_idx,
-        "next_image_feat": next_image_feat,
+        "next_image_feat": next_image_feat.clone().detach(),
         "curr_memory_feat": {
-            "mem_feat": curr_memory_feat,
-            "obj_ptr": curr_obj_ptr,
+            "mem_feat": curr_memory_feat.clone().detach(),
+            "obj_ptr": curr_obj_ptr.clone().detach(),
         },
         "prev_memory_bank": {
-            "mem_feat": prev_memory_bank,
-            "obj_ptr": prev_obj_ptr,
+            "mem_feat": prev_memory_bank.clone().detach(),
+            "obj_ptr": prev_obj_ptr.clone().detach(),
         }
     }
     
     state = RLStates(**rl_state)
     list_frame = list(output_dict["non_cond_frame_outputs"].keys())
-    if training:
-        avail_index = np.argsort(randperm)[:len(non_cond_bank_list)].tolist()
-        action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
-    else:
-        action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
-        
+    # if training:
+    #     avail_index = np.argsort(randperm)[:len(non_cond_bank_list)].tolist()
+    #     action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
+    # else:
+    action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
+    
     return state, action_frame_map
 
 def compute_loss(

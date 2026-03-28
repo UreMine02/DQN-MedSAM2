@@ -7,7 +7,7 @@
 import math
 import warnings
 from functools import partial
-from typing import Tuple, Type
+from typing import Tuple, Type, Optional
 
 import torch
 import torch.nn.functional as F
@@ -284,10 +284,11 @@ class RoPEAttention(Attention):
         )
         freqs_cis = self.compute_cis(end_x=feat_sizes[0], end_y=feat_sizes[1])
         self.freqs_cis = freqs_cis
-        self.rope_k_repeat = rope_k_repeat
+        self.rope_k_repeat = rope_k_repeat        
 
     def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
+        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0,
+        gated_indices: Optional[Tensor] = None
     ) -> Tensor:
         # Input projections
         q = self.q_proj(q)
@@ -314,9 +315,13 @@ class RoPEAttention(Attention):
             freqs_cis=self.freqs_cis,
             repeat_freqs_k=self.rope_k_repeat,
         )
+        
+        # if gated_indices is not None:
+        #     k = k[:, :, gated_indices]
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
+        
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
@@ -325,7 +330,7 @@ class RoPEAttention(Attention):
         #     enable_mem_efficient=OLD_GPU,
         # ):
         #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-
+        
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 

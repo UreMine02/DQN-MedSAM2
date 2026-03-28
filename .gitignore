@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 rlsam2.sh
 *.out
+*.log
+*ablation.csv
+assets/

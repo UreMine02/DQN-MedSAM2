@@ -3,16 +3,20 @@ import glob
 import random
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
+from torchvision.transforms.functional import normalize
+from torchvision.transforms import v2
+from torchvision import tv_tensors
 
 
-def normalization(image):
-    image_min = np.min(image)
-    image_max = np.max(image)
-    image = ((image - image_min)/(image_max-image_min))*255
+def scaling(image ,scale=1):
+    image_min = image.min()
+    image_max = image.max()
+    image = ((image - image_min)/(image_max-image_min))*scale
     return image
 
 def remove_negative_samples(image_tensor, mask_tensor):
@@ -24,52 +28,112 @@ class BTCV(Dataset):
     def __init__(self, args, subset="train"):
         self.root = args.data_path
         self.subset = subset
+        self.mode = subset
+        csv_root = "./data/BTCV"
+        suffix = "Tr" if subset == "train" else "Ts"
 
-        self.train_list = glob.glob(os.path.join(self.root, "imagesTr", "*"))
-        self.test_list = glob.glob(os.path.join(self.root, "imagesTs", "*"))
-        
+        df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
+        self.gt_path = np.asarray(df["gt_path"])
+        self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
+
         self.image_size = args.image_size
-        self.max_slices = 16
+        self.num_support = args.num_support
+        self.max_slices = args.video_length
         
+        self.tr_transform = v2.Compose([
+            # v2.Resize(size=(self.image_size, self.image_size)),
+            v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
+            # v2.RandomHorizontalFlip(0.5),
+            # v2.RandomAffine(degrees=25),
+            v2.ColorJitter(brightness=0.25, contrast=0.25),
+        ])
+        
+        self.ts_transform = v2.Compose([
+            v2.Resize(size=(self.image_size, self.image_size)),
+        ])
+
     def __len__(self):
-        if self.subset == "train":
-            return len(self.train_list)
-        return len(self.test_list)
-    
+        return len(self.gt_path)
+
     def __getitem__(self, index):
-        volume_list = self.train_list if self.subset == "train" else self.test_list
+        obj_id = self.obj_id[index]
+        support_list = (self.obj_id == obj_id) & (self.n_pos >= self.num_support)
 
-        if self.subset == "train":
-            support_index = random.choice([i for i in range(len(volume_list)) if i != index])
-        else:
-            support_index = random.choice([i for i in range(len(volume_list))])
+        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
+        support_index = np.random.choice(support_list, size=1)[0]
 
-        image_path = volume_list[index]
-        label_path = image_path.replace("image", "label")
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_image_path = volume_list[support_index]
-        support_label_path = support_image_path.replace("image", "label")
-        
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
+
+        (
+            image_3d,
+            data_seg_3d,
+            support_image_3d,
+            support_data_seg_3d
+        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
+
+        output_dict = {
+            "image": image_3d, "label": data_seg_3d,
+            "support_image": support_image_3d, "support_label": support_data_seg_3d,
+            "task": "btcv", "obj_id": obj_id, "name": os.path.splitext(os.path.basename(image_path))[0]
+        }
+
+        return output_dict
+
+    def load_data(self, image_path, label_path, support_image_path, support_label_path, obj_id):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            max_slices=self.max_slices if self.subset == "train" else -1
+            obj_id = obj_id,
+            max_slices=self.max_slices if self.mode == "train" else -1,
+            slice_selection='contiguous',
+            is_support=False
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
-            max_slices=self.max_slices
+            obj_id = obj_id,
+            max_slices=self.num_support,
+            slice_selection='random' if self.mode == 'train' else 'evenly',
+            is_support=True
         )
         
-        output_dict ={
-            "image": image_3d, "label": data_seg_3d,
-            "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "name": image_path.split("/")[-1]
-        }
+        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
+        support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
         
-        return output_dict
+        orig_size = image_3d.shape[-2:]
+        
+        image_3d = tv_tensors.Image(image_3d)
+        data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        support_image_3d = tv_tensors.Image(support_image_3d)
+        support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        
+        if self.mode == "train":
+            transform = self.tr_transform
+        else:
+            transform = self.ts_transform
+            
+        image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
+        support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+                
+        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        # support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        # support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
+        # orig_size = image_3d.shape[-2:]
+        
+        # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
-    def load_image_label(self, image_path, label_path, max_slices=16):
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
+
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -81,25 +145,43 @@ class BTCV(Dataset):
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
                 
-        image_3d = np.asanyarray(image_3d)
-        data_seg_3d = np.asanyarray(data_seg_3d)
+        image_3d = np.asarray(image_3d, dtype=np.float32)
+        data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
+        data_seg_3d[data_seg_3d != obj_id] = 0
         
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]
+            
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
-            start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-            image_3d = image_3d[..., start_slice:start_slice+max_slices]
-            data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
-
-        image_3d = normalization(image_3d)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
+            if slice_selection == 'contiguous':
+                choices = list(range(-(max_slices-1),0)) + list(range(image_3d.shape[-1]))
+                start = np.random.choice(choices)
+                end = start + max_slices
+                start = max(0, start)
+                image_3d = image_3d[..., start:end]
+                data_seg_3d = data_seg_3d[..., start:end]
+            elif slice_selection == 'random':
+                n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
+                slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            elif slice_selection == 'evenly':
+                slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            else:
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
+        
+        image_3d = scaling(image_3d, scale=1)
+        
+        return image_3d, data_seg_3d
+    
+    def resize(self, image_3d, data_seg_3d):
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-
+        
         return image_3d, data_seg_3d

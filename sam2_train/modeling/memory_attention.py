@@ -64,11 +64,11 @@ class MemoryAttentionLayer(nn.Module):
         tgt = tgt + self.dropout1(tgt2)
         return tgt
 
-    def _forward_ca(self, tgt, memory, query_pos, pos, num_k_exclude_rope=0):
+    def _forward_ca(self, tgt, memory, query_pos, pos, num_k_exclude_rope=0, gated_indices=None):
         kwds = {}
         if num_k_exclude_rope > 0:
             assert isinstance(self.cross_attn_image, RoPEAttention)
-            kwds = {"num_k_exclude_rope": num_k_exclude_rope}
+            kwds = {"num_k_exclude_rope": num_k_exclude_rope, "gated_indices": gated_indices}
 
         # Cross-Attention
         tgt2 = self.norm2(tgt)
@@ -88,13 +88,14 @@ class MemoryAttentionLayer(nn.Module):
         pos: Optional[Tensor] = None,
         query_pos: Optional[Tensor] = None,
         num_k_exclude_rope: int = 0,
+        gated_indices: Optional[Tensor] = None
     ) -> torch.Tensor:
 
         # Self-Attn, Cross-Attn
         # tgt = self._forward_sa(tgt, query_pos)
         # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
         tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
-        tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, use_reentrant=False)
+        tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, use_reentrant=False)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
@@ -126,6 +127,7 @@ class MemoryAttention(nn.Module):
         curr_pos: Optional[Tensor] = None,  # pos_enc for self-attention inputs
         memory_pos: Optional[Tensor] = None,  # pos_enc for cross-attention inputs
         num_obj_ptr_tokens: int = 0,  # number of object pointer *tokens*
+        gated_indices: Optional[Tensor] = None
     ):
         if isinstance(curr, list):
             assert isinstance(curr_pos, list)
@@ -154,21 +156,24 @@ class MemoryAttention(nn.Module):
             kwds = {}
             if isinstance(layer.cross_attn_image, RoPEAttention):
                 kwds = {"num_k_exclude_rope": num_obj_ptr_tokens}
-            # output = layer(
-            #     tgt=output,
-            #     memory=memory,
-            #     pos=memory_pos,
-            #     query_pos=curr_pos,
-            #     **kwds
-            # )
-            output = checkpoint(layer,
+            output = layer(
                 tgt=output,
                 memory=memory,
                 pos=memory_pos,
                 query_pos=curr_pos,
+                gated_indices=gated_indices,
                 **kwds,
-                use_reentrant=False
             )
+            # output, self_attn, cross_attn = checkpoint(layer,
+            #     tgt=output,
+            #     memory=memory,
+            #     pos=memory_pos,
+            #     query_pos=curr_pos,
+            #     return_attn=return_attn,
+            #     **kwds,
+            #     use_reentrant=False
+            # )
+            
         normed_output = self.norm(output)
 
         if self.batch_first:
