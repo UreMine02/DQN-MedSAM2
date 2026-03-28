@@ -210,7 +210,7 @@ class SAM2Base(torch.nn.Module):
         if self.gating_dimension == "cw":
             self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
             self.ctx_gating_mem_proj = nn.Linear(64,64)
-            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1] * 64))
+            # self.ctx_gating_bias = nn.Parameter(torch.Tensor([1] * 64))
             
             nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
             nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
@@ -218,7 +218,7 @@ class SAM2Base(torch.nn.Module):
         elif self.gating_dimension == "tw":
             self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
             self.ctx_gating_mem_proj = nn.Linear(64,64)
-            self.ctx_gating_bias = nn.Parameter(torch.Tensor([1]))
+            # self.ctx_gating_bias = nn.Parameter(torch.Tensor([1]))
             self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
             
             nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
@@ -226,14 +226,14 @@ class SAM2Base(torch.nn.Module):
         
         if self.obj_ptr_gating:
             self.obj_ptr_filtering_proj = nn.Linear(256,256)
-            self.obj_ptr_gating_bias = nn.Parameter(torch.Tensor([1] * 256))
+            # self.obj_ptr_gating_bias = nn.Parameter(torch.Tensor([1] * 256))
             nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
         
         if self.highres_gating == "by_lowres":
-            self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
+            # self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
-            self.highres_gating_bias = nn.ParameterList([nn.Parameter(torch.Tensor([1] * 32)), nn.Parameter(torch.Tensor([1] * 64))])
+            # self.highres_gating_bias = nn.ParameterList([nn.Parameter(torch.Tensor([1] * 32)), nn.Parameter(torch.Tensor([1] * 64))])
             for layer in self.low2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
             for layer in self.high2high_gating_proj:
@@ -241,7 +241,7 @@ class SAM2Base(torch.nn.Module):
         elif self.highres_gating == "by_ptr":
             self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
-            self.highres_gating_bias = nn.ParameterList([nn.Parameter(torch.Tensor([1] * 32)), nn.Parameter(torch.Tensor([1] * 64))])
+            # self.highres_gating_bias = nn.ParameterList([nn.Parameter(torch.Tensor([1] * 32)), nn.Parameter(torch.Tensor([1] * 64))])
             for layer in self.ptr2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
             for layer in self.high2high_gating_proj:
@@ -770,7 +770,7 @@ class SAM2Base(torch.nn.Module):
         if self.obj_ptr_gating:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
-            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True) + self.obj_ptr_gating_bias
+            obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True)# + self.obj_ptr_gating_bias
             obj_gating_score = torch.sigmoid(obj_gating_score)
             obj_ptrs = obj_ptrs * obj_gating_score
             
@@ -787,11 +787,11 @@ class SAM2Base(torch.nn.Module):
         # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
         if self.highres_gating == "by_ptr":
             high_res_features = []
-            for highres, ptr2high_proj, high2high_proj, bias in zip(highres_vision_feats, self.ptr2high_gating_proj, self.high2high_gating_proj, self.highres_gating_bias):
+            for highres, ptr2high_proj, high2high_proj in zip(highres_vision_feats, self.ptr2high_gating_proj, self.high2high_gating_proj):
 
                 ptr_ = ptr2high_proj(obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
                 high_ = high2high_proj(highres) # [B,C,H,W]
-                gating_score = ptr_ + high_ + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+                gating_score = ptr_ + high_# + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
                 gating_score = torch.sigmoid(gating_score)
                 highres = highres * gating_score
                 
@@ -823,7 +823,7 @@ class SAM2Base(torch.nn.Module):
                 ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
             
                 ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
-                gating_logits = mem_ + ptr_ + self.ctx_gating_bias # [1,m,4096,64]
+                gating_logits = mem_ + ptr_# + self.ctx_gating_bias # [1,m,4096,64]
                 
                 if self.gating_softness == "threshold":
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
@@ -854,7 +854,7 @@ class SAM2Base(torch.nn.Module):
                 mem_ = F.normalize(mem_, p=2, dim=-1)
                 ptr_ = F.normalize(ptr_, p=2, dim=-2)
                 
-                gating_logits = self.gating_logit_scale * mem_ @ ptr_ + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
+                gating_logits = self.gating_logit_scale * mem_ @ ptr_# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
                 
                 if self.gating_softness == "threshold":
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
@@ -875,12 +875,12 @@ class SAM2Base(torch.nn.Module):
 
                 memory = torch.cat([gated_mem, ptr], dim=0)
                 
-                # # return gating score for auxiliary loss
-                # gating_score = gating_score.reshape(b, -1, 64, 64)
-                # n_support = len(output_dict["cond_frame_outputs"])
-                # gating_score_dict["cond_frames"] = gating_score[:, :n_support]
-                # for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
-                #     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
+                # return gating score for auxiliary loss
+                gating_score = gating_score.reshape(b, -1, 64, 64)
+                n_support = len(output_dict["cond_frame_outputs"])
+                gating_score_dict["cond_frames"] = gating_score[:, :n_support]
+                for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
+                    gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
         
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
@@ -996,16 +996,16 @@ class SAM2Base(torch.nn.Module):
             # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
             if self.highres_gating == "by_lowres":
                 gated_high_res_features = []
-                layers = zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj, self.ptr2high_gating_proj, self.highres_gating_bias)
-                for highres, low2high_proj, high2high_proj, ptr2high_proj, bias in layers:
+                layers = zip(high_res_features, self.low2high_gating_proj, self.high2high_gating_proj)#, self.ptr2high_gating_proj)
+                for highres, low2high_proj, high2high_proj in layers:#, ptr2high_proj in layers:
                     scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
                     
                     upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
                     
-                    ptr_ = ptr2high_proj(mem_obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
+                    # ptr_ = ptr2high_proj(mem_obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
                     low_ = low2high_proj(upscaled_lowres)
                     high_ = high2high_proj(highres)
-                    gating_score = low_ + high_ + ptr_ + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+                    gating_score = low_ + high_# + ptr_# + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
                     gating_score = torch.sigmoid(gating_score)
                     highres = highres * gating_score
                     
