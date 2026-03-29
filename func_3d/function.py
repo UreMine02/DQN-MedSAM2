@@ -141,7 +141,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     
                     token_gating_logits = [frame[obj_id]["token_gating_logits"].flatten() for frame in video_segments.values()]
                     token_gating_logits = torch.cat(token_gating_logits, dim=0).detach().cpu().numpy()
-                    print(token_gating_logits.min(), token_gating_logits.max())
+                    print("token_gating_logits", token_gating_logits.min(), token_gating_logits.max())
                     
                     # Record the loss in this step
                     class_loss = {
@@ -204,10 +204,21 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
                     
+                    min_grad, max_grad = 0, 0
+                    min_name, max_name = "None", "None"
                     for name, param in net.named_parameters():
                         if param.grad is not None and param.grad.isnan().any():
                             raise AssertionError(f"{name} grad is nan")
+                        
+                        if param.grad.min() < min_grad:
+                            min_grad = param.grad.min()
+                            min_name = name
                             
+                        if param.grad.max() < max_grad:
+                            max_grad = param.grad.min()
+                            max_name = name
+                            
+                    print("grad", min_name, min_grad, max_name, max_grad)
 
                     if (batch_idx + 1) % accum_step == 0:
                         grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
