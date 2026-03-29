@@ -138,6 +138,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         train_agent=train_agent, agent_act=agent_act, generate_rl_samples=generate_rl_samples,
                         device=GPUdevice
                     )
+                    
+                    if args.wandb_enabled:
+                        wandb.log({f"": wandb.Histogram(video_segments["token_gating_logits"].flatten())}, step=epoch)
+                    
                     # Record the loss in this step
                     class_loss = {
                         "total_loss":0,

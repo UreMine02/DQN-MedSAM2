@@ -1223,10 +1223,10 @@ class SAM2VideoPredictor(SAM2Base):
             _, video_res_masks = self._get_orig_video_res_output(
                 inference_state, pred_masks
             )
-            gating_score_dict = None
+            gating_score_dict, token_gating_logits = None, None
             if "gating_score_dict" in current_out.keys():
-                gating_score_dict = current_out["gating_score_dict"]
-            yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
+                gating_score_dict, token_gating_logits = current_out["gating_score_dict"], current_out["token_gating_logits"]
+            yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict, token_gating_logits
 
         if train_agent:
             storage_device = inference_state["device"]
@@ -1854,11 +1854,11 @@ class SAM2VideoPredictor(SAM2Base):
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
 
-        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict, token_gating_logits in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
             video_segments[out_frame_idx] = {
                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
                 "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i], 
-                "gating_score_dict": gating_score_dict}
+                "gating_score_dict": gating_score_dict, "token_gating_logits": token_gating_logits}
                 for i, out_obj_id in enumerate(out_obj_ids)
             }
 

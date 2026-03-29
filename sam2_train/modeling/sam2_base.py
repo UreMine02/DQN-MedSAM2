@@ -852,7 +852,7 @@ class SAM2Base(torch.nn.Module):
 
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
-        return pix_feat_with_mem, gating_score_dict, high_res_features, obj_ptrs
+        return pix_feat_with_mem, gating_score_dict, high_res_features, token_gating_logits
 
     def _encode_new_memory(
         self,
@@ -936,7 +936,7 @@ class SAM2Base(torch.nn.Module):
             )
         else:
             # fused the visual feature with previous memory features in the memory bank
-            pix_feat_with_mem, gating_score_dict, high_res_features, mem_obj_ptrs = self._prepare_memory_conditioned_features(
+            pix_feat_with_mem, gating_score_dict, high_res_features, token_gating_logits = self._prepare_memory_conditioned_features(
                 frame_idx=frame_idx,
                 is_init_cond_frame=is_init_cond_frame,
                 current_vision_feats=current_vision_feats[-1:],
@@ -950,6 +950,7 @@ class SAM2Base(torch.nn.Module):
             )
 
             current_out["gating_score_dict"] = gating_score_dict
+            current_out["token_gating_logits"] = token_gating_logits
 
             # NOTE: TEST HIGHRES GATING
             # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
