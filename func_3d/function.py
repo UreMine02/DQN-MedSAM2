@@ -145,8 +145,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         wandb.log(
                             {
                                 "train/token_gating_logits": wandb.plot.line_series(
-                                    xs=epoch, 
-                                    ys=[token_gating_logits.min(), token_gating_logits.max()],
+                                    xs=[epoch],
+                                    ys=[[token_gating_logits.min()], [token_gating_logits.max()]],
                                     keys=["min", "max"],
                                     title="token_gating_logits",
                                     xname="epoch"
