@@ -142,7 +142,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     if args.wandb_enabled:
                         token_gating_logits = [frame[obj_id]["token_gating_logits"].flatten() for frame in video_segments.values()]
                         token_gating_logits = torch.cat(token_gating_logits, dim=0).detach().cpu().numpy()
-                        wandb.log({f"train/token_gating_logits": wandb.Histogram(token_gating_logits)}, step=epoch)
+                        wandb.log(
+                            {
+                                "train/token_gating_logits": wandb.plot.line_series(
+                                    xs=epoch, 
+                                    ys=[token_gating_logits.min(), token_gating_logits.max()],
+                                    keys=["min", "max"],
+                                    title="token_gating_logits",
+                                    xname="epoch"
+                                )
+                            }, step=epoch
+                        )
                     
                     # Record the loss in this step
                     class_loss = {
