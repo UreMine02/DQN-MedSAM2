@@ -825,8 +825,8 @@ class SAM2Base(torch.nn.Module):
 
             token_gating_logits = mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
 
-            token_gating_score = torch.sigmoid(token_gating_logits) # [1,m,4096,1]
-            token_gating_score = (token_gating_score > 0.5).float()
+            token_gating_score = torch.sigmoid(token_gating_logits.float()) # [1,m,4096,1]
+            token_gating_score = (token_gating_score > 0.5).to(token_gating_logits.dtype)
             
             gating_score = token_gating_score * channel_gating_score + (1 - token_gating_score) * (1 - channel_gating_score)
             gated_mem = gating_score * mem_
