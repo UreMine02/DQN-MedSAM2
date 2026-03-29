@@ -212,7 +212,7 @@ class SAM2Base(torch.nn.Module):
 
         self.ctx_token_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_token_gating_mem_proj = nn.Linear(64,64)
-        self.ctx_token_gating_logit_scale = nn.Parameter(torch.Tensor([5.0]))
+        # self.ctx_token_gating_logit_scale = nn.Parameter(torch.Tensor([5.0]))
 
         nn.init.xavier_uniform_(self.ctx_channel_gating_ptr_proj.weight)
         nn.init.xavier_uniform_(self.ctx_channel_gating_mem_proj.weight)
@@ -823,7 +823,7 @@ class SAM2Base(torch.nn.Module):
             mem_for_token_gating = F.normalize(mem_for_token_gating, p=2, dim=-1)
             ptr_for_token_gating = F.normalize(ptr_for_token_gating, p=2, dim=-2)
 
-            token_gating_logits = self.ctx_token_gating_logit_scale * mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
+            token_gating_logits = mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
 
             token_gating_score = torch.sigmoid(token_gating_logits) # [1,m,4096,1]
             token_gating_score = (token_gating_score > 0.5).float()
