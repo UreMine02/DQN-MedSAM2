@@ -1434,6 +1434,7 @@ class SAM2VideoPredictor(SAM2Base):
         
         if "gating_score_dict" in current_out.keys():
             compact_current_out["gating_score_dict"] = current_out["gating_score_dict"]
+            compact_current_out["token_gating_logits"] = current_out["token_gating_logits"]
             
         return compact_current_out, pred_masks_gpu
 
