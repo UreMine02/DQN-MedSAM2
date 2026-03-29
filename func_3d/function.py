@@ -207,7 +207,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     min_grad, max_grad = 0, 0
                     min_name, max_name = "None", "None"
                     for name, param in net.named_parameters():
-                        if param.grad is not None and param.grad.isnan().any():
+                        if param.grad is None:
+                            continue 
+                        
+                        if param.grad.isnan().any():
                             raise AssertionError(f"{name} grad is nan")
                         
                         if param.grad.min() < min_grad:
