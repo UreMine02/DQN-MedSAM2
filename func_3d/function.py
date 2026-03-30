@@ -53,7 +53,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
-    aux_lossfunc = DiceLoss(sigmoid=False)
+    aux_lossfunc = DiceLoss(sigmoid=True)
 
     # Record total loss thoroughout the entire epoch
     total_loss = {

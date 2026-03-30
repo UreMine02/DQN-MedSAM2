@@ -820,8 +820,8 @@ class SAM2Base(torch.nn.Module):
             mem_for_token_gating = self.ctx_token_gating_mem_proj(mem_) # [1,m,4096,64]
             ptr_for_token_gating = self.ctx_token_gating_ptr_proj(ptr_) # [1*m,64,1]
             ptr_for_token_gating = ptr_for_token_gating.reshape(1, m, -1, 1)
-            mem_for_token_gating = F.normalize(mem_for_token_gating, p=2, dim=-1)
-            ptr_for_token_gating = F.normalize(ptr_for_token_gating, p=2, dim=-2)
+            mem_for_token_gating = F.normalize(mem_for_token_gating, p=2, dim=-1, eps=1e-8)
+            ptr_for_token_gating = F.normalize(ptr_for_token_gating, p=2, dim=-2, eps=1e-8)
 
             token_gating_logits = mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
             
@@ -843,11 +843,11 @@ class SAM2Base(torch.nn.Module):
             memory = torch.cat([gated_mem, ptr], dim=0)
 
             # return gating score for auxiliary loss
-            token_gating_score = token_gating_score.reshape(b, -1, 64, 64)
+            token_gating_logits = token_gating_logits.reshape(b, -1, 64, 64)
             n_support = len(output_dict["cond_frame_outputs"])
-            gating_score_dict["cond_frames"] = token_gating_score[:, :n_support]
+            gating_score_dict["cond_frames"] = token_gating_logits[:, :n_support]
             for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
-                gating_score_dict["non_cond_frames"][prev_frame_idx] = token_gating_score[:, idx + n_support]
+                gating_score_dict["non_cond_frames"][prev_frame_idx] = token_gating_logits[:, idx + n_support]
 
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
