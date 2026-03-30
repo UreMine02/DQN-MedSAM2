@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+discri_gating+obj_ptr_gating+highres_gating_by_lowres+rigor_augment+test
+EXP=msd_task02+grpo+icl+discri_gumbel_gating+obj_ptr_gating+highres_gating_by_lowres+rigor_augment+test
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -34,7 +34,7 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -gating_dimension "cw" \
-    -gating_softness "threshold" \
+    -gating_softness "gumbel" \
     -auxiliary_loss "dice" \
     -wandb_enabled \
     -obj_ptr_gating \

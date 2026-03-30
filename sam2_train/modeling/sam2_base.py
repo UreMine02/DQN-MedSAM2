@@ -827,6 +827,7 @@ class SAM2Base(torch.nn.Module):
             
             # THRESHOLDING
             # token_gating_score = torch.sigmoid(token_gating_logits.float()) # [1,m,4096,1]
+            # token_gating_score = (token_gating_score > 0.5).to(token_gating_logits.dtype)
             
             # GUMBEL SOFTMAX
             temperature = 0.1
@@ -834,8 +835,6 @@ class SAM2Base(torch.nn.Module):
             u = torch.rand_like(token_gating_logits)
             g = torch.log(u + eps) - torch.log(1 - u + eps) # difference of 2 gumbel noise is equiv to 1 logistic noise
             token_gating_score = torch.sigmoid((token_gating_logits + g) / temperature)
-            
-            token_gating_score = (token_gating_score > 0.5).to(token_gating_logits.dtype)
             
             gating_score = token_gating_score * channel_gating_score + (1 - token_gating_score) * (1 - channel_gating_score)
             gated_mem = gating_score * mem_
