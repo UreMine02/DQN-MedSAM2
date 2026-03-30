@@ -227,18 +227,18 @@ class SAM2Base(torch.nn.Module):
             nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
 
         if self.highres_gating == "by_lowres":
-            self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
+            # self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
             self.high2low_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
-            self.high2ptr_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+            # self.high2ptr_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
             for layer in self.low2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
-            for layer in self.ptr2high_gating_proj:
-                nn.init.xavier_uniform_(layer.weight)
+            # for layer in self.ptr2high_gating_proj:
+            #     nn.init.xavier_uniform_(layer.weight)
             for layer in self.high2low_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
-            for layer in self.high2ptr_gating_proj:
-                nn.init.xavier_uniform_(layer.weight)
+            # for layer in self.high2ptr_gating_proj:
+            #     nn.init.xavier_uniform_(layer.weight)
         elif self.highres_gating == "by_ptr":
             self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
@@ -999,24 +999,24 @@ class SAM2Base(torch.nn.Module):
                 layers = zip(
                     high_res_features,
                     self.low2high_gating_proj,
-                    # self.high2high_gating_proj,
                     self.high2low_gating_proj,
-                    self.high2ptr_gating_proj,
-                    self.ptr2high_gating_proj
+                    # self.high2ptr_gating_proj,
+                    # self.ptr2high_gating_proj
                 )
-                for highres, low2high_proj, high2low_proj, high2ptr_proj, ptr2high_proj in layers:
+                for highres, low2high_proj, high2low_proj in layers:#, high2ptr_proj, ptr2high_proj in layers:
                     scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
 
                     upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
+                    # upscaled_lowres = F.interpolate(pix_feat_with_mem, size=highres.shape[-2:], mode="bilinear")
 
-                    ptr_ = ptr2high_proj(mem_obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
+                    # ptr_ = ptr2high_proj(mem_obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
                     low_ = low2high_proj(upscaled_lowres)
                     high2low = high2low_proj(highres)
-                    high2ptr = high2ptr_proj(highres)
-                    # gating_score = low_ + high_# + ptr_# + bias.unsqueeze(0).unsqueeze(2).unsqueeze(3)
+                    # high2ptr = high2ptr_proj(highres)
+                    # gating_score = low_ + high_# + ptr_
                     gating_by_lowres_logits = low_ + high2low
-                    gating_by_ptr_logits = ptr_ + high2ptr
-                    gating_score = torch.sigmoid(gating_by_lowres_logits) * torch.sigmoid(gating_by_ptr_logits)
+                    # gating_by_ptr_logits = ptr_ + high2ptr
+                    gating_score = torch.sigmoid(gating_by_lowres_logits)# * torch.sigmoid(gating_by_ptr_logits)
                     highres = highres * gating_score
 
                     gated_high_res_features.append(highres)

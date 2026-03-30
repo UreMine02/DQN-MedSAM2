@@ -9,26 +9,32 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd01-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
-EXP=msd_task01+grpo+icl+cw_gating+semantic_filtering
+EXP=msd_task01+grpo+icl+cw_soft_gating+obj_ptr_gating+highres_gating_by_lowres
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task01 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
+    -data_path /data/rlsam2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 300 \
+    -ep 500 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -distributed
+    -distributed \
+    -wandb_enabled \
+    -gating_dimension "cw" \
+    -gating_softness "soft" \
+    -auxiliary_loss "no" \
+    -obj_ptr_gating \
+    -highres_gating "by_lowres" \
