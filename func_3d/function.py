@@ -217,7 +217,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             max_grad = param.grad.min()
                             max_name = name
                             
-                    # print("grad", min_name, min_grad, max_name, max_grad)
+                    print("grad", min_name, min_grad, max_name, max_grad)
 
                     if (batch_idx + 1) % accum_step == 0:
                         grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
