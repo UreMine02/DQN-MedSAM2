@@ -139,10 +139,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         device=GPUdevice
                     )
                     
-                    token_gating_logits = [frame[obj_id]["token_gating_logits"].flatten() for frame in video_segments.values()]
-                    token_gating_logits = torch.cat(token_gating_logits, dim=0).detach().cpu().numpy()
-                    print("token_gating_logits", token_gating_logits.min(), token_gating_logits.max())
-                    
                     # Record the loss in this step
                     class_loss = {
                         "total_loss":0,
@@ -221,7 +217,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             max_grad = param.grad.min()
                             max_name = name
                             
-                    print("grad", min_name, min_grad, max_name, max_grad)
+                    # print("grad", min_name, min_grad, max_name, max_grad)
 
                     if (batch_idx + 1) % accum_step == 0:
                         grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)

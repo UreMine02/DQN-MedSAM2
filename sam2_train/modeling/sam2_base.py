@@ -832,9 +832,8 @@ class SAM2Base(torch.nn.Module):
             # GUMBEL SOFTMAX
             temperature = 0.5
             eps = 1e-8
-            u = torch.rand_like(token_gating_logits, dtype=token_gating_logits.dtype, device=token_gating_logits.device).clamp(1e-8, 1 - 1e-8)
+            u = torch.rand_like(token_gating_logits, dtype=torch.float32, device=token_gating_logits.device)
             g = torch.log(u + eps) - torch.log(1 - u + eps) # difference of 2 gumbel noise is equiv to 1 logistic noise
-            print("token_gating_logits", token_gating_logits.min(), token_gating_logits.max())
             print("g", g.min(), g.max())
             token_gating_logits = (token_gating_logits + g) / temperature
             token_gating_score = torch.sigmoid(token_gating_logits)
