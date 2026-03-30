@@ -212,7 +212,7 @@ class SAM2Base(torch.nn.Module):
 
         self.ctx_token_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
         self.ctx_token_gating_mem_proj = nn.Linear(64,64)
-        # self.ctx_token_gating_logit_scale = nn.Parameter(torch.Tensor([5.0]))
+        self.ctx_token_gating_logit_scale = nn.Parameter(torch.Tensor([20.0]))
 
         nn.init.xavier_uniform_(self.ctx_channel_gating_ptr_proj.weight)
         nn.init.xavier_uniform_(self.ctx_channel_gating_mem_proj.weight)
@@ -823,7 +823,7 @@ class SAM2Base(torch.nn.Module):
             mem_for_token_gating = F.normalize(mem_for_token_gating, p=2, dim=-1, eps=1e-8)
             ptr_for_token_gating = F.normalize(ptr_for_token_gating, p=2, dim=-2, eps=1e-8)
 
-            token_gating_logits = mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
+            token_gating_logits = self.ctx_token_gating_logit_scale * mem_for_token_gating @ ptr_for_token_gating# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
             
             # THRESHOLDING
             # token_gating_score = torch.sigmoid(token_gating_logits.float()) # [1,m,4096,1]
@@ -831,10 +831,9 @@ class SAM2Base(torch.nn.Module):
             
             # GUMBEL SOFTMAX
             temperature = 0.5
-            eps = 1e-8
+            eps = 1e-12
             u = torch.rand_like(token_gating_logits, dtype=torch.float32, device=token_gating_logits.device)
             g = torch.log(u + eps) - torch.log(1 - u + eps) # difference of 2 gumbel noise is equiv to 1 logistic noise
-            print("g", g.min(), g.max())
             token_gating_logits = (token_gating_logits + g) / temperature
             token_gating_score = torch.sigmoid(token_gating_logits)
             
