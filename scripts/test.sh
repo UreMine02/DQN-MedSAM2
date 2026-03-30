@@ -21,7 +21,10 @@ declare -a ckpt=(
     # output/msd_task10+grpo+icl/2026-03-10-19-22-49/best.pth
 
     # NOTE: TESTING
-    output/btcv+grpo+icl+cw_soft_gating+obj_ptr_gating/2026-03-27-20-13-36/best.pth
+    # output/btcv+grpo+icl+cw_soft_gating+obj_ptr_gating/2026-03-27-20-13-36/best.pth
+    # output/msd_task02+grpo+icl+discri_gating+obj_ptr_gating+highres_gating_by_lowres+rigor_augment/2026-03-29-11-38-40/best.pth
+    # output/msd_task02+grpo+icl+cw_gating+semantic_filtering+force_add+highres_gating/2026-03-25-20-05-33/best.pth
+    output/msd_task02+grpo+icl+no_agent+rigor_augment/2026-03-30-09-38-30/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -33,14 +36,14 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset btcv \
-            -task "" \
-            -data_path /data/datasets/nii/BTCV \
+            -dataset msd \
+            -task "Task02" \
+            -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -gating_dimension "cw" \
-            -gating_softness "soft" \
-            -obj_ptr_gating \
-            # -highres_gating "by_lowres" \
-            # -no_agent
+            -no_agent \
+            # -gating_dimension "cw" \
+            # -gating_softness "soft" \
+            # -obj_ptr_gating \
+            # -highres_gating "by_lowres"
     done
 done

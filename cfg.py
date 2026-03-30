@@ -44,7 +44,7 @@ def parse_args():
     parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "no"], default="no", help="Compute and multiply gating score along which dimension ")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")
-    parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], help="Whether gating highres visual features")
+    parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], default="no", help="Whether gating highres visual features")
     parser.add_argument('-auxiliary_loss', type=str, choices=["no", "dice"], default="no", help="Whether gating object pointer")
     opt = parser.parse_args()
 
