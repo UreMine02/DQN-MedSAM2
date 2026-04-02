@@ -1,5 +1,6 @@
 # Deep Q-Learning Agent
 import random
+import time
 import numpy as np
 from collections import deque
 
@@ -111,8 +112,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=1)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=1)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -164,7 +165,6 @@ class GRPOAgent(BasePOAgent):
         
         # if not training:
             # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
-
         if training:
             main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))

@@ -227,7 +227,7 @@ def train(rank=0, world_size=0):
         cleanup()
 
 def main():
-    seed = 0
+    seed = 1
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)

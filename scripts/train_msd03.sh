@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+no_agent
+EXP=msd_task03+grpo+icl+cw_soft_gating+obj_ptr_gating
 
 python train_3d.py \
     -exp_name $EXP \
@@ -25,19 +25,18 @@ python train_3d.py \
     -dataset msd \
     -task "Task03" \
     -data_path /data/rlsam2/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 500 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
-    -no_agent \
     -distributed \
     -wandb_enabled \
-    # -gating_dimension "cw" \
-    # -gating_softness "soft" \
-    # -obj_ptr_gating \
-    # -auxiliary_loss "no" \
-    # -highres_gating "by_lowres" \
+    -gating_dimension "cw" \
+    -gating_softness "soft" \
+    -obj_ptr_gating \
+    -auxiliary_loss "no" \
+    -highres_gating "no" \
     

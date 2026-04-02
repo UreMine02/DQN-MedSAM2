@@ -3,13 +3,16 @@
 """
 import os
 import copy
+import time
+import numpy as np
+from tqdm import tqdm
+from tabulate import tabulate
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision.utils import draw_segmentation_masks, save_image
-from tqdm import tqdm
-from tabulate import tabulate
-import numpy as np
+
 from monai.losses import DiceLoss
 
 import cfg

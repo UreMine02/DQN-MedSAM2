@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+highres_gating_by_interpolated_lowres_and_ptr+random_crop_rotate_augment
+EXP=msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+random_affine_augment+seed1
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -26,7 +26,7 @@ python train_3d.py \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 500 \
     -q_updates_per_step 1 \
@@ -36,6 +36,6 @@ python train_3d.py \
     -gating_dimension "cw" \
     -gating_softness "soft" \
     -auxiliary_loss "no" \
-    -wandb_enabled \
     -obj_ptr_gating \
-    -highres_gating "by_lowres" \
+    -highres_gating "no" \
+    -wandb_enabled \

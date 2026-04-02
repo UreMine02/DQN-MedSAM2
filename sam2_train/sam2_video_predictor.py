@@ -4,6 +4,7 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 import copy
+import time
 import numpy as np
 from tqdm import tqdm
 from collections import OrderedDict
@@ -1370,6 +1371,7 @@ class SAM2VideoPredictor(SAM2Base):
                 "run_mem_encoder": run_mem_encoder,
                 "prev_sam_mask_logits": prev_sam_mask_logits,
             }
+
             self.agent_act(
                 inference_state,
                 storage_device,
@@ -1614,7 +1616,7 @@ class SAM2VideoPredictor(SAM2Base):
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
-                    num_samples=10,
+                    num_samples=3,
                     bank_is_full=bank_full,
                     training=train_agent,
                 ) # ask agent
