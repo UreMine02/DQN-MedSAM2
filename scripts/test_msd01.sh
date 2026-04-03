@@ -267,7 +267,7 @@ do
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
             -task "Task01" \
-            -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
+            -data_path /data/rlsam2/datasets/nii/MSD \
             -num_support $shot \
             -gating_dimension "cw" \
             -gating_softness "soft" \
