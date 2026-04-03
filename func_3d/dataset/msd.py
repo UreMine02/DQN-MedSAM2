@@ -53,8 +53,8 @@ class MSD(Dataset):
 
         self.tr_transform = v2.Compose([
             v2.Resize(size=(self.image_size, self.image_size)),
-            v2.RandomHorizontalFlip(0.5),
-            v2.RandomAffine(degrees=25, translate=(0.1,0.1), scale=(0.9,1.1)),
+            # v2.RandomHorizontalFlip(0.5),
+            # v2.RandomAffine(degrees=25)#, translate=(0.1,0.1), scale=(0.9,1.1)),
         ])
 
         self.ts_transform = v2.Compose([
