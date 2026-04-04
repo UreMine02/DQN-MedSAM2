@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task01+grpo+icl+cw_soft_gating+obj_ptr_gating+highres_gating_by_lowres
+EXP=msd_task01+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment
 
 python train_3d.py \
     -exp_name $EXP \
@@ -37,4 +37,4 @@ python train_3d.py \
     -gating_softness "soft" \
     -auxiliary_loss "no" \
     -obj_ptr_gating \
-    -highres_gating "by_lowres" \
+    -highres_gating "no" \
