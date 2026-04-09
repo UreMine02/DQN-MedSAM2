@@ -14,21 +14,21 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment
+EXP=msd_task03+icl+ppo+cw_soft_gating+obj_ptr_gating+no_augment
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
     -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task "Task03" \
     -data_path /data/rlsam2/datasets/nii/MSD \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 500 \
-    -q_updates_per_step 1 \
+    -ep 100 \
+    -q_updates_per_step 5 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
@@ -36,7 +36,5 @@ python train_3d.py \
     -wandb_enabled \
     -gating_dimension "cw" \
     -gating_softness "soft" \
-    -obj_ptr_gating \
     -auxiliary_loss "no" \
-    -highres_gating "no" \
     
