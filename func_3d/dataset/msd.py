@@ -102,7 +102,7 @@ class MSD(Dataset):
             image_path,
             label_path,
             obj_id = obj_id,
-            max_slices=self.max_slices if self.mode == "train" else -1,
+            max_slices=-1,
             slice_selection='contiguous',
             is_support=False
         )
@@ -122,18 +122,18 @@ class MSD(Dataset):
 
         orig_size = image_3d.shape[-2:]
 
-        image_3d = tv_tensors.Image(image_3d)
-        data_seg_3d = tv_tensors.Mask(data_seg_3d)
-        support_image_3d = tv_tensors.Image(support_image_3d)
-        support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        # image_3d = tv_tensors.Image(image_3d)
+        # data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        # support_image_3d = tv_tensors.Image(support_image_3d)
+        # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
 
-        if self.mode == "train":
-            transform = self.tr_transform
-        else:
-            transform = self.ts_transform
+        # if self.mode == "train":
+        #     transform = self.tr_transform
+        # else:
+        #     transform = self.ts_transform
 
-        image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
-        support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+        # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
 
         # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
         # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)

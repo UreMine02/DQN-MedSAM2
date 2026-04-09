@@ -57,9 +57,9 @@ class GRPOGroup:
     def finalize(self):
         group_rewards = torch.Tensor([ins.reward for ins in self.group])
 
-        group_mean = group_rewards.mean(dim=0, keepdim=True)
-        group_std  = group_rewards.std(dim=0, keepdim=True)
-        group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
+        # group_mean = group_rewards.mean(dim=0, keepdim=True)
+        # group_std  = group_rewards.std(dim=0, keepdim=True)
+        # group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
 
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]
@@ -163,10 +163,12 @@ class GRPOAgent(BasePOAgent):
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
-        # if not training:
-            # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+        if not training:
+            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+
         if training:
-            main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            # main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
@@ -174,8 +176,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-
+            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
             return {
                 "main_action": valid_actions[action_idx].item(),
             }
@@ -220,6 +222,9 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
+            
+            for a in actions.unique():
+                print(a, rewards[actions == a].mean())
             
             # with torch.enable_grad():
             policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)

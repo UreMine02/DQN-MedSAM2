@@ -191,7 +191,8 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["support_set_stage"] = True
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
-            "invalid_penalty": args.invalid_penalty
+            "invalid_penalty": args.invalid_penalty,
+            "memory_bank_size": args.memory_bank_size
         }
 
         return inference_state
@@ -287,7 +288,8 @@ class SAM2VideoPredictor(SAM2Base):
 
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
-            "invalid_penalty": args.invalid_penalty
+            "invalid_penalty": args.invalid_penalty,
+            "memory_bank_size": args.memory_bank_size
         }
         return inference_state
 
@@ -1164,7 +1166,9 @@ class SAM2VideoPredictor(SAM2Base):
         reverse=False,
         train_agent=False,
         agent_act=True,
-        generate_rl_samples=False
+        generate_rl_samples=False,
+        start_trajectory=False,
+        end_trajectory=False,
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1183,7 +1187,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["support_set_stage"] = False
         processing_order = range(num_frames)
 
-        if train_agent:
+        if train_agent and start_trajectory:
             self.agent.init_new_trajectory()
 
         for frame_idx in processing_order:
@@ -1229,7 +1233,7 @@ class SAM2VideoPredictor(SAM2Base):
                 gating_score_dict = current_out["gating_score_dict"]
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
 
-        if train_agent:
+        if train_agent and end_trajectory:
             storage_device = inference_state["device"]
             pred_masks_gpu = output_dict["await_outputs"][frame_idx]["pred_masks"]
             pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
@@ -1356,7 +1360,7 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             feat_sizes,
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
-        
+
         storage_device = inference_state["device"]
 
         # Agent
@@ -1433,10 +1437,10 @@ class SAM2VideoPredictor(SAM2Base):
             "object_score_logits": object_score_logits,
             "obj_ptr": obj_ptr,
         }
-        
+
         if "gating_score_dict" in current_out.keys():
             compact_current_out["gating_score_dict"] = current_out["gating_score_dict"]
-            
+
         return compact_current_out, pred_masks_gpu
 
     def _run_memory_encoder(
@@ -1602,21 +1606,22 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds,
                 output_dict,
                 frame_idx,
-                self.num_maskmem - 1,
+                # num_maskmem=self.num_maskmem - 1,
+                num_maskmem=inference_state['rl_config']['memory_bank_size'],
                 num_max_prompt=inference_state["support_num_frames"],
                 offload_to_cpu=False,
                 training=train_agent
             )
 
             bank_size = len(output_dict["non_cond_frame_outputs"])
-            bank_full = (bank_size >= self.num_maskmem - 1)
+            bank_full = (bank_size >= inference_state['rl_config']['memory_bank_size'])
             valid_actions = [1] if bank_full else [0, 1]
             valid_actions.extend(list(action_frame_map.keys()))
             with torch.no_grad():
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
-                    num_samples=3,
+                    num_samples=6,
                     bank_is_full=bank_full,
                     training=train_agent,
                 ) # ask agent
@@ -1645,7 +1650,7 @@ class SAM2VideoPredictor(SAM2Base):
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
                     # reward = inference_state['rl_config']['lazy_penalty']
-                    reward = 0.0
+                    reward = -0.001
                 else:
                     # Add the new frame and skip a specific frame
                     drop_frame = action_frame_map[action]
@@ -1670,7 +1675,7 @@ class SAM2VideoPredictor(SAM2Base):
                         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
                         loss_diff = loss_before.detach().cpu() - loss_after.detach().cpu()
-                        
+
                         if loss_diff > 0:
                             one_hot_rw = 1
                         elif loss_diff < 0:
@@ -1678,7 +1683,7 @@ class SAM2VideoPredictor(SAM2Base):
                         else:
                             one_hot_rw = 0
 
-                        reward += loss_diff
+                        reward += one_hot_rw
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
@@ -1712,11 +1717,11 @@ class SAM2VideoPredictor(SAM2Base):
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-            # if not train_agent:
-            # print(f"[Q] frame {frame_idx-1} "
-            #     f"action {action} "
-            #     f"drop_frame {drop_frame} "
-            #     f"bank_size {bank_size} ")
+            if not train_agent:
+                print(f"[Q] frame {frame_idx-1} "
+                    f"action {action} "
+                    f"drop_frame {drop_frame} "
+                    f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
@@ -1767,6 +1772,7 @@ class SAM2VideoPredictor(SAM2Base):
             action_out = self.agent.select_action(
                 state,
                 valid_actions=torch.tensor(valid_actions),
+                bank_is_full=bank_full,
                 training=train_agent
             ) # ask agent
 
@@ -1778,10 +1784,11 @@ class SAM2VideoPredictor(SAM2Base):
         storage_key = "non_cond_frame_outputs"
         if action == 0:
             # Add
-            reward = 0.01
+            reward = 0.001
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
+            reward = -0.01
             drop_frame = frame_idx - 1
         else:
             # Add the new frame and drop a specific frame
@@ -1839,10 +1846,10 @@ class SAM2VideoPredictor(SAM2Base):
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 
     def forward(
-        self, 
-        imgs_tensor, masks_tensor, support_masks_tensor, 
-        train_state, obj_id, 
-        train_agent=False, agent_act=True, generate_rl_samples=False,
+        self,
+        imgs_tensor, masks_tensor, support_masks_tensor,
+        train_state, obj_id,
+        train_agent=False, agent_act=True, generate_rl_samples=False, start_trajectory=False, end_trajectory=False,
         device="cpu"
     ):
         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -1855,11 +1862,17 @@ class SAM2VideoPredictor(SAM2Base):
             )
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
-
-        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, agent_act=agent_act, train_agent=train_agent, generate_rl_samples=generate_rl_samples):
+        propagate_kwargs = {
+            "agent_act": agent_act,
+            "train_agent": train_agent,
+            "generate_rl_samples": generate_rl_samples,
+            "start_trajectory": start_trajectory,
+            "end_trajectory": end_trajectory
+        }
+        for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, **propagate_kwargs):
             video_segments[out_frame_idx] = {
                 out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
-                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i], 
+                "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i],
                 "gating_score_dict": gating_score_dict}
                 for i, out_obj_id in enumerate(out_obj_ids)
             }

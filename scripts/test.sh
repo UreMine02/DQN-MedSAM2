@@ -24,14 +24,18 @@ declare -a ckpt=(
     # output/btcv+grpo+icl+cw_soft_gating+obj_ptr_gating/2026-03-27-20-13-36/best.pth
     # output/msd_task02+grpo+icl+discri_gating+obj_ptr_gating+highres_gating_by_lowres+rigor_augment/2026-03-29-11-38-40/best.pth
     # output/msd_task02+grpo+icl+cw_gating+semantic_filtering+force_add+highres_gating/2026-03-25-20-05-33/best.pth
-    output/msd_task02+grpo+icl+no_agent+rigor_augment/2026-03-30-09-38-30/best.pth
+    # output/msd_task02+grpo+icl+no_agent+rigor_augment/2026-03-30-09-38-30/best.pth
+
+    # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
+    # output/msd_task02+grpo+icl+no_augment/2026-04-04-10-53-56/best.pth
+    output/msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment/2026-04-04-20-00-33/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpt[@]}
 do
-    for shot in 1 5;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
@@ -40,10 +44,11 @@ do
             -task "Task02" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -no_agent \
-            # -gating_dimension "cw" \
-            # -gating_softness "soft" \
-            # -obj_ptr_gating \
+            -memory_bank_size 6 \
+            -gating_dimension "cw" \
+            -gating_softness "soft" \
+            -obj_ptr_gating \
+            # -no_agent \
             # -highres_gating "by_lowres"
     done
 done
