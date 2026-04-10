@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+icl+ppo+cw_soft_gating+obj_ptr_gating+no_augment
+EXP=msd_task03+icl+ppo+long_horizon+no_augment
 
 python train_3d.py \
     -exp_name $EXP \
@@ -34,7 +34,7 @@ python train_3d.py \
     -num_support 5 \
     -distributed \
     -wandb_enabled \
-    -gating_dimension "cw" \
+    -gating_dimension "no" \
     -gating_softness "soft" \
     -auxiliary_loss "no" \
     
