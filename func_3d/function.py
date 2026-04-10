@@ -129,7 +129,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 sliding_window = [slice(i, i+args.video_length, None) for i in range(0, pack['image'].shape[0], args.video_length)]
                 
                 if args.distributed:
-                    local_size = len(sliding_window)
+                    local_size = torch.tensor([len(sliding_window)], device=GPUdevice)
                     local_size = dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
                 

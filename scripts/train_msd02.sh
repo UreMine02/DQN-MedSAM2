@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+ppo+long_horizon+no_augment
+EXP=msd_task02+icl+ppo+entropy1e-5+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
