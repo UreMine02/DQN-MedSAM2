@@ -8,9 +8,6 @@
 import os
 import time
 
-import torch
-import torch.optim as optim
-
 import cfg
 from func_3d import function
 from conf import settings
@@ -18,13 +15,19 @@ from func_3d.utils import get_network, set_log_dir, create_logger
 from func_3d.dataset import get_dataloader
 from datetime import datetime
 import pytz
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-import torch.multiprocessing as mp
-from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import numpy as np
 
-import wandb
+import torch
+import torch.distributed as dist
+import torch.multiprocessing as mp
+import torch.optim as torch_optim
+import torch.nn as nn
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.optim.lr_scheduler import CosineAnnealingLR
+
+from timm import optim as timm_optim
+
+import wandb # NOTE: WANDB
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -39,12 +42,12 @@ def train(rank=0, world_size=0):
 
     if args.distributed:
         setup(rank, world_size)
-        # os.environ["CUDA_VISIBLE_DEVICES"] = str(rank)
-        torch.cuda.set_device(rank)
         GPUdevice = torch.device('cuda', rank)
+        # torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
-
+        
+    # NOTE: WANDB
     if args.wandb_enabled:
         wandb.init(
             project="dqn-medsam2",
@@ -57,7 +60,10 @@ def train(rank=0, world_size=0):
     agent = getattr(net, "agent", None)
     if agent is not None:
         agent.to_dtype(torch.bfloat16)
-
+        
+    if args.wandb_enabled:
+        wandb.watch(net)
+        
     if args.pretrain:
         print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
@@ -73,34 +79,33 @@ def train(rank=0, world_size=0):
         elif "sam_prompt_encoder" in name:
             param.requires_grad_(False)
         else:
-            param.requires_grad_(False)
-        
+            param.requires_grad_(True)
+
     agent_n_params = 0
     if agent is not None:
         agent_n_params = agent.num_parameters()
 
     n_parameters_tot = sum(p.numel() for p in net.parameters())
-    print(f'number of sam2 params: {n_parameters_tot}')
-    print(f'number of agent params: {agent_n_params}')
+    print(f'Number of sam2 params: {n_parameters_tot:,}')
+    print(f'Number of agent params: {agent_n_params:,}')
 
     head, fix = [], []
     for k, v in net.named_parameters():
         (head if v.requires_grad else fix).append(v)
 
-    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params}')
-    print(f'Parameters fixed: {sum(p.numel() for p in fix)}')
+    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params:,}')
+    print(f'Parameters fixed: {sum(p.numel() for p in fix):,}')
 
     if args.distributed:
         net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
-        print("Wrapped agent for distributed training")
+            print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8)
-    # scheduler = StepLR(optimizer, step_size=100, gamma=0.5)
-
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
@@ -136,40 +141,38 @@ def train(rank=0, world_size=0):
             focal_loss,
             mae_loss,
             bce_loss,
+            aux_loss,
             agent_loss
-        ) = function.train_sam(
-            args,
-            net,
-            optimizer,
-            nice_train_loader,
-            epoch,
-            rank=rank
-        )
+        ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
             'train/focal loss': focal_loss,
             'train/mae_loss': mae_loss,
             'train/bce_loss': bce_loss,
+            'train/aux_loss': aux_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            # "train/lr": scheduler.get_last_lr()[0],
+            "train/lr": optimizer.param_groups[0]['lr'],
         }
-
+        scheduler.step()
+        
+        # NOTE: WANDB
         if args.wandb_enabled and loss is not None:
             wandb.log(loss_dict, step=epoch)
-
+            
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
 
-        if args.distributed:
-            torch.distributed.barrier()
+        # if args.distributed:
+            # torch.distributed.barrier()
 
         net.eval()
         new_best = False
         if epoch % args.val_freq == 0 or epoch == args.ep-1:
             iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
+            # iou, dice = net(args, nice_test_loader, epoch, net, rank=rank, training=False)
 
             if args.distributed:
                 dist.all_reduce(iou), dist.all_reduce(dice)
@@ -181,16 +184,15 @@ def train(rank=0, world_size=0):
                 iou, dice = iou.item(), dice.item()
                 print(f"val/IOU: {iou}, val/dice : {dice}")
 
-            if dice > best_dice:
+            if dice > best_dice and rank==0:
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-
+            
+            # NOTE: WANDB
             if args.wandb_enabled:
                 wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-
-        # scheduler.step()
-
+            
         if args.save_ckpt:
             if args.distributed and rank == 0:
                 ckpt = {
@@ -213,7 +215,7 @@ def train(rank=0, world_size=0):
                 }
                 if not args.no_agent:
                     ckpt['agent'] = net.agent.state_dict()
-                    
+
                 torch.save(ckpt, os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
 
                 if new_best:

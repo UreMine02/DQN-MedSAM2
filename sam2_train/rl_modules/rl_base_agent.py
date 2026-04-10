@@ -17,6 +17,7 @@ class BaseAgent:
         self.device = device
         self.lr = lr
         self.gamma = gamma
+        self.buffer_size = buffer_size
         self.replay_buffer = deque(maxlen=buffer_size)
         self.batch_size = batch_size
         self.beta = beta

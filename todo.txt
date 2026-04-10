@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 msd task03
                             outside_bank    inside_bank
 local image allres sim      484             4613
@@ -95,3 +96,6 @@ local_lowres_sim [168, 2]
 local_masked_allres_sim [147, 23]
 local_masked_lowres_sim [148, 22]
 iou_sim [161, 9]
+=======
+squeue --me --format="%.18i %.9P %.8j %.8u %.8T %.10M %.9l %.6D %R %S" --start
+>>>>>>> msd01

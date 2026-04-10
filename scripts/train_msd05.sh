@@ -2,9 +2,9 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=200GB # ram
-#SBATCH --time=2-00:00:00 # time
+#SBATCH --time=24:00:00 # time
 #SBATCH -J msd05 # job name
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd05-%j.out"
@@ -14,7 +14,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task05+grpo+icl
+EXP=msd_task05+grpo+icl+cw_gating_before_pos+equal_prob+grad_accum4
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -26,9 +27,15 @@ python train_3d.py \
     -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
+<<<<<<< HEAD
     -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.01 \
+=======
+    -ep 100 \
+    -q_updates_per_step 1 \
+    -lazy_penalty 0.0 \
+>>>>>>> msd01
     -invalid_penalty -0.01 \
-    -num_support 3 \
-    -distributed
+    -num_support 5 \
+    -wandb_enabled

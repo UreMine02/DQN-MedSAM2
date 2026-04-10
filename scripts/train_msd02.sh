@@ -2,7 +2,7 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2:00:00 # time
 #SBATCH -J msd02 # job name
@@ -14,22 +14,41 @@
 # conda init
 # conda activate rlsam2
 
+<<<<<<< HEAD
 EXP=msd_task02+grpo+icl+segmentation_loss_only
+=======
+EXP=msd_task02+icl+ppo+entropy1e-5+long_horizon+no_augment
+>>>>>>> msd01
 export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
+    -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task02 \
     -data_path /data/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
+<<<<<<< HEAD
     -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty -0.1 \
     -invalid_penalty -0.01 \
     -num_support 3 \
     -wandb_enabled
+=======
+    -ep 100 \
+    -q_updates_per_step 5 \
+    -lazy_penalty 0.0 \
+    -invalid_penalty -0.01 \
+    -num_support 5 \
+    -memory_bank_size 6 \
+    -gating_dimension "no" \
+    -gating_softness "soft" \
+    -auxiliary_loss "no" \
+    -wandb_enabled \
+    # -obj_ptr_gating \
+>>>>>>> msd01

@@ -2,7 +2,7 @@
 #SBATCH -p a100 # keep as is
 #SBATCH -N 1 # keep as is
 #SBATCH -n 32 # num cpus
-#SBATCH --gres=gpu:4 # num gpus
+#SBATCH --gres=gpu:1 # num gpus
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2-00:00:00 # time
 #SBATCH -J msd # job name
@@ -22,11 +22,19 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
+<<<<<<< HEAD
     -data_path /data/datasets/nii/MSD \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 50 \
     -q_updates_per_step 2 \
+=======
+    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/MSD \
+    -lr 5e-5 \
+    -val_freq 1 \
+    -ep 100 \
+    -q_updates_per_step 1 \
+>>>>>>> msd01
     -lazy_penalty -0.1 \
     -invalid_penalty -0.1 \
     -num_support 3 \

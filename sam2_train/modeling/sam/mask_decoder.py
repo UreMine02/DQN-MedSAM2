@@ -211,8 +211,8 @@ class MaskDecoder(nn.Module):
 
         # Run the transformer
         # hs: processed point_embedding | src: processed image_embedding
-        hs, src = checkpoint(self.transformer, src, pos_src, tokens, use_reentrant=False) # (torch.Size([1, 8, 256]), torch.Size([1, 4096, 256]))
-        # hs, src = self.transformer(src, pos_src, tokens)
+        # hs, src = checkpoint(self.transformer, src, pos_src, tokens, use_reentrant=False) # (torch.Size([1, 8, 256]), torch.Size([1, 4096, 256]))
+        hs, src = self.transformer(src, pos_src, tokens)
         
         iou_token_out = hs[:, s, :] # torch.Size([1, 256]
         # obj_ptr = MLP(mask_tokens_out)

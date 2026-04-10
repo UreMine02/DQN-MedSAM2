@@ -1,5 +1,6 @@
 # Deep Q-Learning Agent
 import random
+import time
 import numpy as np
 from collections import deque
 
@@ -56,9 +57,15 @@ class GRPOGroup:
     def finalize(self):
         group_rewards = torch.Tensor([ins.reward for ins in self.group])
 
+<<<<<<< HEAD
         group_mean = group_rewards.mean(dim=0, keepdim=True)
         group_std  = group_rewards.std(dim=0, keepdim=True)
         group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
+=======
+        # group_mean = group_rewards.mean(dim=0, keepdim=True)
+        # group_std  = group_rewards.std(dim=0, keepdim=True)
+        # group_rewards = self.range * (group_rewards - group_mean) / (group_std + 1e-8)
+>>>>>>> msd01
 
         for i, ins in enumerate(self.group):
             ins.reward = group_rewards[i]
@@ -111,8 +118,13 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
 
+<<<<<<< HEAD
         feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
         policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+=======
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=6)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=6)
+>>>>>>> msd01
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -144,7 +156,11 @@ class GRPOAgent(BasePOAgent):
         self.replay_buffer.extend(new_normalized_instances)
     
     @torch.no_grad()
+<<<<<<< HEAD
     def select_action(self, state, valid_actions, num_samples=1, training=False):
+=======
+    def select_action(self, state, valid_actions, bank_is_full=True, num_samples=1, training=False):
+>>>>>>> msd01
         self.actor.eval()
 
         image_feat = state.next_image_feat.detach().to(torch.float32)
@@ -153,14 +169,22 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
+<<<<<<< HEAD
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_dist = Categorical(logits=action_logits)
+=======
+        
+        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
+        action_logits = action_logits.detach().cpu()
+        action_probs = Categorical(logits=action_logits)
+>>>>>>> msd01
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
+<<<<<<< HEAD
         # if not training:
         #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
@@ -178,26 +202,49 @@ class GRPOAgent(BasePOAgent):
             # action_idx = torch.argmax(valid_probs)
             action_idx = torch.multinomial(valid_probs, num_samples=1)
 
+=======
+        if not training:
+            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+
+        if training:
+            # main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
+            return {
+                "main_action": valid_actions[main_action_idx].item(),
+                "action": valid_actions[action_idx].tolist(),
+                "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
+            }
+        else:
+            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+>>>>>>> msd01
             return {
                 "main_action": valid_actions[action_idx].item(),
             }
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
+<<<<<<< HEAD
 
         if local_count < self.batch_size or num_update <= 0:
+=======
+        
+        if local_count < self.batch_size:
+>>>>>>> msd01
             return None
 
         np.random.seed(self.rank + self.epoch * 100)
-        # print(f"Update agent for {num_update} steps")
         self.actor.train()
 
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
+<<<<<<< HEAD
             
             # n_actions = {}
             # for sample in self.replay_buffer:
@@ -216,6 +263,8 @@ class GRPOAgent(BasePOAgent):
             # batch = []
             # for idx in batch_idx:
             #     batch.append(self.replay_buffer[idx])
+=======
+>>>>>>> msd01
 
             states, old_log_probs, actions, rewards, dones = zip(*batch)
 
@@ -241,6 +290,7 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
+<<<<<<< HEAD
             # reward_mean = rewards.mean(dim=0, keepdim=True)
             # reward_std  = rewards.std(dim=0, keepdim=True)
             # rewards = (rewards - reward_mean) / (reward_std + 1e-8)
@@ -261,6 +311,23 @@ class GRPOAgent(BasePOAgent):
                 # minus_entropy = (policy_dist.probs * log_probs).sum(dim=1, keepdim=True).mean()
                 minus_entropy = -policy_dist.entropy().mean()
                 policy_loss = 20 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+=======
+            for a in actions.unique():
+                print(a, rewards[actions == a].mean())
+            
+            # with torch.enable_grad():
+            policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
+            # policy_dist = Categorical(logits=policy_logits)
+            policy_probs = policy_logits.softmax(dim=1)
+            action_probs = policy_probs.gather(1, actions)
+            log_action_probs = torch.log(action_probs)
+            # log_action_probs = policy_dist.log_prob(actions.squeeze(1)).unsqueeze(-1)
+
+            policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
+            # minus_entropy = -policy_dist.entropy().mean()
+            minus_entropy = (action_probs * log_action_probs).mean()
+            policy_loss = 10 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+>>>>>>> msd01
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
