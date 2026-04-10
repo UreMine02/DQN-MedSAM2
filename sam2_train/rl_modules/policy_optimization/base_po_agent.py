@@ -185,21 +185,12 @@ class BasePolicyNetwork(nn.Module):
         self.hidden_dim = hidden_dim
 
         scale = hidden_dim ** -0.5
-<<<<<<< HEAD
-        self.non_drop_embed = nn.Parameter(scale * torch.rand(self.hidden_dim))
-        # self.non_drop_embed = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
-        self.action_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.0) for _ in range(n_layers)]
-        )
-        
-=======
         # self.non_drop_embed = nn.Parameter(scale * torch.rand(1, 1, self.hidden_dim))
         self.non_drop_embed = nn.Parameter(scale * torch.rand(self.hidden_dim))
         self.action_decoder = nn.ModuleList(
             [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
         )
 
->>>>>>> msd01
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
@@ -219,15 +210,6 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(x_f=action_context, x=action_query, training=training)
 
         actions_logits = self.action_proj(action_query)
-<<<<<<< HEAD
-        
-        if return_logits:
-            return actions_logits.squeeze(-1)
-        
-        actions_probs = torch.softmax(actions_logits, dim=1)
-
-        return actions_probs.squeeze(-1)
-=======
 
         return actions_logits.squeeze(-1)
         # if return_logits:
@@ -235,7 +217,6 @@ class BasePolicyNetwork(nn.Module):
         # actions_probs = torch.softmax(actions_logits, dim=1)
 
         # return actions_probs.squeeze(-1)
->>>>>>> msd01
 
 class BaseValueNetwork(nn.Module):
     def __init__(
@@ -249,15 +230,9 @@ class BaseValueNetwork(nn.Module):
 
         self.value_query = nn.Parameter(torch.rand(1, 1, self.hidden_dim))
         self.value_decoder = nn.ModuleList(
-<<<<<<< HEAD
-            [PerceiverResampler(self.hidden_dim, 1, dropout=0.0) for _ in range(n_layers)]
-        )
-        
-=======
             [PerceiverResampler(self.hidden_dim, 1, dropout=0.1) for _ in range(n_layers)]
         )
 
->>>>>>> msd01
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
@@ -377,16 +352,8 @@ class BasePOAgent(BaseAgent):
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
 
-        if not training:
-            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
-
-        # if bank_is_full:
-        #     if training and random.random() < self.beta ** (self.epoch): # exploration during training
-        #         action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
-        #     else:
-        #         action_idx = torch.argmax(valid_probs) 
-        # else:
-        #     action_idx = (valid_actions == 0).nonzero(as_tuple=True)
+        # if not training:
+            # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
         
         if training: # exploration during training
             if random.random() < self.beta ** (self.epoch):
@@ -394,13 +361,8 @@ class BasePOAgent(BaseAgent):
             else:
                 action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         else:
-<<<<<<< HEAD
-            action_idx = torch.argmax(valid_probs)
-
-=======
             action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         
->>>>>>> msd01
         return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}
 
     def to(self, device, non_blocking=False):
@@ -505,13 +467,10 @@ class BasePOAgent(BaseAgent):
         adv_mean = advantages.mean(dim=0, keepdim=True)
         adv_std = advantages.std(dim=0, keepdim=True)
         advantages = (advantages - adv_mean) / adv_std
-<<<<<<< HEAD
-=======
 
         # print("mean", adv_mean, "std", adv_std)
         # for a in actions.unique():
         #     print(a, advantages[actions == a].mean())
->>>>>>> msd01
 
         with torch.enable_grad():
             (
@@ -539,11 +498,7 @@ class BasePOAgent(BaseAgent):
             policy_loss.backward()
             actor_gradnorm = nn.utils.clip_grad_norm_(
                 list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-<<<<<<< HEAD
-                max_norm=0.5
-=======
                 max_norm=0.1
->>>>>>> msd01
             )
             self.policy_optimizer.step()
 
@@ -559,22 +514,11 @@ class BasePOAgent(BaseAgent):
                     cond_bank_feat,
                     curr_mem_feat
                 )
-                # print("requires_grad", pred_value.requires_grad)   # should be True
-                # print("grad_fn", pred_value.grad_fn)
+                
                 value_loss = F.mse_loss(pred_value, returns)
                 self.value_optimizer.zero_grad()
-                value_loss.backward()
-<<<<<<< HEAD
-                critic_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
-=======
-                
-                for name, param in list(self.value_net.named_parameters()):
-                    if param.grad is None:
-                        print(name, "grad is None", param.requires_grad)
-                        continue
-                    
+                value_loss.backward()                    
                 critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=0.1)
->>>>>>> msd01
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])

@@ -76,13 +76,8 @@ def get_dataloader(args, rank=None, world_size=None):
             train_sampler = None
             test_sampler = None
             
-<<<<<<< HEAD
-            nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=8, pin_memory=True)
-            nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=8, pin_memory=True)
-=======
             nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
             nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
->>>>>>> msd01
         '''end'''
     elif args.dataset == 'btcv': #png
         '''btcv data'''

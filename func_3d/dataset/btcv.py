@@ -13,17 +13,10 @@ from torchvision.transforms import v2
 from torchvision import tv_tensors
 
 
-<<<<<<< HEAD
-def scale(image):
-    image_min = np.min(image)
-    image_max = np.max(image)
-    image = ((image - image_min)/(image_max-image_min))*255
-=======
 def scaling(image ,scale=1):
     image_min = image.min()
     image_max = image.max()
     image = ((image - image_min)/(image_max-image_min))*scale
->>>>>>> msd01
     return image
 
 def remove_negative_samples(image_tensor, mask_tensor):
@@ -38,29 +31,12 @@ class BTCV(Dataset):
         self.mode = subset
         csv_root = "./data/BTCV"
         suffix = "Tr" if subset == "train" else "Ts"
-<<<<<<< HEAD
-        
-        df = []
-        df.append(pd.read_csv(os.path.join(csv_root, f"labelsTr.csv")))
-        df.append(pd.read_csv(os.path.join(csv_root, f"labelsTs.csv")))
-        df = pd.concat(df)
-        
-        self.gt_path = np.asarray(df["gt_path"])
-        self.obj_id = np.asarray(df["obj_id"])
-        self.n_pos = np.asarray(df["n_pos"])
-        
-        # self.gt_path = self.gt_path[np.where(self.obj_id == 2)]
-        # self.n_pos = self.n_pos[np.where(self.obj_id == 2)]
-        # self.obj_id = self.obj_id[np.where(self.obj_id == 2)]
-        
-=======
 
         df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
         self.gt_path = np.asarray(df["gt_path"])
         self.obj_id = np.asarray(df["obj_id"])
         self.n_pos = np.asarray(df["n_pos"])
 
->>>>>>> msd01
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
@@ -126,18 +102,10 @@ class BTCV(Dataset):
             is_support=True
         )
         
-<<<<<<< HEAD
-        output_dict = {
-            "image": image_3d, "label": data_seg_3d,
-            "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": "btcv", "obj_id": obj_id, "name": os.path.splitext(os.path.basename(image_path))[0]
-        }
-=======
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
         support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
->>>>>>> msd01
         
         orig_size = image_3d.shape[-2:]
         
@@ -204,14 +172,6 @@ class BTCV(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-<<<<<<< HEAD
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
-
-        image_3d = scale(image_3d)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-
-=======
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
         
         image_3d = scaling(image_3d, scale=1)
@@ -219,14 +179,9 @@ class BTCV(Dataset):
         return image_3d, data_seg_3d
     
     def resize(self, image_3d, data_seg_3d):
->>>>>>> msd01
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-<<<<<<< HEAD
-
-=======
         
->>>>>>> msd01
         return image_3d, data_seg_3d

@@ -13,15 +13,9 @@ from torchvision import tv_tensors
 from torchvision.transforms import v2
 
 
-<<<<<<< HEAD
-def scale(image, scale=255):
-    image_min = np.min(image)
-    image_max = np.max(image)
-=======
 def scaling(image, scale=255):
     image_min = image.min()
     image_max = image.max()
->>>>>>> msd01
     image = ((image - image_min)/(image_max-image_min))*scale
     return image
 
@@ -113,11 +107,7 @@ class Sarcoma(Dataset):
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-<<<<<<< HEAD
-            "task": name, "obj_id": 1 if name == "Mass" else 2, "name": image_path.split("/")[-3]
-=======
             "task": name, "name": image_path.split("/")[-3], "support_name": support_image_path.split("/")[-3]
->>>>>>> msd01
         }
         
         return output_dict
@@ -208,16 +198,7 @@ class Sarcoma(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-<<<<<<< HEAD
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
-
-
-        image_3d = scale(image_3d, scale=1)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-=======
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
->>>>>>> msd01
 
         image_3d = scaling(image_3d, scale=1)
         data_seg_3d[data_seg_3d == 255] = 1

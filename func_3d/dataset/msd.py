@@ -12,10 +12,6 @@ from torch.utils.data import Dataset
 
 from torchvision.transforms import v2
 from torchvision import tv_tensors
-<<<<<<< HEAD
-
-=======
->>>>>>> msd01
 from monai import transforms
 
 
@@ -54,16 +50,6 @@ class MSD(Dataset):
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
-<<<<<<< HEAD
-        
-        self.transform = v2.Compose([
-            v2.RandomHorizontalFlip(0.5),
-            v2.RandomAffine(25, shear=20),
-            v2.GaussianNoise(),
-            v2.GaussianBlur(kernel_size=5),
-        ]) 
-        
-=======
 
         self.tr_transform = v2.Compose([
             v2.Resize(size=(self.image_size, self.image_size)),
@@ -75,7 +61,6 @@ class MSD(Dataset):
             v2.Resize(size=(self.image_size, self.image_size)),
         ])
 
->>>>>>> msd01
     def __len__(self):
         return len(self.gt_path)
 
@@ -93,29 +78,10 @@ class MSD(Dataset):
 
         support_label_path = os.path.join(self.root, self.gt_path[support_index])
         support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
-<<<<<<< HEAD
-        
-=======
-
->>>>>>> msd01
         (
             image_3d,
             data_seg_3d,
             support_image_3d,
-<<<<<<< HEAD
-            support_data_seg_3d
-        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
-        
-        output_dict = {
-            "image": image_3d, "label": data_seg_3d,
-            "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": task, "obj_id": obj_id, 
-            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path)
-        }
-        
-        return output_dict
-    
-=======
             support_data_seg_3d,
             orig_size
         ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
@@ -130,17 +96,12 @@ class MSD(Dataset):
 
         return output_dict
 
->>>>>>> msd01
     def load_data(self, image_path, label_path, support_image_path, support_label_path, obj_id):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
             obj_id = obj_id,
-<<<<<<< HEAD
-            max_slices=self.max_slices if self.mode == "train" else -1,
-=======
             max_slices=-1,
->>>>>>> msd01
             slice_selection='contiguous',
             is_support=False
         )
@@ -152,54 +113,6 @@ class MSD(Dataset):
             slice_selection='random' if self.mode == 'train' else 'evenly',
             is_support=True
         )
-<<<<<<< HEAD
-        
-        # image_3d = torch.tensor(image_3d).unsqueeze(0)
-        # data_seg_3d = torch.tensor(data_seg_3d).unsqueeze(0)
-        # image_3d = image_3d.unsqueeze(0).permute(0,1,4,2,3)
-        # data_seg_3d = data_seg_3d.unsqueeze(0).permute(0,1,4,2,3)
-        
-        # if self.mode == "train":
-        if False:
-            image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0)
-            data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
-            support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0)
-            support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0)
-            
-            image_3d = tv_tensors.Image(image_3d)
-            data_seg_3d = tv_tensors.Mask(data_seg_3d)
-            support_image_3d = tv_tensors.Image(support_image_3d)
-            support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
-            
-            (
-                image_3d,
-                data_seg_3d,
-                support_image_3d,
-                support_data_seg_3d
-            ) = self.transform(image_3d, data_seg_3d, support_image_3d, support_data_seg_3d)
-            
-            image_3d = image_3d.unsqueeze(0)
-            data_seg_3d = data_seg_3d.unsqueeze(0)
-            support_image_3d = support_image_3d.unsqueeze(0)
-            support_data_seg_3d = support_data_seg_3d.unsqueeze(0)
-        else:
-            image_3d = torch.tensor(image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            data_seg_3d = torch.tensor(data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_image_3d = torch.tensor(support_image_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            support_data_seg_3d = torch.tensor(support_data_seg_3d).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-         
-            # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            # support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-            
-        image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
-        support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
-
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
-
-    def load_image_label(self, image_path, label_path, obj_id, max_slices=16, slice_selection='contiguous', is_support=False):
-=======
 
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
@@ -233,7 +146,6 @@ class MSD(Dataset):
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
     def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
->>>>>>> msd01
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -244,25 +156,6 @@ class MSD(Dataset):
                 image_3d = image_3d[..., 2]
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
-<<<<<<< HEAD
-                
-        image_3d = np.asarray(image_3d, dtype=np.float32)
-        data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
-        data_seg_3d[data_seg_3d != obj_id] = 0
-        
-        if self.mode == "train" and not is_support:
-            pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
-            
-            from_idx, to_idx = pos_slices.min() - (max_slices - 1), pos_slices.max() + (max_slices - 1)
-            image_3d = image_3d[:, :, max(from_idx, 0):to_idx]
-            data_seg_3d = data_seg_3d[:, :, max(from_idx, 0):to_idx]
-        else:
-            pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
-            image_3d = image_3d[:, :, pos_slices]
-            data_seg_3d = data_seg_3d[:, :, pos_slices]
-            
-        
-=======
 
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
@@ -272,7 +165,6 @@ class MSD(Dataset):
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]
 
->>>>>>> msd01
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
                 choices = list(range(-(max_slices - 2),0)) + list(range(image_3d.shape[-1] - 1))
@@ -291,29 +183,15 @@ class MSD(Dataset):
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-<<<<<<< HEAD
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
-
-        image_3d = scaling(image_3d, scale=1)
-        
-        return image_3d, data_seg_3d
-    
-=======
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
         image_3d = scaling(image_3d, scale=1)
 
         return image_3d, data_seg_3d
 
->>>>>>> msd01
     def resize(self, image_3d, data_seg_3d):
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-<<<<<<< HEAD
-        
-=======
-
->>>>>>> msd01
         return image_3d, data_seg_3d

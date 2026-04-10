@@ -117,13 +117,10 @@ class PerceiverResampler(nn.Module):
         super().__init__()
         # self.attn = CrossAttention(query_dim=hidden_dim, heads=num_heads, dim_head=hidden_dim // num_heads)
         self.attn = nn.MultiheadAttention(hidden_dim, num_heads, dropout=dropout, batch_first=True)
-<<<<<<< HEAD
-=======
         # self.attn = RoPEAttention(
         #     embedding_dim=hidden_dim, kv_in_dim=hidden_dim, rope_k_repeat=True, rope_theta=10000, feat_sizes=[32, 32], 
         #     num_heads=num_heads, downsample_rate=1, dropout=0.1, 
         # )
->>>>>>> msd01
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
@@ -136,14 +133,9 @@ class PerceiverResampler(nn.Module):
         self.dropout = dropout
         
     def attention(self, x: torch.Tensor, context: torch.Tensor):
-<<<<<<< HEAD
-        # attn = self.attn(self.norm1(x), context=context)
-        attn = self.attn(x, context, context, need_weights=False)[0]
-=======
         # attn = self.attn(x, context=context)
         attn = self.attn(x, context, context, need_weights=False)[0]
         # attn = self.attn(q=x, k=context, v=context, num_k_exclude_rope={})
->>>>>>> msd01
         return attn
         
     def forward(self, x_f, x, training=True):
@@ -171,11 +163,7 @@ class SpatialSummarizer(nn.Module):
         self.spatial_query = nn.Parameter(scale * torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
         
-<<<<<<< HEAD
-        # self.initialize_parameters()
-=======
         self.initialize_parameters()
->>>>>>> msd01
         
     def forward(self, x, training=True):
         """x: [B,C,H,W]"""
@@ -200,15 +188,8 @@ class SpatialSummarizer(nn.Module):
         attn_std = self.spatial_dim ** -0.5
         fc_std = (2 * self.spatial_dim) ** -0.5
         for block in self.qformer:
-<<<<<<< HEAD
-            nn.init.normal_(block.attn.to_q.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_k.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_v.weight, std=attn_std)
-            nn.init.normal_(block.attn.to_out[0].weight, std=proj_std)
-=======
             nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
             nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
->>>>>>> msd01
             nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
             nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
     
@@ -343,7 +324,7 @@ class RoPEAttention(Attention):
         # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
 
     def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
+        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
     ) -> Tensor:
         # Input projections
         q = self.q_proj(q)
@@ -411,11 +392,7 @@ class RoPEAttention(Attention):
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
 
         # Compute attn_weight for later use
-        attn_weight = None
-        if return_attn:
-            scale_factor = 1 / math.sqrt(q.size(-1))
-            attn_weight = q @ k.transpose(-2, -1) * scale_factor
-
+        
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
@@ -428,4 +405,4 @@ class RoPEAttention(Attention):
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 
-        return out, attn_weight
+        return out

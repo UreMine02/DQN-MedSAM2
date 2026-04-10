@@ -1780,7 +1780,7 @@ class SAM2VideoPredictor(SAM2Base):
             drop_frame = frame_idx - 1
             reward = 0.0
             if "drop_frame" in output_dict.keys():
-                output_dict["drop_frame"][frame_idx] = frame_idx-1
+                output_dict["drop_frame"][frame_idx] = drop_frame
         else:
             # Add the new frame and skip a specific frame
             drop_frame = action_frame_map[action]
@@ -1862,14 +1862,18 @@ class SAM2VideoPredictor(SAM2Base):
         if action == 0:
             # Add
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            if "drop_frame" in output_dict.keys():
+                output_dict["drop_frame"][frame_idx] = -1
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
             drop_frame = frame_idx - 1
+            if "drop_frame" in output_dict.keys():
+                output_dict["drop_frame"][frame_idx] = drop_frame
         else:
             # Add the new frame and skip a specific frame
             drop_frame = action_frame_map[action]
             if "drop_frame" in output_dict.keys():
-                output_dict["drop_frame"][frame_idx] = list(output_dict["non_cond_frame_outputs"].keys()).index(drop_frame)
+                output_dict["drop_frame"][frame_idx] = drop_frame
             output_dict[storage_key].pop(drop_frame)
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
