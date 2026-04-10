@@ -1936,7 +1936,6 @@ class SAM2VideoPredictor(SAM2Base):
         output_dict,
         agent_act,
         **kwargs):
-        
         output_dict["dice_drop"][frame_idx] = {}
         video_H = inference_state["video_height"]
         video_W = inference_state["video_width"]
@@ -2019,6 +2018,7 @@ class SAM2VideoPredictor(SAM2Base):
         imgs_tensor, masks_tensor, support_masks_tensor,
         train_state, obj_id,
         train_agent=False, agent_act=True, generate_rl_samples=False, start_trajectory=False, end_trajectory=False,
+        ablation=False,
         device="cpu"
     ):
         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -2036,7 +2036,8 @@ class SAM2VideoPredictor(SAM2Base):
             "train_agent": train_agent,
             "generate_rl_samples": generate_rl_samples,
             "start_trajectory": start_trajectory,
-            "end_trajectory": end_trajectory
+            "end_trajectory": end_trajectory,
+            "ablation": ablation
         }
         for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, **propagate_kwargs):
             video_segments[out_frame_idx] = {

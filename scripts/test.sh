@@ -26,12 +26,9 @@ declare -a ckpt=(
     # output/msd_task02+grpo+icl+cw_gating+semantic_filtering+force_add+highres_gating/2026-03-25-20-05-33/best.pth
     # output/msd_task02+grpo+icl+no_agent+rigor_augment/2026-03-30-09-38-30/best.pth
 
+    # output/msd_task02+icl+ppo+skip_penalty+long_horizon+no_augment/2026-04-08-08-07-00/best.pth
+    output/msd_task02+icl+ppo+no_agent+long_horizon+no_augment/2026-04-10-14-46-14/best.pth
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
-    # output/msd_task02+grpo+icl+no_augment/2026-04-04-10-53-56/best.pth
-    # output/msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment/2026-04-04-20-00-33/best.pth
-    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-09-11-07-22/best.pth
-    # output/msd_task02+icl+ppo+skip_penalty+long_horizon+no_augment/2026-04-07-13-19-07/best.pth
-    output/msd_task02+icl+ppo+skip_penalty+long_horizon+no_augment/2026-04-08-08-07-00/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -50,9 +47,7 @@ do
             -memory_bank_size 6 \
             -gating_dimension "no" \
             -gating_softness "soft" \
-            -ablation
-            # -obj_ptr_gating \
-            # -no_agent \
-            # -highres_gating "by_lowres"
+            -vis \
+            -no_agent
     done
 done

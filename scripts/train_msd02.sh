@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+ppo+entropy1e-5+long_horizon+no_augment
+EXP=msd_task02+icl+ppo+no_agent+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
@@ -37,5 +37,6 @@ python train_3d.py \
     -gating_dimension "no" \
     -gating_softness "soft" \
     -auxiliary_loss "no" \
+    -no_agent \
     -wandb_enabled \
     # -obj_ptr_gating \

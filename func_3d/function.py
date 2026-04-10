@@ -409,7 +409,13 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             with torch.no_grad():
                 with torch.cuda.amp.autocast():
-                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
+                    video_segments = net(
+                        imgs_tensor, masks_tensor, support_masks_tensor, 
+                        train_state, obj_id, 
+                        agent_act=agent_act, 
+                        ablation=args.ablation,
+                        device=GPUdevice
+                    )
             
             class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
             volume_masks = []
@@ -468,12 +474,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             instance_score["num_step"] += 1
             
-            
-            volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
-            volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
-            
-            masks[f"{task}_{obj_id}"].append(volume_masks)
-            preds[f"{task}_{obj_id}"].append(volume_preds)
+            # volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+            # volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+            # 
+            # masks[f"{task}_{obj_id}"].append(volume_masks)
+            # preds[f"{task}_{obj_id}"].append(volume_preds)
 
             # HYPOTHESIS TESTING
             if args.ablation:
