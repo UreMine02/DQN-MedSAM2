@@ -1676,14 +1676,7 @@ class SAM2VideoPredictor(SAM2Base):
 
                         loss_diff = loss_before.detach().cpu() - loss_after.detach().cpu()
 
-                        if loss_diff > 0:
-                            one_hot_rw = 1
-                        elif loss_diff < 0:
-                            one_hot_rw = -1
-                        else:
-                            one_hot_rw = 0
-
-                        reward += one_hot_rw
+                        reward += loss_diff
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
