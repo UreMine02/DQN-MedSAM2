@@ -132,7 +132,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     local_size = torch.tensor([len(sliding_window)], device=GPUdevice)
                     local_size = dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
-                    print(rank, len(sliding_window))
+                    print(batch_idx, rank, len(sliding_window))
                 
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
