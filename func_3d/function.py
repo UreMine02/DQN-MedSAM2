@@ -128,15 +128,14 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 sliding_window = [slice(i, i+args.video_length, None) for i in range(0, pack['image'].shape[0], args.video_length)]
                 
-                local_size = len(sliding_window)
+                # local_size = len(sliding_window)
                 if args.distributed:
                     local_size = torch.tensor([len(sliding_window)], device=GPUdevice)
-                    local_size = dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
+                    dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
-                    print(batch_idx, rank, len(sliding_window), local_size)
+                    # print(batch_idx, rank, len(sliding_window), local_size)
                 
-                for slide_idx, slide in range(local_size):
-                    slide = sliding_window[slide_idx]
+                for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
