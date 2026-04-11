@@ -116,7 +116,7 @@ class Sarcoma(Dataset):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            max_slices=self.max_slices if self.mode == "train" else -1,
+            max_slices=-1,
             slice_selection='contiguous',
             is_support=False
         )
@@ -133,24 +133,18 @@ class Sarcoma(Dataset):
         support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
         
-        image_3d = tv_tensors.Image(image_3d)
-        data_seg_3d = tv_tensors.Mask(data_seg_3d)
-        support_image_3d = tv_tensors.Image(support_image_3d)
-        support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+        # image_3d = tv_tensors.Image(image_3d)
+        # data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        # support_image_3d = tv_tensors.Image(support_image_3d)
+        # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
         
-        # image_3d = v2.functional.adjust_gamma(image_3d, gamma=1.5)
-        # image_3d = scaling(image_3d, scale=1)
-        
-        support_image_3d = v2.functional.adjust_gamma(support_image_3d, gamma=1.5)
-        support_image_3d = scaling(support_image_3d, scale=1)
-        
-        if self.mode == "train":
-            transform = self.tr_transform
-        else:
-            transform = self.ts_transform
-            
-        image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
-        support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+        # if self.mode == "train":
+            # transform = self.tr_transform
+        # else:
+            # transform = self.ts_transform
+            # 
+        # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 

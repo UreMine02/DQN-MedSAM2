@@ -15,21 +15,22 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+grpo+icl
+EXP=sarcoma+icl+no_agent+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
     -data_path /data/datasets/nii/Sarcoma \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 1 \
+    -q_updates_per_step 5 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
+    -num_support 5 \
+    -no_agent \
     -wandb_enabled
