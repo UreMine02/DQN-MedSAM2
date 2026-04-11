@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+icl+ppo+long_horizon+no_augment
+EXP=msd_task03+icl+no_agent+long_horizon+no_augment
 
 python train_3d.py \
     -exp_name $EXP \
@@ -37,4 +37,5 @@ python train_3d.py \
     -gating_dimension "no" \
     -gating_softness "soft" \
     -auxiliary_loss "no" \
+    -no_agent
     

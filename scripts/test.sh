@@ -22,8 +22,8 @@ declare -a ckpt=(
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
 
     # Sarcoma
-    output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
-    # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
+    # output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
+    output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -44,6 +44,6 @@ do
             -gating_softness "soft" \
             -ablation \
             -vis \
-            # -no_agent
+            -no_agent
     done
 done
