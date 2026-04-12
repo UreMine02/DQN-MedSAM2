@@ -56,10 +56,10 @@ def train(rank=0, world_size=0):
         )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
-    net.to(dtype=torch.bfloat16)
+    net.to(dtype=torch.float32)
     agent = getattr(net, "agent", None)
     if agent is not None:
-        agent.to_dtype(torch.bfloat16)
+        agent.to_dtype(torch.float32)
         
     if args.wandb_enabled:
         wandb.watch(net)

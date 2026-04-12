@@ -235,7 +235,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
 
                         if (batch_idx + 1) % accum_step == 0:
-                            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.05)
+                            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
                             optimizer.step()
                             optimizer.zero_grad()
 
