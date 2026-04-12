@@ -56,10 +56,10 @@ def train(rank=0, world_size=0):
         )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
-    net.to(dtype=torch.float32)
+    net.to(dtype=torch.bfloat16)
     agent = getattr(net, "agent", None)
     if agent is not None:
-        agent.to_dtype(torch.float32)
+        agent.to_dtype(torch.bfloat16)
         
     if args.wandb_enabled:
         wandb.watch(net)
@@ -105,7 +105,7 @@ def train(rank=0, world_size=0):
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
-    torch.autocast(device_type="cuda", dtype=torch.float32).__enter__()
+    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
@@ -235,6 +235,8 @@ def main():
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     args = cfg.parse_args()
+
+    torch.autograd.set_detect_anomaly(True)
 
     if args.distributed:
         world_size = torch.cuda.device_count()

@@ -321,7 +321,7 @@ class SAM2Base(torch.nn.Module):
         Inputs:
         - backbone_features: image features of [B, C, H, W] shape
         - point_inputs: a dictionary with "point_coords" and "point_labels", where
-          1) "point_coords" has [B, P, 2] shape and float32 dtype and contains the
+          1) "point_coords" has [B, P, 2] shape and bfloat16 dtype and contains the
              absolute pixel-unit coordinate in (x, y) format of the P input points
           2) "point_labels" has shape [B, P] and int32 dtype, where 1 means
              positive clicks, 0 means negative clicks, and -1 means padding
@@ -423,7 +423,7 @@ class SAM2Base(torch.nn.Module):
                     low_res_multimasks,
                     NO_OBJ_SCORE,
                 )
-            # convert masks from possibly float16 (or float16) to float32
+            # convert masks from possibly float16 (or float16) to bfloat16
             # (older PyTorch versions before 2.1 don't support `interpolate` on bf16)
 
             # print('backbone_features', backbone_features.size())
@@ -827,7 +827,7 @@ class SAM2Base(torch.nn.Module):
 
                 if self.gating_softness == "threshold":
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.float32)
+                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
@@ -858,7 +858,7 @@ class SAM2Base(torch.nn.Module):
 
                 if self.gating_softness == "threshold":
                     gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.float32)
+                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
                 elif self.gating_softness == "gumbel":
                     # NOTE: GUMBEL SOFTMAX
                     temperature = 0.1
