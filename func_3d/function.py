@@ -223,7 +223,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         average_loss(class_loss)
                         avg_loss = class_loss["total_loss"] / accum_step
                         avg_loss.backward()
-
+                        print(avg_loss)
                         for name, param in net.named_parameters():
                             if param.grad is None:
                                 continue

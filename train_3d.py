@@ -236,8 +236,6 @@ def main():
     torch.backends.cudnn.benchmark = False
     args = cfg.parse_args()
 
-    torch.autograd.set_detect_anomaly(True)
-
     if args.distributed:
         world_size = torch.cuda.device_count()
         mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
