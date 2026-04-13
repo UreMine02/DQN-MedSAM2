@@ -129,6 +129,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
                 start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
+                # rounded_length = pack['image'].shape[0]
+                # start_slice = 0
                 sliding_window = [
                     slice(i, i+args.video_length) 
                     for i in range(start_slice, start_slice+rounded_length, args.video_length)
@@ -144,6 +146,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 for slide_idx, slide in enumerate(sliding_window):
                     
                     for name, param in net.named_parameters():
+                        print(name, param.min(), param.max())
                         if param.data.isnan().any():
                             raise AssertionError(f"{name} data is nan")
                     
@@ -220,7 +223,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                             iou_pred = video_segments[frame_idx][obj_id]["iou"]
                             pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
-                            iou_gt = iou_score(pred_mask, mask).clamp(1e-4, 1-1e-4)
+                            iou_gt = iou_score(pred_mask, mask)
                             dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                             class_loss["num_step"] += 1
                             # Update the loss of the class

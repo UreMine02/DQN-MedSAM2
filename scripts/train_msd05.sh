@@ -14,13 +14,13 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task05+grpo+icl+cw_gating_before_pos+equal_prob+grad_accum4
-export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task05+ppo+long_horizon+no_augment
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task05 \
@@ -28,8 +28,9 @@ python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 1 \
-    -lazy_penalty 0.0 \
-    -invalid_penalty -0.01 \
+    -q_updates_per_step 5 \
     -num_support 5 \
+    -gating_dimension "no" \
+    -gating_softness "soft" \
+    -auxiliary_loss "no" \
     -wandb_enabled
