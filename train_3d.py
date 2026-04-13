@@ -7,15 +7,16 @@
 
 import os
 import time
-
-import cfg
-from func_3d import function
-from conf import settings
-from func_3d.utils import get_network, set_log_dir, create_logger
-from func_3d.dataset import get_dataloader
-from datetime import datetime
 import pytz
 import numpy as np
+from datetime import datetime
+from functools import partial
+
+import cfg
+from conf import settings
+from func_3d import function
+from func_3d.utils import get_network, set_log_dir, create_logger
+from func_3d.dataset import get_dataloader
 
 import torch
 import torch.distributed as dist
@@ -24,8 +25,6 @@ import torch.optim as torch_optim
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import CosineAnnealingLR
-
-from timm import optim as timm_optim
 
 import wandb # NOTE: WANDB
 
@@ -36,6 +35,9 @@ def setup(rank, world_size):
 
 def cleanup():
     dist.destroy_process_group()
+    
+def debug_fw_hook(m, inp, out, name):
+    assert not out.isnan().any(), name
 
 def train(rank=0, world_size=0):
     args = cfg.parse_args()
@@ -79,6 +81,11 @@ def train(rank=0, world_size=0):
             param.requires_grad_(False)
         else:
             param.requires_grad_(True)
+            
+    for name, module in net.named_modules():
+        module.register_forward_hook(
+            partial(debug_fw_hook, name=name)
+        )
 
     agent_n_params = 0
     if agent is not None:
