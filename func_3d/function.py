@@ -30,7 +30,7 @@ import wandb
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(focal_weight=1, dice_weight=1)
+paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
@@ -126,7 +126,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
 
-                sliding_window = [slice(i, i+args.video_length, None) for i in range(0, pack['image'].shape[0], args.video_length)]
+                sliding_window = [
+                    slice(i, i+args.video_length, None) 
+                    for i in range(0, (pack['image'].shape[0] // args.video_length) * args.video_length, args.video_length)
+                ]
                 
                 # local_size = len(sliding_window)
                 if args.distributed:
