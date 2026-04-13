@@ -220,7 +220,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                             iou_pred = video_segments[frame_idx][obj_id]["iou"]
                             pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
-                            iou_gt = iou_score(pred_mask, mask)
+                            iou_gt = iou_score(pred_mask, mask).clamp(1e-4, 1-1e-4)
                             dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                             class_loss["num_step"] += 1
                             # Update the loss of the class

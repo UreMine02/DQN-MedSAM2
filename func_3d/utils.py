@@ -503,7 +503,7 @@ class CombinedLoss(nn.Module):
         self.bce_loss = FocalLoss(gamma=1.0)
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
-        # print("iou", iou_pred, iou_gt)
+        print("iou", iou_pred, iou_gt)
         obj_pred = obj_pred.view(1, -1)
         
         if (targets == 0).all():
