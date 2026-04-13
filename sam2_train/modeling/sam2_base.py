@@ -883,7 +883,9 @@ class SAM2Base(torch.nn.Module):
                 gating_score_dict["cond_frames"] = gating_score[:, :n_support]
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
-                    
+        
+        print("maskmem_tpos_enc", self.maskmem_tpos_enc.min(), self.maskmem_tpos_enc.max())
+        assert not self.maskmem_tpos_enc.isnan().any()
         assert not current_vision_feats[0].isnan().any()
         assert not current_vision_pos_embeds[0].isnan().any()
         assert not memory.isnan().any()
