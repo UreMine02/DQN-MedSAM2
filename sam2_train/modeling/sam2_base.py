@@ -884,8 +884,8 @@ class SAM2Base(torch.nn.Module):
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
                     
-        assert not current_vision_feats.isnan().any()
-        assert not current_vision_pos_embeds.isnan().any()
+        assert not current_vision_feats[0].isnan().any()
+        assert not current_vision_pos_embeds[0].isnan().any()
         assert not memory.isnan().any()
         assert not memory_pos_embed.isnan().any()
         pix_feat_with_mem = self.memory_attention(
