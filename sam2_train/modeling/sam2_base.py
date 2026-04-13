@@ -449,6 +449,8 @@ class SAM2Base(torch.nn.Module):
         # low_res_mask [1, 1, 256, 256] -> X [1, 256, 64, 64] -> embedding (token) + image embedding [1,256,64,64]->[1,256,64x64] -> attention -> high_res_mask
         # low_res_mask -> interpolate
         sam_output_token = sam_output_tokens[:, 0]
+        # print(ious)
+        multimask_output = False
         if multimask_output:
             # take the best mask prediction (with the highest IoU estimation)
             best_iou_inds = torch.argmax(ious, dim=-1)
