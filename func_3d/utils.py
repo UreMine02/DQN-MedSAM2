@@ -286,7 +286,6 @@ def iou_score(pred, mask, smoothing=1e-6):
     interaction = torch.sum(pred * mask)
     denominator = torch.count_nonzero(pred + mask)
 
-    # NOTE: TRAINING WITH NEG
     iou = (interaction+smoothing)/(denominator+smoothing)
     return iou
 
