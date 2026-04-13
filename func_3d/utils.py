@@ -514,6 +514,7 @@ class CombinedLoss(nn.Module):
         bce = self.bce_loss(obj_pred, obj_pred_target)
         dice = self.dice_loss(inputs, targets)
         focal = self.focal_loss(inputs, targets)
+        print("iou", iou_pred, iou_gt)
         mae = self.mae_loss(iou_pred, iou_gt)
         
         return self.dice_weight*dice, self.focal_weight*focal, self.mae_weight*mae, self.bce_weight*bce
