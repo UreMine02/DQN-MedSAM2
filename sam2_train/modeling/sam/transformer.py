@@ -294,7 +294,9 @@ class RoPEAttention(Attention):
         q = self.q_proj(q)
         k = self.k_proj(k)
         v = self.v_proj(v)
-
+        assert not q.isnan().any()
+        assert not k.isnan().any()
+        assert not v.isnan().any()
         # Separate into heads
         q = self._separate_heads(q, self.num_heads)
         k = self._separate_heads(k, self.num_heads)
@@ -321,7 +323,7 @@ class RoPEAttention(Attention):
 
         dropout_p = self.dropout_p if self.training else 0.0
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        
+        assert not out.isnan().any()
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,

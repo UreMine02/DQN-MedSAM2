@@ -34,8 +34,5 @@ python train_3d.py \
     -num_support 5 \
     -distributed \
     -wandb_enabled \
-    -gating_dimension "no" \
-    -gating_softness "soft" \
-    -auxiliary_loss "no" \
     -no_agent
     

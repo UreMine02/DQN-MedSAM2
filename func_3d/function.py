@@ -145,10 +145,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 
                 for slide_idx, slide in enumerate(sliding_window):
                     
-                    for name, param in net.named_parameters():
-                        print(name, param.min(), param.max())
-                        if param.data.isnan().any():
-                            raise AssertionError(f"{name} data is nan")
+                    # for name, param in net.named_parameters():
+                    #     # print(name, param.min(), param.max())
+                    #     if param.data.isnan().any():
+                    #         raise AssertionError(f"{name} data is nan")
                     
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -238,12 +238,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         avg_loss = class_loss["total_loss"] / accum_step
                         avg_loss.backward()
                         
-                        for name, param in net.named_parameters():
-                            if param.grad is None:
-                                continue
+                        # for name, param in net.named_parameters():
+                        #     if param.grad is None:
+                        #         continue
                             
-                            if param.grad.isnan().any():
-                                raise AssertionError(f"{name} grad is nan")
+                        #     if param.grad.isnan().any():
+                        #         raise AssertionError(f"{name} grad is nan")
 
 
                         if (batch_idx + 1) % accum_step == 0:
