@@ -167,7 +167,9 @@ class MemoryEncoder(nn.Module):
             masks = F.sigmoid(masks)
             
         # masks = checkpoint(self.mask_downsampler, masks, use_reentrant=False)
+        assert not masks.isnan().any()
         masks = self.mask_downsampler(masks)
+        assert not masks.isnan().any()
 
         ## Fuse pix_feats and downsampled masks
         # in case the visual features are on CPU, cast them to CUDA
