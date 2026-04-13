@@ -4,6 +4,7 @@
 import os
 import copy
 import time
+import random
 import numpy as np
 from tqdm import tqdm
 from tabulate import tabulate
@@ -126,9 +127,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
 
+                rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
                 sliding_window = [
-                    slice(i, i+args.video_length, None) 
-                    for i in range(0, (pack['image'].shape[0] // args.video_length) * args.video_length, args.video_length)
+                    slice(i, i+args.video_length) 
+                    for i in range(start_slice, start_slice+rounded_length, args.video_length)
                 ]
                 
                 # local_size = len(sliding_window)
