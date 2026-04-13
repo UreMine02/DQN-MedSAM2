@@ -82,10 +82,10 @@ def train(rank=0, world_size=0):
         else:
             param.requires_grad_(True)
             
-    for name, module in net.named_modules():
-        module.register_forward_hook(
-            partial(debug_fw_hook, name=name)
-        )
+    # for name, module in net.named_modules():
+    #     module.register_forward_hook(
+    #         partial(debug_fw_hook, name=name)
+    #     )
 
     agent_n_params = 0
     if agent is not None:
