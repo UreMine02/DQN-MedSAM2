@@ -136,6 +136,12 @@ def train(rank=0, world_size=0):
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
+            
+            net.module.image_encoder.eval()
+            net.module.sam_prompt_encoder.eval()
+        else:
+            net.image_encoder.eval()
+            net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
