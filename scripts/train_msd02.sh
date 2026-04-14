@@ -34,9 +34,3 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -memory_bank_size 6 \
-    -gating_dimension "cw" \
-    -gating_softness "soft" \
-    -auxiliary_loss "no" \
-    -wandb_enabled \
-    -obj_ptr_gating \
-    -highres_gating "by_lowres"

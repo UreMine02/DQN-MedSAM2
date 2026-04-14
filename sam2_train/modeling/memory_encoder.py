@@ -182,11 +182,16 @@ class MemoryEncoder(nn.Module):
         # pos = checkpoint(self.position_encoding, x, use_reentrant=False).to(x.dtype)
         
         x = self.pix_feat_proj(pix_feat)
+        assert not x.isnan().any()
         x = x + masks
+        assert not x.isnan().any()
         x = self.fuser(x)
+        assert not x.isnan().any()
         x = self.out_proj(x)
+        assert not x.isnan().any()
 
         pos = self.position_encoding(x).to(x.dtype)
+        assert not pos.isnan().any()
 
         return {"vision_features": x, "vision_pos_enc": [pos]}
 
