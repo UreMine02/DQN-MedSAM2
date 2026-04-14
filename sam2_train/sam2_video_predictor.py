@@ -1360,6 +1360,10 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             feat_sizes,
         ) = self._get_image_feature(inference_state, frame_idx, batch_size)
+        
+        for feat, pos_embed in zip(current_vision_feats, current_vision_pos_embeds):
+            assert not feat.isnan().any()
+            assert not pos_embed.isnan().any()
 
         storage_device = inference_state["device"]
 
