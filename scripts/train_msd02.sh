@@ -34,3 +34,4 @@ python train_3d.py \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -memory_bank_size 6 \
+    -wandb_enabled

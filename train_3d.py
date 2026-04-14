@@ -35,9 +35,6 @@ def setup(rank, world_size):
 
 def cleanup():
     dist.destroy_process_group()
-    
-def debug_fw_hook(m, inp, out, name):
-    assert not out.isnan().any(), name
 
 def train(rank=0, world_size=0):
     args = cfg.parse_args()

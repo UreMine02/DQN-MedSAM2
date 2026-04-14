@@ -289,6 +289,7 @@ class Hiera(nn.Module):
         outputs = []
         for i, blk in enumerate(self.blocks):
             x = blk(x)
+            assert not x.isnan().any(), i
             if (i == self.stage_ends[-1]) or (
                 i in self.stage_ends and self.return_interm_layers
             ):

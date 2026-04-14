@@ -31,7 +31,7 @@ import wandb
 args = cfg.parse_args()
 
 GPUdevice = torch.device('cuda', args.gpu_device)
-paper_loss = CombinedLoss(focal_weight=1, dice_weight=1)
+paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
 seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
@@ -85,10 +85,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             task = packs["task"][0]
 
-            assert not whole_imgs_tensor.isnan().any()
-            assert not whole_masks_tensor.isnan().any()
-            assert not whole_support_imgs_tensor.isnan().any()
-            assert not whole_support_masks_tensor.isnan().any()
             obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
             instance_loss = {
                 "total_loss": 0,
