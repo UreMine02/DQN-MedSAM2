@@ -971,6 +971,9 @@ class SAM2Base(torch.nn.Module):
         agent_act=True,
 
     ):
+        for idx, feat in enumerate(current_vision_feats):
+            assert not feat.isnan().any()
+            assert not current_vision_pos_embeds[idx].isnan().any()
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
         if len(current_vision_feats) > 1:

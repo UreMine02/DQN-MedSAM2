@@ -181,6 +181,7 @@ class MemoryEncoder(nn.Module):
 
         # pos = checkpoint(self.position_encoding, x, use_reentrant=False).to(x.dtype)
         
+        assert not pix_feat.isnan().any()
         x = self.pix_feat_proj(pix_feat)
         assert not x.isnan().any()
         x = x + masks
