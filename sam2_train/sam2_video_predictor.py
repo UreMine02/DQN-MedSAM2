@@ -219,11 +219,13 @@ class SAM2VideoPredictor(SAM2Base):
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
         )
+        assert not images.isnan().any()
         support_images = load_video_frames_from_data(
             imgs_tensor=support_imgs_tensor,
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
         )
+        assert not support_images.isnan().any()
 
         inference_state = {}
         inference_state["images"] = images

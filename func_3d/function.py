@@ -85,6 +85,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             task = packs["task"][0]
 
+            assert not whole_imgs_tensor.isnan().any()
+            assert not whole_masks_tensor.isnan().any()
+            assert not whole_support_imgs_tensor.isnan().any()
+            assert not whole_support_masks_tensor.isnan().any()
             obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
             instance_loss = {
                 "total_loss": 0,
@@ -393,14 +397,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             imgs_tensor = F.interpolate(imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
             masks_tensor = F.interpolate(masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
 
-            print(support_imgs_tensor.min(), support_imgs_tensor.max())
-            print(support_masks_tensor.min(), support_masks_tensor.max())
-            print(imgs_tensor.min(), imgs_tensor.max())
-            print(masks_tensor.min(), masks_tensor.max())
-            assert not support_imgs_tensor.isnan().any()
-            assert not support_masks_tensor.isnan().any()
-            assert not imgs_tensor.isnan().any()
-            assert not masks_tensor.isnan().any()
             # support_bbox_dict = pack["support_bbox"]
             # if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
             #     print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")

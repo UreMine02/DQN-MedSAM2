@@ -742,7 +742,6 @@ class SAM2Base(torch.nn.Module):
                     if self.obj_ptr_gating:
                         to_cat_obj_ptr.append(obj_ptrs) # NOTE: TEST SEMANTIC FILTERING
                     else:
-                        assert not obj_ptrs.isnan().any()
                         to_cat_memory.append(obj_ptrs)
                     to_cat_memory_pos_embed.append(obj_pos)
 
@@ -762,8 +761,6 @@ class SAM2Base(torch.nn.Module):
 
             # Use a dummy token on the first frame (to avoid emtpy memory input to tranformer encoder)
             to_cat_obj_ptr = None
-            assert not self.no_mem_embed.isnan(),any()
-            assert not self.no_mem_pos_enc.isnan().any()
             to_cat_memory = [self.no_mem_embed.expand(1, B, self.mem_dim)]
             to_cat_memory_pos_embed = [self.no_mem_pos_enc.expand(1, B, self.mem_dim)]
 
@@ -773,7 +770,6 @@ class SAM2Base(torch.nn.Module):
 
         # NOTE: TEST SEMANTIC FILTERING
         if self.obj_ptr_gating:
-            print("Doing object gating")
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
             obj_ptr_ = self.obj_ptr_filtering_proj(obj_ptrs)
             obj_gating_score = obj_ptr_.sum(dim=0, keepdim=True)# + self.obj_ptr_gating_bias
@@ -792,7 +788,6 @@ class SAM2Base(torch.nn.Module):
         # NOTE: TEST HIGHRES GATING
         # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
         if self.highres_gating == "by_ptr":
-            print("Doing highres gating by ptr")
             high_res_features = []
             for highres, ptr2high_proj, high2high_proj in zip(highres_vision_feats, self.ptr2high_gating_proj, self.high2high_gating_proj):
 
@@ -813,7 +808,6 @@ class SAM2Base(torch.nn.Module):
             "non_cond_frames": {}
         }
         if self.gating_dimension != "no" and num_obj_ptr_tokens > 0:
-            print("Doing gating!!!")
             m = num_obj_ptr_tokens // 4
             b, d = memory.shape[1], memory.shape[-1]
 
@@ -890,11 +884,6 @@ class SAM2Base(torch.nn.Module):
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
         
-        assert not self.maskmem_tpos_enc.isnan().any()
-        assert not current_vision_feats[0].isnan().any()
-        assert not current_vision_pos_embeds[0].isnan().any()
-        assert not memory.isnan().any()
-        assert not memory_pos_embed.isnan().any()
         pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
@@ -903,7 +892,7 @@ class SAM2Base(torch.nn.Module):
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             gated_indices=gated_indices
         )
-        assert not pix_feat_with_mem.isnan().any()
+        
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem, gating_score_dict, high_res_features, obj_ptrs
@@ -971,9 +960,6 @@ class SAM2Base(torch.nn.Module):
         agent_act=True,
 
     ):
-        for idx, feat in enumerate(current_vision_feats):
-            assert not feat.isnan().any()
-            assert not current_vision_pos_embeds[idx].isnan().any()
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
         if len(current_vision_feats) > 1:
@@ -1011,7 +997,6 @@ class SAM2Base(torch.nn.Module):
             # NOTE: TEST HIGHRES GATING
             # pix_feat_with_mem [1,256,64,64], high_res_features [[1,32,256,256], [1,64,128,128]]
             if self.highres_gating == "by_lowres":
-                print("Doing highres gating by lowres")
                 gated_high_res_features = []
                 layers = zip(
                     high_res_features,

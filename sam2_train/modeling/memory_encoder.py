@@ -167,9 +167,7 @@ class MemoryEncoder(nn.Module):
             masks = F.sigmoid(masks)
             
         # masks = checkpoint(self.mask_downsampler, masks, use_reentrant=False)
-        assert not masks.isnan().any()
         masks = self.mask_downsampler(masks)
-        assert not masks.isnan().any()
 
         ## Fuse pix_feats and downsampled masks
         # in case the visual features are on CPU, cast them to CUDA
@@ -181,18 +179,12 @@ class MemoryEncoder(nn.Module):
 
         # pos = checkpoint(self.position_encoding, x, use_reentrant=False).to(x.dtype)
         
-        assert not pix_feat.isnan().any()
         x = self.pix_feat_proj(pix_feat)
-        assert not x.isnan().any()
         x = x + masks
-        assert not x.isnan().any()
         x = self.fuser(x)
-        assert not x.isnan().any()
         x = self.out_proj(x)
-        assert not x.isnan().any()
 
         pos = self.position_encoding(x).to(x.dtype)
-        assert not pos.isnan().any()
 
         return {"vision_features": x, "vision_pos_enc": [pos]}
 
