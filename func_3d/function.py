@@ -165,7 +165,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor, support_imgs_tensor=support_imgs_tensor
                         )
 
-                    with torch.cuda.amp.autocast():
+                    with torch.amp.autocast():
                         video_segments = net(
                             slide_imgs_tensor, slide_masks_tensor,
                             support_masks_tensor, train_state,

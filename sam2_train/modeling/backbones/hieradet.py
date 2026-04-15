@@ -280,20 +280,18 @@ class Hiera(nn.Module):
         # print('hi',x.shape)
         # x = x.unsqueeze(1).expand([x.shape[0],3,x.shape[1],x.shape[2]])
         # print(x.shape)
-        assert not x.isnan().any()
-        for name, param in self.patch_embed.named_parameters():
-            assert not param.isnan().any(), name
-        x = self.patch_embed(x) # torch.Size([1, 256, 256, 96])
+        print(x.abs().max())
+        with torch.autocast("cuda", enabled=False):
+            x = self.patch_embed(x) # torch.Size([1, 256, 256, 96])
         assert not x.isnan().any()
         # x: (B, H, W, C)
 
         # Add pos embed
         x = x + self._get_pos_embed(x.shape[1:3]) # torch.Size([1, 256, 256, 96])
-        assert not x.isnan().any()
+
         outputs = []
         for i, blk in enumerate(self.blocks):
             x = blk(x)
-            assert not x.isnan().any(), i
             if (i == self.stage_ends[-1]) or (
                 i in self.stage_ends and self.return_interm_layers
             ):
