@@ -127,29 +127,29 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
 
-                rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
-                start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
-                # rounded_length = pack['image'].shape[0]
-                # start_slice = 0
-                sliding_window = [
-                    slice(i, i+args.video_length) 
-                    for i in range(start_slice, start_slice+rounded_length, args.video_length)
-                ]
-                
                 # local_size = len(sliding_window)
                 if args.distributed:
                     local_size = torch.tensor([len(sliding_window)], device=GPUdevice)
                     dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
-                    # print(batch_idx, rank, len(sliding_window), local_size)
-                
+                    
+                    rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                    start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
+                    # rounded_length = pack['image'].shape[0]
+                    # start_slice = 0
+                    sliding_window = [
+                        slice(i, i+args.video_length) 
+                        for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                    ]
+                else:
+                    rounded_length = pack['image'].shape[0]
+                    start_slice = 0
+                    sliding_window = [
+                        slice(i, i+args.video_length) 
+                        for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                    ]
+                    
                 for slide_idx, slide in enumerate(sliding_window):
-                    
-                    # for name, param in net.named_parameters():
-                    #     # print(name, param.min(), param.max())
-                    #     if param.data.isnan().any():
-                    #         raise AssertionError(f"{name} data is nan")
-                    
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)

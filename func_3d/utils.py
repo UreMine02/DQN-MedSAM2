@@ -500,7 +500,7 @@ class CombinedLoss(nn.Module):
         self.dice_loss = DiceLoss(sigmoid=True)
         self.focal_loss = FocalLoss()
         self.mae_loss = L1Loss()
-        self.bce_loss = FocalLoss(gamma=2.0)
+        self.bce_loss = FocalLoss()
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
         # print("iou", iou_pred, iou_gt)
