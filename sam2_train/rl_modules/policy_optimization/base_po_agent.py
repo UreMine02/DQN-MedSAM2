@@ -354,22 +354,20 @@ class BasePOAgent(BaseAgent):
 
         if not training:
             print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
-
-        # if bank_is_full:
-        #     if training and random.random() < self.beta ** (self.epoch): # exploration during training
-        #         action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
+        
+        # if training: # exploration during training
+        #     if random.random() < self.beta ** (self.epoch):
+        #         action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         #     else:
-        #         action_idx = torch.argmax(valid_probs) 
+        #         action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         # else:
-        #     action_idx = (valid_actions == 0).nonzero(as_tuple=True)
+        #     action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         
         if training: # exploration during training
-            if random.random() < self.beta ** (self.epoch):
-                action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
-            else:
-                action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         else:
             action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+        
         
         return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}
 

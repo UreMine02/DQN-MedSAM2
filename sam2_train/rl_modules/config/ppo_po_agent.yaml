@@ -5,8 +5,8 @@ agent:
   value_lr: 1e-5
   gamma: 0.99
   beta: 0.99
-  buffer_size: 500
-  batch_size: 128
+  buffer_size: 125
+  batch_size: 32
   entropy_weight: 1e-4
   epsilon: 0.2
   tau: 0.99
