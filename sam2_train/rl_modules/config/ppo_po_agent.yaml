@@ -11,7 +11,7 @@ agent:
   epsilon: 0.2
   tau: 0.99
   sam2_dim:
-    n_query: 16
+    n_query: 32
     image_dim: 256
     memory_dim: 64
     obj_ptr_dim: 256

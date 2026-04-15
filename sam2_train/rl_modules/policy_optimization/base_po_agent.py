@@ -266,9 +266,9 @@ class BasePOAgent(BaseAgent):
         sam2_dim={}
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=2)
-        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=2)
-        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=2)
+        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
+        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
 
         self.policy_optimizer = optim.AdamW(
             list(self.policy_net.parameters()) + \
