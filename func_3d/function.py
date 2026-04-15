@@ -165,91 +165,91 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor, support_imgs_tensor=support_imgs_tensor
                         )
 
-                    with torch.amp.autocast():
-                        video_segments = net(
-                            slide_imgs_tensor, slide_masks_tensor,
-                            support_masks_tensor, train_state,
-                            obj_id,
-                            train_agent=train_agent,
-                            agent_act=agent_act,
-                            generate_rl_samples=generate_rl_samples,
-                            start_trajectory=(slide_idx == 0),
-                            end_trajectory=(slide_idx == len(sliding_window)-1),
-                            device=GPUdevice
-                        )
-                        # Record the loss in this step
-                        class_loss = {
-                            "total_loss":0,
-                            "focal_loss": 0,
-                            "dice_loss": 0,
-                            "mae_loss": 0,
-                            "bce_loss": 0,
-                            "aux_loss": 0,
-                            "num_step": 0
-                        }
+                    # with torch.amp.autocast(device_type="cuda"):
+                    video_segments = net(
+                        slide_imgs_tensor, slide_masks_tensor,
+                        support_masks_tensor, train_state,
+                        obj_id,
+                        train_agent=train_agent,
+                        agent_act=agent_act,
+                        generate_rl_samples=generate_rl_samples,
+                        start_trajectory=(slide_idx == 0),
+                        end_trajectory=(slide_idx == len(sliding_window)-1),
+                        device=GPUdevice
+                    )
+                    # Record the loss in this step
+                    class_loss = {
+                        "total_loss":0,
+                        "focal_loss": 0,
+                        "dice_loss": 0,
+                        "mae_loss": 0,
+                        "bce_loss": 0,
+                        "aux_loss": 0,
+                        "num_step": 0
+                    }
 
-                        for frame_idx in video_segments.keys():
-                            pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
-                            mask = video_segments[frame_idx][obj_id]["image_label"]
-                            if mask is not None:
-                                mask = mask == obj_id
-                                mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                            else:
-                                mask = torch.zeros_like(pred).to(device=GPUdevice)
+                    for frame_idx in video_segments.keys():
+                        pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
+                        mask = video_segments[frame_idx][obj_id]["image_label"]
+                        if mask is not None:
+                            mask = mask == obj_id
+                            mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                        else:
+                            mask = torch.zeros_like(pred).to(device=GPUdevice)
 
-                            # NOTE: TEST AUXILIARY LOSS
-                            if args.auxiliary_loss == "dice":
-                                cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
-                                cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
-                                aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
+                        # NOTE: TEST AUXILIARY LOSS
+                        if args.auxiliary_loss == "dice":
+                            cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
+                            cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
+                            aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
 
-                                non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
-                                non_cond_gating_score = list(non_cond_gating_score)
-                                if len(non_cond_gating_score) > 0:
-                                    non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
-                                    aux_label = []
-                                    for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
-                                        aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
-                                    aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
+                            non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
+                            non_cond_gating_score = list(non_cond_gating_score)
+                            if len(non_cond_gating_score) > 0:
+                                non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
+                                aux_label = []
+                                for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
+                                    aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
+                                aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
 
-                                    non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
-                                    aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
+                                non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
+                                aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
 
-                                aux_loss = 0.2 * aux_loss
-                            else:
-                                aux_loss = torch.Tensor([0]).to(device=GPUdevice)
+                            aux_loss = 0.2 * aux_loss
+                        else:
+                            aux_loss = torch.Tensor([0]).to(device=GPUdevice)
 
-                            # Calculate the loss
-                            obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
-                            iou_pred = video_segments[frame_idx][obj_id]["iou"]
-                            pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
-                            iou_gt = iou_score(pred_mask, mask)
-                            dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
-                            class_loss["num_step"] += 1
-                            # Update the loss of the class
-                            update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
+                        # Calculate the loss
+                        obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
+                        iou_pred = video_segments[frame_idx][obj_id]["iou"]
+                        pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
+                        iou_gt = iou_score(pred_mask, mask)
+                        dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
+                        class_loss["num_step"] += 1
+                        # Update the loss of the class
+                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
-                            dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
-                            dice_loss_per_class[obj_id]["num_step"] += 1
+                        dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
+                        dice_loss_per_class[obj_id]["num_step"] += 1
 
-                        accum_step = 1
-                        # Average loss of this class
-                        average_loss(class_loss)
-                        avg_loss = class_loss["total_loss"] / accum_step
-                        avg_loss.backward()
+                    accum_step = 1
+                    # Average loss of this class
+                    average_loss(class_loss)
+                    avg_loss = class_loss["total_loss"] / accum_step
+                    avg_loss.backward()
+                    
+                    # for name, param in net.named_parameters():
+                    #     if param.grad is None:
+                    #         continue
                         
-                        # for name, param in net.named_parameters():
-                        #     if param.grad is None:
-                        #         continue
-                            
-                        #     if param.grad.isnan().any():
-                        #         raise AssertionError(f"{name} grad is nan")
+                    #     if param.grad.isnan().any():
+                    #         raise AssertionError(f"{name} grad is nan")
 
 
-                        if (batch_idx + 1) % accum_step == 0:
-                            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                            optimizer.step()
-                            optimizer.zero_grad()
+                    if (batch_idx + 1) % accum_step == 0:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                        optimizer.step()
+                        optimizer.zero_grad()
 
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)
