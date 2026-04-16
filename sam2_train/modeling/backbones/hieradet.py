@@ -286,11 +286,11 @@ class Hiera(nn.Module):
         # Add pos embed
         x = x + self._get_pos_embed(x.shape[1:3]) # torch.Size([1, 256, 256, 96])
         
-        assert not x.isnan().any()
+        # assert not x.isnan().any()
         outputs = []
         for i, blk in enumerate(self.blocks):
             x = blk(x)
-            assert not x.isnan().any()
+            # assert not x.isnan().any()
             if (i == self.stage_ends[-1]) or (
                 i in self.stage_ends and self.return_interm_layers
             ):

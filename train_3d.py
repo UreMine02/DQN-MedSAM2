@@ -78,11 +78,6 @@ def train(rank=0, world_size=0):
             param.requires_grad_(False)
         else:
             param.requires_grad_(True)
-            
-    # for name, module in net.named_modules():
-    #     module.register_forward_hook(
-    #         partial(debug_fw_hook, name=name)
-    #     )
 
     agent_n_params = 0
     if agent is not None:
@@ -107,7 +102,7 @@ def train(rank=0, world_size=0):
             print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.float32).__enter__()
 
@@ -131,14 +126,14 @@ def train(rank=0, world_size=0):
     best_dice = 0.0
     for epoch in range(args.ep):
         net.train()
-        if args.distributed:
-            nice_train_loader.sampler.set_epoch(epoch)
+        # if args.distributed:
+        #     nice_train_loader.sampler.set_epoch(epoch)
             
-            net.module.image_encoder.eval()
-            net.module.sam_prompt_encoder.eval()
-        else:
-            net.image_encoder.eval()
-            net.sam_prompt_encoder.eval()
+        #     net.module.image_encoder.eval()
+        #     net.module.sam_prompt_encoder.eval()
+        # else:
+        #     net.image_encoder.eval()
+        #     net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)

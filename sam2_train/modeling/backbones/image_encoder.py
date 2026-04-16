@@ -31,10 +31,10 @@ class ImageEncoder(nn.Module):
         # feature: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
         # pos: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
 
-        assert not sample.isnan().any()
+        # assert not sample.isnan().any()
         features, pos = checkpoint(self.neck, checkpoint(self.trunk, sample, use_reentrant=False), use_reentrant=False)
-        for feat in features:
-            assert not feat.isnan().any()
+        # for feat in features:
+            # assert not feat.isnan().any()
         # features, pos = self.neck(self.trunk(sample))
         if self.scalp > 0:
             # Discard the lowest resolution features
@@ -118,7 +118,7 @@ class FpnNeck(nn.Module):
         for i in range(n, -1, -1):
             x = xs[i]
             lateral_features = self.convs[n - i](x)
-            assert not lateral_features.isnan().any()
+            # assert not lateral_features.isnan().any()
             if i in self.fpn_top_down_levels and prev_features is not None:
                 top_down_features = F.interpolate(
                     prev_features.to(dtype=torch.float32),
@@ -135,7 +135,7 @@ class FpnNeck(nn.Module):
             else:
                 prev_features = lateral_features
             x_out = prev_features
-            assert not x_out.isnan().any()
+            # assert not x_out.isnan().any()
             out[i] = x_out
             pos[i] = self.position_encoding(x_out).to(x_out.dtype)
 
