@@ -441,6 +441,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou]) 
                     
                     video_segments[frame_idx]["dice"] = dice.detach().cpu().item()
+                    # print(frame_idx, dice.detach().cpu().item())
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice)
 
@@ -448,6 +449,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
                     os.makedirs(f"{save_dir}/vis_lin", exist_ok=True)
                     save_prefix = f"{save_dir}/vis_lin/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    # print(frame_idx, save_prefix)
                     # mask *= 2
                     im = imgs_tensor[frame_idx]
                     im = (im - im.min()) / (im.max() - im.min()) * 255
@@ -483,6 +485,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             # HYPOTHESIS TESTING
             if args.ablation:
                 for frame_idx in train_state["output_dict"]["dice_drop"].keys():
+                    # print(frame_idx, video_segments[frame_idx]["dice"])
                     drop_frame = train_state["output_dict"]["drop_frame"][frame_idx]
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"] = {}
 
