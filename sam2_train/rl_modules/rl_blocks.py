@@ -122,12 +122,13 @@ class PerceiverResampler(nn.Module):
         #     num_heads=num_heads, downsample_rate=1, dropout=0.1, 
         # )
         self.norm1 = nn.LayerNorm(hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
+            ("norm", nn.LayerNorm(hidden_dim)),
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
             ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))
         ]))
-        self.norm2 = nn.LayerNorm(hidden_dim)
         
         self.hidden_dim = hidden_dim
         self.dropout = dropout
@@ -145,8 +146,10 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
-        x = x + self.attention(self.norm1(x), context=torch.cat([x_f, x], dim=1))
-        x = x + self.mlp(self.norm2(x))
+        x_f = self.norm1(x_f)
+        x = self.norm2(x)
+        x = x + self.attention(x, context=torch.cat([x_f, x], dim=1))
+        x = x + self.mlp(x)
         return x
     
 class SpatialSummarizer(nn.Module):
