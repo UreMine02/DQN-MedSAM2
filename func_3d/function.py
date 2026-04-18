@@ -233,20 +233,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # Average loss of this class
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"] / accum_step
-                    avg_loss.backward()
-                    
-                    # for name, param in net.named_parameters():
-                    #     if param.grad is None:
-                    #         continue
-                        
-                    #     if param.grad.isnan().any():
-                    #         raise AssertionError(f"{name} grad is nan")
+                    # avg_loss.backward()
 
-
-                    if (batch_idx + 1) % accum_step == 0:
-                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                        optimizer.step()
-                        optimizer.zero_grad()
+                    # if (batch_idx + 1) % accum_step == 0:
+                    #     grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                    #     optimizer.step()
+                    #     optimizer.zero_grad()
 
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)

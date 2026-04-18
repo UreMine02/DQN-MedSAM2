@@ -4,7 +4,7 @@ agent:
   policy_lr: 1e-5
   value_lr: 1e-5
   gamma: 0.99
-  beta: 0.9
+  beta: 0.99
   buffer_size: 125
   batch_size: 64
   entropy_weight: 1e-4

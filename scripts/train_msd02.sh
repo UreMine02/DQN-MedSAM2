@@ -14,11 +14,12 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+ppo+long_horizon+no_augment
+EXP=msd_task02+icl+ppo+no_force_add+train_agent_on_pretrained+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
+    -pretrain output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth \
     -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/ppo_po_agent.yaml \
