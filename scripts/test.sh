@@ -31,7 +31,11 @@ declare -a ckpt=(
 
     # MSD Spleen
     # output/msd_task09+icl+ppo+long_horizon+no_augment/2026-04-11-12-20-13/best.pth
-    output/msd_task09+icl+no_agent+long_horizon+no_augment/2026-04-11-12-19-00/best.pth
+    # output/msd_task09+icl+no_agent+long_horizon+no_augment/2026-04-11-12-19-00/best.pth
+    
+    # MSD Prostate
+    # output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/best.pth
+    output/msd_task05+ppo+long_horizon+no_augment/2026-04-13-14-13-19/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -44,12 +48,12 @@ do
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/ppo_po_agent.yaml \
             -dataset msd \
-            -task "Task09" \
+            -task "Task05" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
             -memory_bank_size 6 \
             -vis \
             -ablation \
-            -no_agent
+            # -no_agent
     done
 done

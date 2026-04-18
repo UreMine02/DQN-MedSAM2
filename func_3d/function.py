@@ -425,7 +425,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 mask = video_segments[frame_idx][obj_id]["image_label"]
                 pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
                 if mask is not None:
-                    mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                    mask = (mask == obj_id).to(dtype=torch.float32, device=GPUdevice)
                     volume_masks.append(mask.cpu())
                     volume_preds.append(pred.cpu())
                     
@@ -434,7 +434,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         dice,
                         fb_iou,
                     ) = eval_seg(pred, mask)
-                    
+
                     score_dict = score_per_class[f"{task}_{obj_id}"]
                     score_dict["iou"] = torch.cat([score_dict["iou"], iou]) 
                     score_dict["dice"] = torch.cat([score_dict["dice"], dice]) 
