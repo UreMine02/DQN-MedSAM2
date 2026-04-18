@@ -364,9 +364,9 @@ class BasePOAgent(BaseAgent):
         #     action_idx = torch.argmax(valid_probs, keepdim=True) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         
         if training: # exploration during training
-            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         else:
-            action_idx = torch.argmax(valid_probs, keepdim=True) # if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            action_idx = torch.argmax(valid_probs, keepdim=True) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
         
         
         return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}

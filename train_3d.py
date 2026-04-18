@@ -74,19 +74,19 @@ def train(rank=0, world_size=0):
     for name, param in net.named_parameters():
         # param.requires_grad_(False)
         
-        if "memory_attention" in name:
-            param.requires_grad_(True)
-        elif "maskmem_tpos_enc" in name:
-            param.requires_grad_(True)
-        else:
-            param.requires_grad_(False)
-        
-        # if "image_encoder" in name:
-        #     param.requires_grad_(False)
-        # elif "sam_prompt_encoder" in name:
-        #     param.requires_grad_(False)
-        # else:
+        # if "memory_attention" in name:
         #     param.requires_grad_(True)
+        # elif "maskmem_tpos_enc" in name:
+        #     param.requires_grad_(True)
+        # else:
+        #     param.requires_grad_(False)
+        
+        if "image_encoder" in name:
+            param.requires_grad_(False)
+        elif "sam_prompt_encoder" in name:
+            param.requires_grad_(False)
+        else:
+            param.requires_grad_(True)
 
     agent_n_params = 0
     if agent is not None:
