@@ -135,14 +135,14 @@ def train(rank=0, world_size=0):
     best_dice = 0.0
     for epoch in range(args.ep):
         net.train()
-        # if args.distributed:
-        #     nice_train_loader.sampler.set_epoch(epoch)
+        if args.distributed:
+            nice_train_loader.sampler.set_epoch(epoch)
             
-        #     net.module.image_encoder.eval()
-        #     net.module.sam_prompt_encoder.eval()
-        # else:
-        #     net.image_encoder.eval()
-        #     net.sam_prompt_encoder.eval()
+            net.module.image_encoder.eval()
+            net.module.sam_prompt_encoder.eval()
+        else:
+            net.image_encoder.eval()
+            net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
@@ -177,9 +177,6 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-
-        # if args.distributed:
-            # torch.distributed.barrier()
 
         net.eval()
         new_best = False
