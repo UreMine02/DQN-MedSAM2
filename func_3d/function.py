@@ -447,8 +447,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
                 if args.vis:
                     save_dir = "/".join(args.pretrain.split("/")[:-1])
-                    os.makedirs(f"{save_dir}/vis_lin", exist_ok=True)
-                    save_prefix = f"{save_dir}/vis_lin/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    os.makedirs(f"{save_dir}/vis_agent{not args.no_agent}", exist_ok=True)
+                    save_prefix = f"{save_dir}/vis_agent{not args.no_agent}/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
                     # print(frame_idx, save_prefix)
                     # mask *= 2
                     im = imgs_tensor[frame_idx]

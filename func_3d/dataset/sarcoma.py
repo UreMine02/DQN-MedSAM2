@@ -102,7 +102,7 @@ class Sarcoma(Dataset):
             data_seg_3d,
             support_image_3d,
             support_data_seg_3d
-        ) = self.load_data(image_path, label_path, support_image_path, support_label_path)
+        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, name)
         
         output_dict ={
             "image": image_3d, "label": data_seg_3d,
@@ -112,20 +112,22 @@ class Sarcoma(Dataset):
         
         return output_dict
 
-    def load_data(self, image_path, label_path, support_image_path, support_label_path):
+    def load_data(self, image_path, label_path, support_image_path, support_label_path, name):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
-            max_slices=self.max_slices if self.mode == "train" else -1,
+            max_slices=-1,
             slice_selection='contiguous',
-            is_support=False
+            is_support=False,
+            name=name
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
             max_slices=self.num_support,
             slice_selection='random' if self.mode == 'train' else 'evenly',
-            is_support=True
+            is_support=True,
+            name=name
         )
         
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
@@ -154,7 +156,7 @@ class Sarcoma(Dataset):
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
 
-    def load_image_label(self, image_path, label_path, max_slices=16, slice_selection='contiguous', is_support=False):
+    def load_image_label(self, image_path, label_path, max_slices=16, slice_selection='contiguous', is_support=False, name=""):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
@@ -201,7 +203,7 @@ class Sarcoma(Dataset):
                 raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
 
         image_3d = scaling(image_3d, scale=1)
-        data_seg_3d[data_seg_3d == 255] = 1
+        data_seg_3d[data_seg_3d == 255] = 1 if name == "Mass" else 2
         
         return image_3d, data_seg_3d
     

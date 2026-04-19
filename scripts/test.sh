@@ -22,7 +22,7 @@ declare -a ckpt=(
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
 
     # Sarcoma
-    # output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
+    output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Colon
@@ -35,7 +35,7 @@ declare -a ckpt=(
     
     # MSD Prostate
     # output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/best.pth
-    output/msd_task05+ppo+long_horizon+no_augment/2026-04-13-14-13-19/best.pth
+    # output/msd_task05+ppo+long_horizon+no_augment/2026-04-13-14-13-19/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -47,13 +47,13 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/ppo_po_agent.yaml \
-            -dataset msd \
-            -task "Task05" \
-            -data_path /data/datasets/nii/MSD \
+            -dataset sarcoma \
+            -task "" \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -memory_bank_size 6 \
             -vis \
             -ablation \
-            # -no_agent
+            -no_agent
     done
 done
