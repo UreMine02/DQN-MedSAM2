@@ -270,9 +270,17 @@ class BasePOAgent(BaseAgent):
         self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
 
+        # self.optimizer = optim.AdamW(
+        #     list(self.policy_net.parameters()) + 
+        #     list(self.feat_summarizer.parameters()) + 
+        #     list(self.value_net.parameters()),
+        #     lr=policy_lr,
+        # )
+        
         self.policy_optimizer = optim.AdamW(
-            list(self.policy_net.parameters()) + \
-            list(self.feat_summarizer.parameters()),
+            list(self.policy_net.parameters()) + 
+            list(self.feat_summarizer.parameters()) + 
+            list(self.value_net.parameters()),
             lr=policy_lr,
         )
         self.value_optimizer = optim.AdamW(
@@ -401,27 +409,29 @@ class BasePOAgent(BaseAgent):
         total_policy_loss, total_value_loss, total_actor_gradnorm, total_critic_gradnorm = 0, 0, 0, 0
         critic_num_update = 0
         for i in range(num_update):
-            batch = random.sample(self.replay_buffer, k=self.batch_size)
+            # NOTE: test totally random batch
+            # batch = random.sample(self.replay_buffer, k=self.batch_size)
 
-            # n_actions = {}
-            # for sample in self.replay_buffer:
-            #     action = sample[2]
-            #     if action not in n_actions.keys():
-            #         n_actions[action] = 0
-            #     n_actions[action] += 1
+            # NOTE: test construct batch with equal proportion of each action
+            n_actions = {}
+            for sample in self.replay_buffer:
+                action = sample[2]
+                if action not in n_actions.keys():
+                    n_actions[action] = 0
+                n_actions[action] += 1
 
-            # p = []
-            # for sample in self.replay_buffer:
-            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
+            p = []
+            for sample in self.replay_buffer:
+                p.append(len(self.replay_buffer) / n_actions[sample[2]])
 
-            # p = np.asanyarray(p)
-            # p = p / p.sum()
-            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            # batch = []
-            # for idx in batch_idx:
-            #     batch.append(self.replay_buffer[idx])
+            p = np.asanyarray(p)
+            p = p / p.sum()
+            batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
+            batch = []
+            for idx in batch_idx:
+                batch.append(self.replay_buffer[idx])
 
-            update_value = i % 2
+            update_value = bool(i % 1)
             value_loss, policy_loss, actor_gradnorm, critic_gradnorm = self.train_step(batch, update_value=update_value)
 
             total_policy_loss += policy_loss
@@ -500,11 +510,12 @@ class BasePOAgent(BaseAgent):
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
+            
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
             actor_gradnorm = nn.utils.clip_grad_norm_(
                 list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.1
+                max_norm=1.0
             )
             self.policy_optimizer.step()
 
@@ -531,13 +542,30 @@ class BasePOAgent(BaseAgent):
                         print(name, "grad is None", param.requires_grad)
                         continue
                     
-                critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=0.1)
+                critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=1.0)
                 self.value_optimizer.step()
             else:
                 value_loss = torch.Tensor([0])
                 critic_gradnorm = torch.Tensor([0])
 
-            # print("gradnorm", actor_gradnorm, critic_gradnorm)
+            
+
+            # pred_value = self.value_net(
+            #     image_spatial_query.detach(),
+            #     non_cond_bank_feat.detach(),
+            #     cond_bank_feat.detach(),
+            #     curr_mem_feat.detach()
+            # )
+            # value_loss = F.mse_loss(pred_value, returns)
+            
+            # total_loss = 20 * policy_loss + 200 * value_loss
+            
+            # self.optimizer.zero_grad()
+            # total_loss.backward()
+            # self.optimizer.step()
+
+            # actor_gradnorm = torch.Tensor([0])
+            # critic_gradnorm = torch.Tensor([0])
 
         return value_loss.detach(), policy_loss.detach(), actor_gradnorm, critic_gradnorm
 

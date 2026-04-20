@@ -28,7 +28,9 @@ declare -a ckpt=(
 
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
     # output/msd_task02+grpo+icl+no_augment/2026-04-04-10-53-56/best.pth
-    output/msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment/2026-04-04-20-00-33/best.pth
+    # output/msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment/2026-04-04-20-00-33/best.pth
+
+    output/sarcoma+icl+ppo+lazy_penalty0.1+long_horizon+no_augment/2026-04-19-18-35-30/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -39,16 +41,12 @@ do
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
-            -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task "Task02" \
-            -data_path /data/datasets/nii/MSD \
+            -rl_config rl_modules/config/ppo_po_agent.yaml \
+            -dataset sarcoma \
+            -task "" \
+            -data_path /data/datasets/nii/Sarcoma \
             -num_support $shot \
             -memory_bank_size 6 \
-            -gating_dimension "cw" \
-            -gating_softness "soft" \
-            -obj_ptr_gating \
-            # -no_agent \
-            # -highres_gating "by_lowres"
+            -no_agent
     done
 done

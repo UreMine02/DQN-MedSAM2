@@ -1788,7 +1788,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
-            reward = -0.01
+            reward = -0.1
             drop_frame = frame_idx - 1
         else:
             # Add the new frame and drop a specific frame

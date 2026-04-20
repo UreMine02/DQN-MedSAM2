@@ -129,7 +129,12 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 # local_size = len(sliding_window)
                 if args.distributed:
-                    rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                    if pack['image'].shape[0] >= args.video_length:
+                        rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                    else:
+                        rounded_length = pack['image'].shape[0]
+                        dist.all_reduce(rounded_length, op=dist.ReduceOp.MIN)
+                        
                     start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
                     sliding_window = [
                         slice(i, i+args.video_length) 
@@ -423,6 +428,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     #     }
 
                     video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
+            
             # Record the loss in this step
             for frame_idx in video_segments.keys():
                 pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
