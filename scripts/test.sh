@@ -30,7 +30,7 @@ declare -a ckpt=(
     # output/msd_task02+grpo+icl+no_augment/2026-04-04-10-53-56/best.pth
     # output/msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+no_augment/2026-04-04-20-00-33/best.pth
 
-    output/sarcoma+icl+ppo+lazy_penalty0.1+long_horizon+no_augment/2026-04-19-18-35-30/best.pth
+    output/sarcoma+icl+ppo+lazy_penalty0.0+long_horizon+no_augment/2026-04-20-18-59-33/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1

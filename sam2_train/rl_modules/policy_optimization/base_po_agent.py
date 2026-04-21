@@ -509,7 +509,7 @@ class BasePOAgent(BaseAgent):
             policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
-            policy_loss = policy_loss.mean()
+            policy_loss = policy_loss.mean() * 200
             
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
@@ -533,7 +533,7 @@ class BasePOAgent(BaseAgent):
                 )
                 # print("requires_grad", pred_value.requires_grad)   # should be True
                 # print("grad_fn", pred_value.grad_fn)
-                value_loss = F.mse_loss(pred_value, returns)
+                value_loss = F.mse_loss(pred_value, returns) * 200
                 self.value_optimizer.zero_grad()
                 value_loss.backward()                    
                 critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=1.0)

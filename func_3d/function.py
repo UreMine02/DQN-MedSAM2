@@ -133,7 +133,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
                     else:
                         rounded_length = pack['image'].shape[0]
-                        dist.all_reduce(rounded_length, op=dist.ReduceOp.MIN)
+                        dist.all_reduce(torch.tensor(rounded_length), op=dist.ReduceOp.MIN)
                         
                     start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
                     sliding_window = [
@@ -260,6 +260,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
+                        q_updates_per_step = (q_updates_per_step * epoch // args.ep) + 1
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())

@@ -57,10 +57,10 @@ class Sarcoma(Dataset):
         self.num_support = args.num_support
         
         self.tr_transform = v2.Compose([
-            v2.RandomResizedCrop(size=(self.image_size, self.image_size), scale=(0.7, 1.4), ratio=(1.0, 1.0)),
+            v2.Resize(size=(self.image_size, self.image_size)),
             v2.RandomHorizontalFlip(0.5),
-            v2.RandomAffine(degrees=25),
-            v2.ColorJitter(brightness=0.25, contrast=0.25)
+            v2.RandomAffine(degrees=25, translate=(0.15,0.15), scale=(0.8, 1.2)),
+            # v2.ColorJitter(brightness=0.25, contrast=0.25)
         ])
         
         self.ts_transform = v2.Compose([
@@ -138,11 +138,20 @@ class Sarcoma(Dataset):
         # support_image_3d = tv_tensors.Image(support_image_3d)
         # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
         
+        # if random.random() < 0.5:
+        #     image_3d = image_3d.flip(0)
+        #     data_seg_3d = data_seg_3d.flip(0)
+        
+        
+        # if random.random() < 0.5:
+        #     support_image_3d = support_image_3d.flip(0)
+        #     support_data_seg_3d = support_data_seg_3d.flip(0)
+        
         # if self.mode == "train":
-            # transform = self.tr_transform
+        #     transform = self.tr_transform
         # else:
-            # transform = self.ts_transform
-            # 
+        #     transform = self.ts_transform
+            
         # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
 
@@ -163,18 +172,9 @@ class Sarcoma(Dataset):
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         
-        # if self.mode == "train" and not is_support:
-        if False:
-            pos_slices = np.argwhere(np.sum(data_seg_3d, axis=(0,1))).squeeze()
-            
-            from_idx, to_idx = pos_slices.min() - (max_slices // 2), pos_slices.max() + (max_slices // 2)
-            image_3d = image_3d[:, :, max(from_idx, 0):to_idx]
-            data_seg_3d = data_seg_3d[:, :, max(from_idx, 0):to_idx]
-        else:
-            pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
-            image_3d = image_3d[:, :, pos_slices]
-            data_seg_3d = data_seg_3d[:, :, pos_slices]
-            
+        pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
+        image_3d = image_3d[:, :, pos_slices]
+        data_seg_3d = data_seg_3d[:, :, pos_slices]
         
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
