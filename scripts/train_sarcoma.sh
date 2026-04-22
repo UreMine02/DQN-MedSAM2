@@ -15,7 +15,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+icl+ppo+lazy_penalty0.0+increasing_update+long_horizon+augment
+EXP=sarcoma+icl+ppo+lazy_penalty0.0+increasing_update+long_horizon+flip_augment
 export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \

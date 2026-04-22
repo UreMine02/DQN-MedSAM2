@@ -42,7 +42,6 @@ def train(rank=0, world_size=0):
     if args.distributed:
         setup(rank, world_size)
         GPUdevice = torch.device('cuda', rank)
-        # torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
         
