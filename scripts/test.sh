@@ -20,9 +20,11 @@ declare -a ckpt=(
     # output/msd_task02+icl+ppo+skip_penalty+long_horizon+no_augment/2026-04-08-08-07-00/best.pth
     # output/msd_task02+icl+ppo+no_agent+long_horizon+no_augment/2026-04-10-14-46-14/best.pth
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
+    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
+    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
 
     # Sarcoma
-    output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
+    # output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Colon
@@ -47,13 +49,13 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/ppo_po_agent.yaml \
-            -dataset sarcoma \
-            -task "" \
-            -data_path /data/datasets/nii/Sarcoma \
+            -dataset msd \
+            -task "Task02" \
+            -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -memory_bank_size 6 \
-            -vis \
-            -ablation \
-            -no_agent
+            -memory_bank_size 5 \
+            # -no_agent
+            # -vis \
+            # -ablation \
     done
 done
