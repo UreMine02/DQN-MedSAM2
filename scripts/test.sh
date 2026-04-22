@@ -32,7 +32,8 @@ declare -a ckpt=(
 
     # output/sarcoma+icl+ppo+lazy_penalty0.0+long_horizon+no_augment/2026-04-20-18-59-33/best.pth
     # output/sarcoma+icl+ppo+lazy_penalty0.0+increasing_update+long_horizon+augment/2026-04-21-10-11-01/best.pth
-    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
+    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
+    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
