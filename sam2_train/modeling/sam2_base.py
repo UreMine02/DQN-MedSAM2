@@ -663,7 +663,7 @@ class SAM2Base(torch.nn.Module):
 
                 # print("FIFO:", memory_pos)
             else:
-                # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
+                print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(
                     [(t+1, out) for t, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )

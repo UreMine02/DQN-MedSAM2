@@ -1831,14 +1831,14 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             output_dict,
             frame_idx,
-            self.num_maskmem - 1,
+            num_maskmem=inference_state['rl_config']['memory_bank_size'],
             num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=False,
             training=train_agent
         )
 
         bank_size = len(output_dict["non_cond_frame_outputs"])
-        bank_full = (bank_size >= self.num_maskmem - 1)
+        bank_full = (bank_size >= inference_state['rl_config']['memory_bank_size'])
         valid_actions = [1] if bank_full else [0, 1]
         valid_actions.extend(list(action_frame_map.keys()))
         with torch.no_grad():
@@ -1919,7 +1919,7 @@ class SAM2VideoPredictor(SAM2Base):
             current_vision_pos_embeds,
             output_dict,
             frame_idx,
-            self.num_maskmem - 1,
+            num_maskmem=inference_state['rl_config']['memory_bank_size'],
             num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=False
         )

@@ -53,7 +53,7 @@ do
             -task "Task02" \
             -data_path /data/datasets/nii/MSD \
             -num_support $shot \
-            -memory_bank_size 5 \
+            -memory_bank_size 1 \
             # -no_agent
             # -vis \
             # -ablation \
