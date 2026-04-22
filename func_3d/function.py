@@ -260,7 +260,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
-                        q_updates_per_step = (q_updates_per_step * epoch // args.ep) + 1
+                        q_updates_per_step = (q_updates_per_step - 2 + 1) * epoch // args.ep + 2
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())

@@ -122,13 +122,13 @@ class MSD(Dataset):
 
         orig_size = image_3d.shape[-2:]
         
-        if random.random() < 0.5:
-            image_3d = image_3d.flip(0)
-            data_seg_3d = data_seg_3d.flip(0)
+        # if random.random() < 0.5:
+        #     image_3d = image_3d.flip(0)
+        #     data_seg_3d = data_seg_3d.flip(0)
         
-        if random.random() < 0.5:
-            support_image_3d = support_image_3d.flip(0)
-            support_data_seg_3d = support_data_seg_3d.flip(0)
+        # if random.random() < 0.5:
+        #     support_image_3d = support_image_3d.flip(0)
+        #     support_data_seg_3d = support_data_seg_3d.flip(0)
 
         # image_3d = tv_tensors.Image(image_3d)
         # data_seg_3d = tv_tensors.Mask(data_seg_3d)
