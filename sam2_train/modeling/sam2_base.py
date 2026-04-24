@@ -896,7 +896,7 @@ class SAM2Base(torch.nn.Module):
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             gated_indices=gated_indices,
-            need_weights=True
+            need_weights=False
         )
         
         # reshape the output (HW)BC => BCHW
