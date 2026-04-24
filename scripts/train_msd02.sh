@@ -35,6 +35,4 @@ python train_3d.py \
     -num_support 5 \
     -memory_bank_size 6 \
     -wandb_enabled \
-    -no_agent \
-    -random_drop
     # - 

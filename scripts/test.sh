@@ -56,7 +56,7 @@ do
             -num_support $shot \
             -memory_bank_size 6 \
             -ablation \
-            -vis
+            # -vis
             # -no_agent
     done
 done

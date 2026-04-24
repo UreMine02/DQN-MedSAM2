@@ -245,6 +245,8 @@ class GRPOAgent(BasePOAgent):
 
             total_policy_loss += policy_loss.detach()
             total_policy_gradnorm += gradnorm
+            
+        self.replay_buffer.clear()
 
         return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
 

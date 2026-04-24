@@ -429,7 +429,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         ablation=args.ablation,
                         device=GPUdevice
                     )
-            min_attns.extend(train_state["output_dict"]["min_attn"])
 
             class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
             volume_masks = []
