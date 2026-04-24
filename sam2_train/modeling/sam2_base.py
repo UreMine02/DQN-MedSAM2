@@ -582,8 +582,9 @@ class SAM2Base(torch.nn.Module):
         output_dict,
         num_frames,
         track_in_reverse=False,  # tracking in reverse time order (for demo usage)
-        agent_act=True,
-
+        agent_act=False,
+        random_drop=False,
+        memory_bank_size=6
     ):
         """Fuse the current frame's visual feature map with previous memory."""
         B = current_vision_feats[-1].size(1)  # batch size on this frame
@@ -618,9 +619,9 @@ class SAM2Base(torch.nn.Module):
             # We also allow taking the memory frame non-consecutively (with r>1), in which case
             # we take (self.num_maskmem - 2) frames among every r-th frames plus the last frame.
 
-            if not agent_act:
+            if not (agent_act or random_drop):
                 r = self.memory_temporal_stride_for_eval
-                for t_pos in range(1, self.num_maskmem):
+                for t_pos in range(self.num_maskmem - memory_bank_size, self.num_maskmem):
                     t_rel = self.num_maskmem - t_pos  # how many frames before current frame
                     if t_rel == 1:
                         # for t_rel == 1, we take the last frame (regardless of r)
@@ -653,9 +654,13 @@ class SAM2Base(torch.nn.Module):
                         memory_pos.append(prev_frame_idx)
                     t_pos_and_prevs.append((t_pos, out))
 
-                # print("FIFO:", memory_pos)
+                # print("FIFO:", frame_idx, memory_pos)
             else:
-                # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
+                # if agent_act:
+                #     print("AFS:", output_dict["non_cond_frame_outputs"].keys())
+                # elif random_drop:
+                #     print("Random:", output_dict["non_cond_frame_outputs"].keys())
+                    
                 t_pos_and_prevs.extend(
                     [(t+1, out) for t, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )
@@ -884,13 +889,14 @@ class SAM2Base(torch.nn.Module):
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
         
-        pix_feat_with_mem = self.memory_attention(
+        pix_feat_with_mem, cross_attns = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
             memory=memory,
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
-            gated_indices=gated_indices
+            gated_indices=gated_indices,
+            need_weights=True
         )
         
         # reshape the output (HW)BC => BCHW
@@ -957,8 +963,9 @@ class SAM2Base(torch.nn.Module):
         run_mem_encoder=True,
         # The previously predicted SAM mask logits (which can be fed together with new clicks in demo).
         prev_sam_mask_logits=None,
-        agent_act=True,
-
+        agent_act=False,
+        random_drop=False,
+        memory_bank_size=6
     ):
         current_out = {"mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
@@ -990,6 +997,8 @@ class SAM2Base(torch.nn.Module):
                 num_frames=num_frames,
                 track_in_reverse=track_in_reverse,
                 agent_act=agent_act,
+                random_drop=random_drop,
+                memory_bank_size=memory_bank_size
             )
 
             current_out["gating_score_dict"] = gating_score_dict

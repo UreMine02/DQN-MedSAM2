@@ -112,8 +112,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=6)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=6)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=2)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=2)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -153,7 +153,6 @@ class GRPOAgent(BasePOAgent):
         memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
-
         
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
         action_logits = action_logits.detach().cpu()
@@ -163,12 +162,12 @@ class GRPOAgent(BasePOAgent):
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
-        if not training:
-            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+        # if not training:
+        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
-            # main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-            main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            # main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
@@ -223,8 +222,8 @@ class GRPOAgent(BasePOAgent):
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
             
-            for a in actions.unique():
-                print(a, rewards[actions == a].mean())
+            # for a in actions.unique():
+            #     print(a, rewards[actions == a].mean())
             
             # with torch.enable_grad():
             policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
@@ -237,7 +236,7 @@ class GRPOAgent(BasePOAgent):
             policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
             # minus_entropy = -policy_dist.entropy().mean()
             minus_entropy = (action_probs * log_action_probs).mean()
-            policy_loss = 10 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+            policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()

@@ -32,11 +32,15 @@ declare -a ckpt=(
 
     # output/sarcoma+icl+ppo+lazy_penalty0.0+long_horizon+no_augment/2026-04-20-18-59-33/best.pth
     # output/sarcoma+icl+ppo+lazy_penalty0.0+increasing_update+long_horizon+augment/2026-04-21-10-11-01/best.pth
-    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
-    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
+    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
+
+    # output/msd_task02+icl+grpo+long_horizon+flip_augment/2026-04-22-20-03-14/best.pth
+    # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
+    # output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
+    output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpt[@]}
 do
@@ -44,7 +48,7 @@ do
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
-            -rl_config rl_modules/config/ppo_po_agent.yaml \
+            -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
             -task "Task02" \
             -data_path /data/datasets/nii/MSD \

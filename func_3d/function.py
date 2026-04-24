@@ -52,9 +52,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     net.train()
 
     video_length = args.video_length
-    train_agent = not args.no_agent
-    agent_act = not args.no_agent # and epoch >= 0
-    generate_rl_samples = not args.no_agent
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
@@ -172,9 +169,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             slide_imgs_tensor, slide_masks_tensor,
                             support_masks_tensor, train_state,
                             obj_id,
-                            train_agent=train_agent,
-                            agent_act=agent_act,
-                            generate_rl_samples=generate_rl_samples,
+                            train_agent=(not (args.no_agent or args.random_drop)),
+                            agent_act=(not (args.no_agent or args.random_drop)),
+                            generate_rl_samples=(not (args.no_agent or args.random_drop)),
+                            random_drop=args.random_drop,
                             start_trajectory=(slide_idx == 0),
                             end_trajectory=(slide_idx == len(sliding_window)-1),
                             device=GPUdevice
