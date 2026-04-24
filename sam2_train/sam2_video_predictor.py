@@ -199,7 +199,7 @@ class SAM2VideoPredictor(SAM2Base):
                 "prev_memory_attn_scores": {},
                 "image_features": {},
                 "masked_image_features": {},
-                "prev_frame_idx": [],
+                "prev_frame_idx": [],   
                 "dropped_frames_allres_sim_rank": [],
                 "dropped_frames_lowres_sim_rank": [],
                 "dropped_frames_ious_rank": [],
@@ -210,7 +210,8 @@ class SAM2VideoPredictor(SAM2Base):
                 "most_lowres_sim_prev_frame": {},
                 "attn_frames": {},
                 "dice_drop": {},
-                "drop_frame": {}
+                "drop_frame": {},
+                "min_attn": {}
             })
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -2027,6 +2028,7 @@ class SAM2VideoPredictor(SAM2Base):
 
             if frame_idx > 0:
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        
     def forward(
         self,
         imgs_tensor, masks_tensor, support_masks_tensor,

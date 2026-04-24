@@ -628,7 +628,6 @@ class SAM2Base(torch.nn.Module):
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
             # We also allow taking the memory frame non-consecutively (with r>1), in which case
             # we take (self.num_maskmem - 2) frames among every r-th frames plus the last frame.
-
             if not (agent_act or random_drop):
                 r = self.memory_temporal_stride_for_eval
                 for t_pos in range(self.num_maskmem - memory_bank_size, self.num_maskmem):
@@ -782,7 +781,7 @@ class SAM2Base(torch.nn.Module):
         # Step 2: Concatenate the memories and forward through the transformer encoder
         memory = torch.cat(to_cat_memory, dim=0)
         memory_pos_embed = torch.cat(to_cat_memory_pos_embed, dim=0)
-
+        # print(num_obj_ptr_tokens)
         # NOTE: TEST SEMANTIC FILTERING
         if self.obj_ptr_gating:
             obj_ptrs = torch.cat(to_cat_obj_ptr, dim=0) # [L,B,D] : [L*D] -> [D]
@@ -906,9 +905,10 @@ class SAM2Base(torch.nn.Module):
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
             gated_indices=gated_indices,
-            need_weights=True
+            need_weights="min_attn" in output_dict.keys()
         )
-        
+        if cross_attns is not None:
+            output_dict["min_attn"][frame_idx] = cross_attns.item()
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
         return pix_feat_with_mem, gating_score_dict, high_res_features, obj_ptrs

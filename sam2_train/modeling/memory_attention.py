@@ -170,13 +170,16 @@ class MemoryAttention(nn.Module):
             )
 
             if cross_attn is not None:
+                # print(cross_attn.shape)
                 spatial_tokens_attn, obj_ptr_attn = torch.tensor_split(
                     cross_attn.squeeze(1).squeeze(0), indices=(-num_obj_ptr_tokens,), dim=-1)
                 
-                spatial_tokens_attn = spatial_tokens_attn.transpose(0,1).reshape(-1, 4096, 4096).flatten(1)
-                obj_ptr_attn = obj_ptr_attn.transpose(0,1).reshape(-1, 4, 4096).flatten(1)
+                # print(spatial_tokens_attn.shape, obj_ptr_attn.shape)
+                spatial_tokens_attn = spatial_tokens_attn.transpose(0,1).reshape(-1, 4096, 4096).max(dim=-1)[0]
+                obj_ptr_attn = obj_ptr_attn.transpose(0,1).reshape(-1, 4, 4096).max(dim=-1)[0]
                 
-                cross_attns.append(torch.cat([spatial_tokens_attn, obj_ptr_attn], dim=-1))
+                max_attn = torch.cat([spatial_tokens_attn, obj_ptr_attn], dim=-1).mean(dim=-1) # (n_memory)
+                cross_attns.append(max_attn)
             
             # print(cross_attn.shape, num_obj_ptr_tokens, (cross_attn.shape[-1] - num_obj_ptr_tokens) / 4096)
             # output, self_attn, cross_attn = checkpoint(layer,
@@ -190,7 +193,7 @@ class MemoryAttention(nn.Module):
             # )
         
         if len(cross_attns) > 0:
-            cross_attns = torch.cat(cross_attns, dim=-1).mean(dim=-1).min()
+            cross_attns = torch.stack(cross_attns).mean(dim=0).min()
         else:
             cross_attns = None
         

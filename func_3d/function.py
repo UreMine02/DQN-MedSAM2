@@ -356,6 +356,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     
     ablation_data = {}
 
+    min_attns = []
     for packs in val_loader:
         whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
         whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -428,7 +429,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                         ablation=args.ablation,
                         device=GPUdevice
                     )
-            
+            min_attns.extend(train_state["output_dict"]["min_attn"])
+
             class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
             volume_masks = []
             volume_preds = []
@@ -504,6 +506,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["delta"] = train_state["output_dict"]["dice_drop"][frame_idx]
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["drop_frame"] = drop_frame
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["min_attn"] = train_state["output_dict"]["min_attn"][frame_idx]
 
         average_score(instance_score)
         update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
@@ -513,6 +516,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     average_score(total_score)
 
     # HYPOTHESIS TESTING
+    # print(torch.stack(min_attns).mean())
     if args.ablation:
         data = []
         for obj_id in ablation_data.keys():
@@ -521,14 +525,16 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 ablation_data[obj_id]["delta"],
                 # ablation_data[obj_id]["rank"],
                 ablation_data[obj_id]["dice"],
-                ablation_data[obj_id]["drop_frame"]
+                ablation_data[obj_id]["drop_frame"],
+                ablation_data[obj_id]["min_attn"]
             ))
         columns = [
             "id",
             "delta",
             # "rank",
             "dice",
-            "drop_frame"
+            "drop_frame",
+            "min_attn"
         ]
         
         df = pd.DataFrame(data=data, columns=columns)
