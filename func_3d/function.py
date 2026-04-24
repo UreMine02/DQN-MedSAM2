@@ -4,6 +4,7 @@
 import os
 import copy
 import time
+import random
 import numpy as np
 from tqdm import tqdm
 from tabulate import tabulate
@@ -70,9 +71,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     net.train()
 
     video_length = args.video_length
-    train_agent = not args.no_agent
-    agent_act = not args.no_agent # and epoch >= 0
-    generate_rl_samples = not args.no_agent
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
@@ -145,18 +143,35 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
 
-                sliding_window = [slice(i, i+args.video_length, None) for i in range(0, pack['image'].shape[0], args.video_length)]
-                
+                # local_size = len(sliding_window)
                 if args.distributed:
+                    if pack['image'].shape[0] >= args.video_length:
+                        rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                    else:
+                        rounded_length = pack['image'].shape[0]
+                        dist.all_reduce(torch.tensor(rounded_length), op=dist.ReduceOp.MIN)
+                        
+                    start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
+                    sliding_window = [
+                        slice(i, i+args.video_length) 
+                        for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                    ]
+                    
                     local_size = torch.tensor([len(sliding_window)], device=GPUdevice)
-                    local_size = dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
+                    dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
-                
+                else:
+                    sliding_window = [
+                        slice(i, i+args.video_length) 
+                        for i in range(0, pack['image'].shape[0], args.video_length)
+                    ]
+                    
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
                     slide_masks_tensor = F.interpolate(slide_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+                    
                     if not args.distributed:
                         train_state = net.train_init_state(
                             args=args,
@@ -173,9 +188,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             slide_imgs_tensor, slide_masks_tensor,
                             support_masks_tensor, train_state,
                             obj_id,
-                            train_agent=train_agent,
-                            agent_act=agent_act,
-                            generate_rl_samples=generate_rl_samples,
+                            train_agent=(not (args.no_agent or args.random_drop)),
+                            agent_act=(not (args.no_agent or args.random_drop)),
+                            generate_rl_samples=(not (args.no_agent or args.random_drop)),
+                            random_drop=args.random_drop,
                             start_trajectory=(slide_idx == 0),
                             end_trajectory=(slide_idx == len(sliding_window)-1),
                             device=GPUdevice
@@ -226,7 +242,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                             iou_pred = video_segments[frame_idx][obj_id]["iou"]
                             pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
-                            iou_gt = iou_score(pred_mask, mask, smoothing=1e-8)
+                            iou_gt = iou_score(pred_mask, mask)
                             dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                             class_loss["num_step"] += 1
                             # Update the loss of the class
@@ -235,21 +251,16 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                             dice_loss_per_class[obj_id]["num_step"] += 1
 
-                        accum_step = 1
-                        # Average loss of this class
-                        average_loss(class_loss)
-                        avg_loss = class_loss["total_loss"] / accum_step
-                        avg_loss.backward()
+                    accum_step = 1
+                    # Average loss of this class
+                    average_loss(class_loss)
+                    avg_loss = class_loss["total_loss"] / accum_step
+                    avg_loss.backward()
 
-                        for name, param in net.named_parameters():
-                            if param.grad is not None and param.grad.isnan().any():
-                                raise AssertionError(f"{name} grad is nan")
-
-
-                        if (batch_idx + 1) % accum_step == 0:
-                            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                            optimizer.step()
-                            optimizer.zero_grad()
+                    if (batch_idx + 1) % accum_step == 0:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                        optimizer.step()
+                        optimizer.zero_grad()
 
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)
@@ -266,6 +277,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     if agent is not None:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
+                        q_updates_per_step = (q_updates_per_step - 2 + 1) * epoch // args.ep + 2
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())

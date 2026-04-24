@@ -53,8 +53,8 @@ class MSD(Dataset):
 
         self.tr_transform = v2.Compose([
             v2.Resize(size=(self.image_size, self.image_size)),
-            # v2.RandomHorizontalFlip(0.5),
-            # v2.RandomAffine(degrees=25)#, translate=(0.1,0.1), scale=(0.9,1.1)),
+            v2.RandomHorizontalFlip(0.5),
+            v2.RandomAffine(degrees=25, translate=(0.15,0.15), scale=(0.8, 1.2)),
         ])
 
         self.ts_transform = v2.Compose([
@@ -120,6 +120,14 @@ class MSD(Dataset):
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
 
         orig_size = image_3d.shape[-2:]
+        
+        # if random.random() < 0.5:
+        #     image_3d = image_3d.flip(0)
+        #     data_seg_3d = data_seg_3d.flip(0)
+        
+        # if random.random() < 0.5:
+        #     support_image_3d = support_image_3d.flip(0)
+        #     support_data_seg_3d = support_data_seg_3d.flip(0)
 
         # image_3d = tv_tensors.Image(image_3d)
         # data_seg_3d = tv_tensors.Mask(data_seg_3d)
@@ -133,15 +141,6 @@ class MSD(Dataset):
 
         # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
-
-        # image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
-        # data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
-        # support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
-        # support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(1)
-        # orig_size = image_3d.shape[-2:]
-
-        # image_3d, data_seg_3d = self.resize(image_3d, data_seg_3d)
-        # support_image_3d, support_data_seg_3d = self.resize(support_image_3d, support_data_seg_3d)
 
         return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 

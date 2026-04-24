@@ -124,8 +124,7 @@ class PerceiverResampler(nn.Module):
         self.norm1 = nn.LayerNorm(hidden_dim)
         self.norm2 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
-            # ("norm", nn.LayerNorm(hidden_dim)),
-
+            ("norm", nn.LayerNorm(hidden_dim)),
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
             ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))

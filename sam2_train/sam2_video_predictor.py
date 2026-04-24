@@ -1214,6 +1214,7 @@ class SAM2VideoPredictor(SAM2Base):
         generate_rl_samples=False,
         start_trajectory=False,
         end_trajectory=False,
+        random_drop=False
     ):
         """Propagate the input points across frames to track in the entire video."""
         self.train_propagate_in_video_preflight(inference_state)
@@ -1241,7 +1242,7 @@ class SAM2VideoPredictor(SAM2Base):
             # batched forward on them via `_run_single_frame_inference` because the
             # number of clicks on each object might be different.
 
-            if agent_act or ablation or generate_rl_samples:
+            if agent_act or generate_rl_samples or random_drop or ablation:
                 storage_key = "await_outputs"
             else:
                 storage_key = "non_cond_frame_outputs"
@@ -1259,7 +1260,8 @@ class SAM2VideoPredictor(SAM2Base):
                 agent_act=agent_act,
                 train_agent=train_agent,
                 ablation=ablation,
-                generate_rl_samples=generate_rl_samples
+                generate_rl_samples=generate_rl_samples,
+                random_drop=random_drop
             )
             output_dict[storage_key][frame_idx] = current_out
             # Create slices of per-object outputs for subsequent interaction with each
@@ -1396,7 +1398,8 @@ class SAM2VideoPredictor(SAM2Base):
         agent_act=False,
         train_agent=False,
         ablation=False,
-        generate_rl_samples=False
+        generate_rl_samples=False,
+        random_drop=False
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -1479,12 +1482,14 @@ class SAM2VideoPredictor(SAM2Base):
             track_in_reverse=reverse,
             run_mem_encoder=run_mem_encoder,
             prev_sam_mask_logits=prev_sam_mask_logits,
-            agent_act=agent_act
+            agent_act=agent_act,
+            random_drop=random_drop,
+            memory_bank_size=inference_state["rl_config"]["memory_bank_size"]
         )
         # optionally offload the output to CPU memory to save GPU space
         maskmem_features = current_out["maskmem_features"]
         if maskmem_features is not None:
-            maskmem_features = maskmem_features.to(torch.bfloat16)
+            maskmem_features = maskmem_features.to(torch.float32)
             maskmem_features = maskmem_features.to(storage_device, non_blocking=True)
         pred_masks_gpu = current_out["pred_masks"]
         # potentially fill holes in the predicted masks
@@ -1538,7 +1543,7 @@ class SAM2VideoPredictor(SAM2Base):
 
         # optionally offload the output to CPU memory to save GPU space
         storage_device = inference_state["device"]
-        maskmem_features = maskmem_features.to(torch.bfloat16)
+        maskmem_features = maskmem_features.to(torch.float32)
         maskmem_features = maskmem_features.to(storage_device, non_blocking=True)
         # "maskmem_pos_enc" is the same across frames, so we only need to store one copy of it
         maskmem_pos_enc = self._get_maskmem_pos_enc(
@@ -1750,7 +1755,14 @@ class SAM2VideoPredictor(SAM2Base):
 
                         loss_diff = loss_before.detach().cpu() - loss_after.detach().cpu()
 
-                        reward += loss_diff
+                        if loss_diff > 0:
+                            one_hot_rw = 1
+                        elif loss_diff < 0:
+                            one_hot_rw = -1
+                        else:
+                            one_hot_rw = 0
+
+                        reward += one_hot_rw
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
@@ -1790,11 +1802,11 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["non_cond_frame_outputs"].pop(drop_frame)
             output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        if not train_agent:
-            print(f"[Q] frame {frame_idx-1} "
-                  f"action {action} "
-                  f"drop_frame {drop_frame} "
-                  f"bank_size {bank_size} ")
+        # if not train_agent:
+        #     print(f"[Q] frame {frame_idx-1} "
+        #           f"action {action} "
+        #           f"drop_frame {drop_frame} "
+        #           f"bank_size {bank_size} ")
 
     def agent_update_first_stage(
         self,
@@ -1852,7 +1864,7 @@ class SAM2VideoPredictor(SAM2Base):
         action = action_out["action"]
         # state.offload_to_cpu()
 
-        reward = 0
+        reward = 0.
         drop_frame = None
         storage_key = "non_cond_frame_outputs"
         
@@ -1861,11 +1873,13 @@ class SAM2VideoPredictor(SAM2Base):
         
         if action == 0:
             # Add
+            # reward = 0.001
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
             if "drop_frame" in output_dict.keys():
                 output_dict["drop_frame"][frame_idx] = -1
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
+            reward = 0.0
             drop_frame = frame_idx - 1
             if "drop_frame" in output_dict.keys():
                 output_dict["drop_frame"][frame_idx] = drop_frame
@@ -1877,14 +1891,14 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict[storage_key].pop(drop_frame)
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        if not train_agent:
-            print(
-                f"[Q] frame {frame_idx-1} "
-                f"action {action} "
-                f" drop_frame {drop_frame} "
-                f" bank_size {bank_size} "
-                f" penalty {reward} "
-            )
+        # if not train_agent:
+        #     print(
+        #         f"[Q] frame {frame_idx-1} "
+        #         f"action {action} "
+        #         f" drop_frame {drop_frame} "
+        #         f" bank_size {bank_size} "
+        #         f" penalty {reward} "
+        #     )
 
         if train_agent:
             replay_instance_info = {
@@ -2019,6 +2033,7 @@ class SAM2VideoPredictor(SAM2Base):
         train_state, obj_id,
         train_agent=False, agent_act=True, generate_rl_samples=False, start_trajectory=False, end_trajectory=False,
         ablation=False,
+        random_drop=False,
         device="cpu"
     ):
         for frame_idx in range(support_masks_tensor.shape[0]):
@@ -2037,7 +2052,8 @@ class SAM2VideoPredictor(SAM2Base):
             "generate_rl_samples": generate_rl_samples,
             "start_trajectory": start_trajectory,
             "end_trajectory": end_trajectory,
-            "ablation": ablation
+            "ablation": ablation,
+            "random_drop": random_drop
         }
         for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, **propagate_kwargs):
             video_segments[out_frame_idx] = {

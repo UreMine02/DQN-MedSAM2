@@ -40,7 +40,7 @@ declare -a ckpt=(
     # output/msd_task05+ppo+long_horizon+no_augment/2026-04-13-14-13-19/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpt[@]}
 do

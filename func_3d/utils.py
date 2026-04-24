@@ -286,8 +286,7 @@ def iou_score(pred, mask, smoothing=1e-6):
     interaction = torch.sum(pred * mask)
     denominator = torch.count_nonzero(pred + mask)
 
-    # NOTE: TRAINING WITH NEG
-    iou = (interaction+smoothing)/(denominator+smoothing)
+    iou = (interaction)/(denominator+smoothing)
     return iou
 
 def precision_score(pred, target, eps=1e-6):
@@ -504,6 +503,7 @@ class CombinedLoss(nn.Module):
         self.bce_loss = FocalLoss()
         
     def forward(self, inputs, targets, iou_pred, iou_gt, obj_pred):
+        # print("iou", iou_pred, iou_gt)
         obj_pred = obj_pred.view(1, -1)
         
         if (targets == 0).all():

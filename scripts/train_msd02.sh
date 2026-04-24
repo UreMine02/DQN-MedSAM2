@@ -29,10 +29,12 @@ python train_3d.py \
     -lr 2e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
-    -invalid_penalty -0.01 \
+    -invalid_penalty 0 \
     -num_support 5 \
     -memory_bank_size 6 \
     -wandb_enabled \
-    # -obj_ptr_gating \
+    -no_agent \
+    -random_drop
+    # - 

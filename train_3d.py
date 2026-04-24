@@ -7,15 +7,16 @@
 
 import os
 import time
-
-import cfg
-from func_3d import function
-from conf import settings
-from func_3d.utils import get_network, set_log_dir, create_logger
-from func_3d.dataset import get_dataloader
-from datetime import datetime
 import pytz
 import numpy as np
+from datetime import datetime
+from functools import partial
+
+import cfg
+from conf import settings
+from func_3d import function
+from func_3d.utils import get_network, set_log_dir, create_logger
+from func_3d.dataset import get_dataloader
 
 import torch
 import torch.distributed as dist
@@ -24,8 +25,6 @@ import torch.optim as torch_optim
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.optim.lr_scheduler import CosineAnnealingLR
-
-from timm import optim as timm_optim
 
 import wandb # NOTE: WANDB
 
@@ -43,7 +42,6 @@ def train(rank=0, world_size=0):
     if args.distributed:
         setup(rank, world_size)
         GPUdevice = torch.device('cuda', rank)
-        # torch.cuda.set_device(GPUdevice)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
         
@@ -104,7 +102,7 @@ def train(rank=0, world_size=0):
             print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -130,6 +128,12 @@ def train(rank=0, world_size=0):
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
+            
+        #     net.module.image_encoder.eval()
+        #     net.module.sam_prompt_encoder.eval()
+        # else:
+        #     net.image_encoder.eval()
+        #     net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
@@ -164,9 +168,6 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-
-        # if args.distributed:
-            # torch.distributed.barrier()
 
         net.eval()
         new_best = False
