@@ -133,14 +133,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dist.all_reduce(torch.tensor(rounded_length, device=GPUdevice), op=dist.ReduceOp.MIN)
                         
                     start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                    print(rank, start_slice, start_slice+rounded_length)
+                    
                     sliding_window = [
                         slice(i, i+args.video_length) 
                         for i in range(start_slice, start_slice+rounded_length, args.video_length)
                     ]
-                    print(rank, sliding_window)
                     local_size = torch.tensor(len(sliding_window), device=GPUdevice)
                     dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
+                    
+                    print(rank, sliding_window)
                 else:
                     sliding_window = [
                         slice(i, i+args.video_length) 
