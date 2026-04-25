@@ -10,15 +10,15 @@ from torch.utils.data import Subset
 
 def get_dataloader(args, rank=None, world_size=None):
     if args.dataset == 'combined': #nii
-        combined_train_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
-        combined_test_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
+        combined_train_dataset = Combined(args,  mode = 'Training')
+        combined_test_dataset = Combined(args,  mode = 'Test')
         
         if args.distributed:
             train_sampler = DistributedSampler(combined_train_dataset, num_replicas=world_size, rank=rank)
             test_sampler = DistributedSampler(combined_test_dataset, num_replicas=world_size, rank=rank)
 
-            nice_train_loader = DataLoader(combined_train_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(combined_test_dataset, batch_size=1, shuffle=False, num_workers=0, pin_memory=True, sampler=test_sampler)
+            nice_train_loader = DataLoader(combined_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
+            nice_test_loader = DataLoader(combined_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
         else:
             nice_train_loader = DataLoader(combined_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
             nice_test_loader = DataLoader(combined_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
