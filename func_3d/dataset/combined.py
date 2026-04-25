@@ -36,7 +36,7 @@ class Combined(Dataset):
 
         csv_root = "./data/"
         for csv_path in glob.glob(os.path.join(csv_root, "**", f"*{self.subset}.csv"), recursive=True):
-            df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+            df.append(pd.read_csv(os.path.join(csv_path), index_col=0))
 
         df = pd.concat(df)
         self.gt_path = np.asarray(df["gt_path"])
