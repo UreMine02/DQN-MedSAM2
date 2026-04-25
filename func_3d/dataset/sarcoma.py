@@ -3,6 +3,7 @@ import glob
 import random
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn.functional as F
@@ -29,28 +30,13 @@ class Sarcoma(Dataset):
         self.root = args.data_path
         self.subset = subset
         self.mode = subset
+        csv_root = "./data/Sarcoma"
+        suffix = "Tr" if subset == "train" else "Ts"
 
-        mass_dir = os.path.join(self.root, "16_NIFTI_Soft-tissue-Sarcoma-Mass/MRI")
-        edema_dir = os.path.join(self.root, "17_NIFTI_Soft-tissue-Sarcoma-Edema/MRI")
-        
-        self.train_split = [
-            "STS_001",  "STS_008",  "STS_015",  "STS_021",  "STS_028",  "STS_033",  "STS_039",  "STS_046",
-            "STS_003",  "STS_010",  "STS_016",  "STS_022",  "STS_029",  "STS_035",  "STS_040",  "STS_047",
-            "STS_004",  "STS_011",  "STS_017",  "STS_023",  "STS_030",  "STS_036",  "STS_041",  "STS_048",
-            "STS_006",  "STS_012",  "STS_018",  "STS_024",  "STS_031",  "STS_037",  "STS_042",  "STS_049",
-            "STS_007",  "STS_013",  "STS_019",  "STS_027",  "STS_032",  "STS_038",  "STS_043",  "STS_051",
-        ]
-
-        self.test_split = [
-            "STS_002",  "STS_009",  "STS_020",  "STS_026",  "STS_044",  "STS_050",
-            "STS_005",  "STS_014",  "STS_025",  "STS_034",  "STS_045",
-        ]
-
-        self.train_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.train_split]
-        self.train_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.train_split]
-
-        self.test_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.test_split]
-        self.test_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.test_split]
+        df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
+        self.gt_path = np.asarray(df["gt_path"])
+        self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
         
         self.image_size = args.image_size
         self.max_slices = args.video_length
