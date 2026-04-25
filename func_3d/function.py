@@ -152,7 +152,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     ]
                     
                 for slide_idx, slide in enumerate(sliding_window):
-                    slide_imgs_tensor = imgs_tensor[slide]
+                    slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
                     slide_masks_tensor = F.interpolate(slide_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
