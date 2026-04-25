@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+random_drop+long_horizon+flip_augment
+EXP=msd_task02+icl+grpo+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -35,6 +35,4 @@ python train_3d.py \
     -num_support 5 \
     -memory_bank_size 6 \
     -wandb_enabled \
-    -no_agent \
-    -random_drop
     # - 

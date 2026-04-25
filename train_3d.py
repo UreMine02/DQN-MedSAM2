@@ -69,17 +69,7 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
 
-    # if not args.no_agent:
     for name, param in net.named_parameters():
-        # param.requires_grad_(False)
-        
-        # if "memory_attention" in name:
-        #     param.requires_grad_(True)
-        # elif "maskmem_tpos_enc" in name:
-        #     param.requires_grad_(True)
-        # else:
-        #     param.requires_grad_(False)
-        
         if "image_encoder" in name:
             param.requires_grad_(False)
         elif "sam_prompt_encoder" in name:
@@ -136,12 +126,11 @@ def train(rank=0, world_size=0):
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
-            
-        #     net.module.image_encoder.eval()
-        #     net.module.sam_prompt_encoder.eval()
-        # else:
-        #     net.image_encoder.eval()
-        #     net.sam_prompt_encoder.eval()
+            net.module.image_encoder.eval()
+            net.module.sam_prompt_encoder.eval()
+        else:
+            net.image_encoder.eval()
+            net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
