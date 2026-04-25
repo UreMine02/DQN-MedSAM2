@@ -126,25 +126,25 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 # local_size = len(sliding_window)
                 if args.distributed:
-                    if pack['image'].shape[0] >= args.video_length:
-                        rounded_length = (pack['image'].shape[0] // args.video_length) * args.video_length
+                    if imgs_tensor.shape[0] >= args.video_length:
+                        rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
                     else:
-                        rounded_length = pack['image'].shape[0]
+                        rounded_length = imgs_tensor.shape[0]
                         dist.all_reduce(torch.tensor(rounded_length, device=GPUdevice), op=dist.ReduceOp.MIN)
                         
-                    start_slice = random.randint(0, pack['image'].shape[0] - rounded_length)
+                    start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
                     sliding_window = [
                         slice(i, i+args.video_length) 
                         for i in range(start_slice, start_slice+rounded_length, args.video_length)
                     ]
-                    
+                    print(rank, sliding_window)
                     local_size = torch.tensor(len(sliding_window), device=GPUdevice)
                     dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     sliding_window = sliding_window[:local_size]
                 else:
                     sliding_window = [
                         slice(i, i+args.video_length) 
-                        for i in range(0, pack['image'].shape[0], args.video_length)
+                        for i in range(0, imgs_tensor.shape[0], args.video_length)
                     ]
                     
                 for slide_idx, slide in enumerate(sliding_window):
