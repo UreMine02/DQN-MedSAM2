@@ -128,8 +128,8 @@ def train(rank=0, world_size=0):
         
     with tqdm(total=len(nice_train_loader), unit='img', position=0, miniters=10) as pbar:
         for batch_idx, packs in enumerate(nice_train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
-            whole_imgs_tensor = packs["image"].squeeze(0)
-            whole_masks_tensor = packs["label"].squeeze(0)
+            whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+            whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             task = packs["task"][0]
@@ -151,6 +151,8 @@ def train(rank=0, world_size=0):
                     current_vision_pos_embeds,
                     feat_sizes,
                 ) = net._get_image_feature(train_state, frame_idx, 1)
+                
+            pbar.update()
 
 
 def main():

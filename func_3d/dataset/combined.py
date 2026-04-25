@@ -156,13 +156,14 @@ class Combined(Dataset):
 
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
+        clone_seg_3d = data_seg_3d.copy()
         data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
 
         pos_slices = np.sum(data_seg_3d, axis=(0, 1)) > 0
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]
         
-        assert data_seg_3d.size > 0, image_path
+        assert data_seg_3d.size > 0, f"{image_path}, {np.unique(clone_seg_3d)}"
 
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
