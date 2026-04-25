@@ -10,8 +10,8 @@ from torch.utils.data import Subset
 
 def get_dataloader(args, rank=None, world_size=None):
     if args.dataset == 'combined': #nii
-        combined_train_dataset = Combined(args,  mode = 'Training')
-        combined_test_dataset = Combined(args,  mode = 'Test')
+        combined_train_dataset = Combined(args, mode='train')
+        combined_test_dataset = Combined(args, mode='test')
         
         if args.distributed:
             train_sampler = DistributedSampler(combined_train_dataset, num_replicas=world_size, rank=rank)
