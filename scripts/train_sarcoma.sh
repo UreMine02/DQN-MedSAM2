@@ -24,7 +24,7 @@ python train_3d.py \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
-    -data_path /data/datasets/nii/Sarcoma \
+    -data_path /data/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \

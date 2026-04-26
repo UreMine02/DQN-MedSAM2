@@ -102,7 +102,7 @@ def train(rank=0, world_size=0):
             print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
-    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
+    optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
@@ -112,15 +112,16 @@ def train(rank=0, world_size=0):
         torch.backends.cudnn.allow_tf32 = True
 
     nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
-
-    '''checkpoint path and tensorboard'''
-    #create checkpoint folder to save model
-    root_path = args.checkpoint_path
-    current_time = datetime.now(pytz.timezone("Australia/Adelaide")).strftime("%Y-%m-%d-%H-%M-%S")
-    checkpoint_path = os.path.join(root_path, current_time)
-    if not os.path.exists(checkpoint_path) and args.save_ckpt and rank == 0:
-        os.makedirs(checkpoint_path)
-        print(f"checkpoint saved in {checkpoint_path}")
+    
+    for epoch in range(args.ep):
+        net.train()
+        if args.distributed:
+            nice_train_loader.sampler.set_epoch(epoch)
+            net.module.image_encoder.eval()
+            net.module.sam_prompt_encoder.eval()
+        else:
+            net.image_encoder.eval()
+            net.sam_prompt_encoder.eval()
 
     net.train()
     net.image_encoder.eval()
@@ -173,3 +174,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+    
