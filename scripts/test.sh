@@ -22,13 +22,14 @@ declare -a ckpt=(
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
     # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
     # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
-    output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
+    # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
 
     # Sarcoma
     # output/sarcoma+icl+ppo+long_horizon+no_augment/2026-04-10-19-46-46/best.pth
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Colon
+    output/msd_task10+icl+grpo+long_horizon+no_augment/2026-04-25-13-09-26/best.pth
     # output/msd_task10+icl+no_agent+long_horizon+no_augment/2026-04-12-15-52-38/best.pth
     # output/msd_task10+icl+ppo+long_horizon+no_augment/2026-04-17-18-39-30/best.pth
 
@@ -51,8 +52,8 @@ do
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
             -dataset msd \
-            -task "Task02" \
-            -data_path /data/datasets/nii/MSD \
+            -task "Task10" \
+            -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
             -ablation \

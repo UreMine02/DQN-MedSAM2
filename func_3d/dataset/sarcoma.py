@@ -3,6 +3,7 @@ import glob
 import random
 import nibabel as nib
 import numpy as np
+import pandas as pd
 
 import torch
 import torch.nn.functional as F
@@ -29,28 +30,13 @@ class Sarcoma(Dataset):
         self.root = args.data_path
         self.subset = subset
         self.mode = subset
+        csv_root = "./data/Sarcoma"
+        suffix = "Tr" if subset == "train" else "Ts"
 
-        mass_dir = os.path.join(self.root, "16_NIFTI_Soft-tissue-Sarcoma-Mass/MRI")
-        edema_dir = os.path.join(self.root, "17_NIFTI_Soft-tissue-Sarcoma-Edema/MRI")
-        
-        self.train_split = [
-            "STS_001",  "STS_008",  "STS_015",  "STS_021",  "STS_028",  "STS_033",  "STS_039",  "STS_046",
-            "STS_003",  "STS_010",  "STS_016",  "STS_022",  "STS_029",  "STS_035",  "STS_040",  "STS_047",
-            "STS_004",  "STS_011",  "STS_017",  "STS_023",  "STS_030",  "STS_036",  "STS_041",  "STS_048",
-            "STS_006",  "STS_012",  "STS_018",  "STS_024",  "STS_031",  "STS_037",  "STS_042",  "STS_049",
-            "STS_007",  "STS_013",  "STS_019",  "STS_027",  "STS_032",  "STS_038",  "STS_043",  "STS_051",
-        ]
-
-        self.test_split = [
-            "STS_002",  "STS_009",  "STS_020",  "STS_026",  "STS_044",  "STS_050",
-            "STS_005",  "STS_014",  "STS_025",  "STS_034",  "STS_045",
-        ]
-
-        self.train_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.train_split]
-        self.train_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.train_split]
-
-        self.test_mass_list = [os.path.join(mass_dir, case) for case in os.listdir(mass_dir) if case in self.test_split]
-        self.test_edema_list = [os.path.join(edema_dir, case) for case in os.listdir(edema_dir) if case in self.test_split]
+        df = pd.read_csv(os.path.join(csv_root, f"labels{suffix}.csv"))
+        self.gt_path = np.asarray(df["gt_path"])
+        self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
         
         self.image_size = args.image_size
         self.max_slices = args.video_length
@@ -68,143 +54,134 @@ class Sarcoma(Dataset):
         ])
         
     def __len__(self):
-        if self.subset == "train":
-            return len(self.train_mass_list + self.train_edema_list)
-        return len(self.test_mass_list + self.test_edema_list)
+        return len(self.gt_path)
     
     def __getitem__(self, index):
-        mass_list = self.train_mass_list if self.subset == "train" else self.test_mass_list
-        edema_list = self.train_edema_list if self.subset == "train" else self.test_edema_list
+        obj_id = self.obj_id[index]
+        support_list = (self.obj_id == self.obj_id[index]) & \
+                        (self.n_pos >= self.num_support)
+        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
+        support_index = np.random.choice(support_list, size=1)[0]
 
-        if index < len(mass_list):
-            path_list = mass_list
-            support_list = self.train_mass_list
-            name = "Mass"
-        else:
-            path_list = edema_list
-            support_list = self.train_edema_list
-            index = index - len(mass_list)
-            name = "Edema"
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        if self.subset == "train":
-            support_index = random.choice([i for i in range(len(support_list)) if i != index])
-        else:
-            support_index = random.choice([i for i in range(len(support_list))])
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
 
-        image_path = os.path.join(path_list[index], "img", "image.nii.gz")
-        label_path = os.path.join(path_list[index], "label", f"mask_GTV_{name}.nii.gz")
-
-        support_image_path = os.path.join(support_list[support_index], "img", "image.nii.gz")
-        support_label_path = os.path.join(support_list[support_index], "label", f"mask_GTV_{name}.nii.gz")
-        
         (
             image_3d,
             data_seg_3d,
             support_image_3d,
-            support_data_seg_3d
-        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, name)
-        
-        output_dict ={
+            support_data_seg_3d,
+            orig_size
+        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
+
+        output_dict = {
             "image": image_3d, "label": data_seg_3d,
             "support_image": support_image_3d, "support_label": support_data_seg_3d,
-            "task": name, "name": image_path.split("/")[-3], "support_name": support_image_path.split("/")[-3]
+            "task": "Sarcoma", "obj_id": obj_id,
+            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path),
+            "orig_size": tuple(orig_size)
         }
-        
+
         return output_dict
 
-    def load_data(self, image_path, label_path, support_image_path, support_label_path, name):
+    def load_data(self, image_path, label_path, support_image_path, support_label_path, obj_id):
         image_3d, data_seg_3d = self.load_image_label(
             image_path,
             label_path,
+            obj_id = obj_id,
             max_slices=-1,
             slice_selection='contiguous',
             is_support=False,
-            name=name
         )
         support_image_3d, support_data_seg_3d = self.load_image_label(
             support_image_path,
             support_label_path,
+            obj_id = obj_id,
             max_slices=self.num_support,
             slice_selection='random' if self.mode == 'train' else 'evenly',
             is_support=True,
-            name=name
         )
-        
+
         image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
         support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
+
+        orig_size = image_3d.shape[-2:]
         
+        # if random.random() < 0.5:
+        #     image_3d = image_3d.flip(0)
+        #     data_seg_3d = data_seg_3d.flip(0)
         
-        if random.random() < 0.5:
-            image_3d = image_3d.flip(0)
-            data_seg_3d = data_seg_3d.flip(0)
-        
-        if random.random() < 0.5:
-            support_image_3d = support_image_3d.flip(0)
-            support_data_seg_3d = support_data_seg_3d.flip(0)
-            
+        # if random.random() < 0.5:
+        #     support_image_3d = support_image_3d.flip(0)
+        #     support_data_seg_3d = support_data_seg_3d.flip(0)
+
         # image_3d = tv_tensors.Image(image_3d)
         # data_seg_3d = tv_tensors.Mask(data_seg_3d)
         # support_image_3d = tv_tensors.Image(support_image_3d)
         # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
-        
+
         # if self.mode == "train":
         #     transform = self.tr_transform
         # else:
         #     transform = self.ts_transform
-            
+
         # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
         # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
 
-        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
 
-    def load_image_label(self, image_path, label_path, max_slices=16, slice_selection='contiguous', is_support=False, name=""):
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
         image_3d = nib.load(image_path)
         data_seg_3d = nib.load(label_path)
         image_3d = image_3d.dataobj
         data_seg_3d = data_seg_3d.dataobj
-        
+
         if image_3d.ndim == 4:
             if image_3d.shape[-1] == 4:
                 image_3d = image_3d[..., 2]
             elif image_3d.shape[-1] == 2:
                 image_3d = image_3d[..., 0]
-                
+
         image_3d = np.asarray(image_3d, dtype=np.float32)
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
-        
+        data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
+
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]
-        
+
         if image_3d.shape[-1] > max_slices and max_slices > 0:
             if slice_selection == 'contiguous':
-                start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-                image_3d = image_3d[..., start_slice:start_slice+max_slices]
-                data_seg_3d = data_seg_3d[..., start_slice:start_slice+max_slices]
+                choices = list(range(-(max_slices - 2),0)) + list(range(image_3d.shape[-1] - 1))
+                start = np.random.choice(choices)
+                end = start + max_slices
+                start = max(0, start)
+                image_3d = image_3d[..., start:end]
+                data_seg_3d = data_seg_3d[..., start:end]
             elif slice_selection == 'random':
                 n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             elif slice_selection == 'evenly':
-                s = image_3d.shape[-1] // (max_slices + 1)
                 slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
             else:
-                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")                 
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
         image_3d = scaling(image_3d, scale=1)
-        data_seg_3d[data_seg_3d == 255] = 1 if name == "Mass" else 2
-        
         return image_3d, data_seg_3d
-    
+
     def resize(self, image_3d, data_seg_3d):
         image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
         data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
-        
+
         return image_3d, data_seg_3d

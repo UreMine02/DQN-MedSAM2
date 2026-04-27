@@ -14,12 +14,9 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task06+grpo+icl
-# export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task06+grpo+long_horizon+no_augment
+export CUDA_VISIBLE_DEVICES=1
 
-EXP=msd_task06+ppo+long_horizon+no_augment
-
-sleep 2h;
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
@@ -27,11 +24,13 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task06 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
-    -lr 5e-5 \
+    -data_path /data/datasets/nii/ \
+    -lr 1e-4 \
     -val_freq 1 \
-    -ep 500 \
+    -ep 100 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3
+    -num_support 5 \
+    -memory_bank_size 6 \
+    -wandb_enabled

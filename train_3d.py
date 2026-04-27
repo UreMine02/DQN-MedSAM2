@@ -128,7 +128,6 @@ def train(rank=0, world_size=0):
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
-            
         #     net.module.image_encoder.eval()
         #     net.module.sam_prompt_encoder.eval()
         # else:

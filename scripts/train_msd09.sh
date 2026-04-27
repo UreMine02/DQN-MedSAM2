@@ -13,18 +13,18 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+icl+ppo+long_horizon+no_augment
+EXP=msd_task09+icl+grpo+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/ppo_po_agent.yaml \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task09 \
-    -data_path /data/datasets/nii/MSD \
+    -data_path /data/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
@@ -32,4 +32,5 @@ python train_3d.py \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
+    -memory_bank_size 6 \
     -wandb_enabled

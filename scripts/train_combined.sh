@@ -4,39 +4,32 @@
 #SBATCH -n 32 # num cpus
 #SBATCH --gres=gpu:4 # num gpus
 #SBATCH --mem=200GB # ram
-#SBATCH --time=12:00:00 # time
-#SBATCH -J msd03 # job name
+#SBATCH --time=2-00:00:00 # time
+#SBATCH -J btcv # job name
 #SBATCH -A strategic
-#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd03-%j.out"
+#SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/btcv-%j.out"
 
 # conda activate rlsam2
 # cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+icl+grpo+long_horizon+no_augment
+EXP=combined+grpo+icl
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_config sam2_hiera_t \
     -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
     -rl_config rl_modules/config/grpo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
-    -dataset msd \
-    -task "Task03" \
-    -data_path /data/rlsam2/datasets/nii/MSD \
+    -dataset combined \
+    -data_path /data/rlsam2/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
     -memory_bank_size 6 \
     -distributed \
     -wandb_enabled \
-    -gating_dimension "no" \
-    -gating_softness "soft" \
-    -auxiliary_loss "no" \
-    -no_agent
-    

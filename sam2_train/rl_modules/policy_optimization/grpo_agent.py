@@ -195,6 +195,7 @@ class GRPOAgent(BasePOAgent):
 
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
+        print("Update agent")
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
 
@@ -245,7 +246,8 @@ class GRPOAgent(BasePOAgent):
 
             total_policy_loss += policy_loss.detach()
             total_policy_gradnorm += gradnorm
-            
+        
+        # Clear buffer after update for on-policy training
         self.replay_buffer.clear()
 
         return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
