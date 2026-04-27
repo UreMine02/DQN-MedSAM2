@@ -113,51 +113,54 @@ def train(rank=0, world_size=0):
 
     nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
     
-    net.train()
-    net.image_encoder.eval()
-    net.sam_prompt_encoder.eval()
-        
-    with tqdm(total=len(nice_train_loader), unit='img', position=0, miniters=10) as pbar:
-        for batch_idx, packs in enumerate(nice_train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
-            whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
-            whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
-            whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
-            whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
-            task = packs["task"][0]
-            
-            imgs_tensor = F.interpolate(whole_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
-            masks_tensor = F.interpolate(whole_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
-            
-            support_imgs_tensor = F.interpolate(whole_support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
-            support_masks_tensor = F.interpolate(whole_support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
-            
-            train_state = net.train_init_state(
-                args=args,
-                imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
-            )
-            
-            print(imgs_tensor.shape, masks_tensor.shape, support_imgs_tensor.shape, support_masks_tensor.shape)
-            
-            for frame_idx in range(support_masks_tensor.shape[0]):
-                mask = support_masks_tensor[frame_idx]
-                _, _, _ = net.train_add_new_mask(
-                    inference_state=train_state,
-                    frame_idx=frame_idx,
-                    obj_id=packs["obj_id"][0],
-                    mask=mask.to(device=GPUdevice),
+    
+    for epoch in range(100):
+        net.train()
+        net.image_encoder.eval()
+        net.sam_prompt_encoder.eval()
+        with tqdm(total=len(nice_train_loader), unit='img', position=0, miniters=10) as pbar:
+            for batch_idx, packs in enumerate(nice_train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
+                whole_imgs_tensor = packs["image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                whole_masks_tensor = packs["label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                task = packs["task"][0]
+                
+                imgs_tensor = F.interpolate(whole_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+                masks_tensor = F.interpolate(whole_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+                
+                support_imgs_tensor = F.interpolate(whole_support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+                support_masks_tensor = F.interpolate(whole_support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+                
+                train_state = net.train_init_state(
+                    args=args,
+                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
                 )
                 
-            train_state["support_set_stage"] = False
-            for frame_idx in range(imgs_tensor.shape[0]):
-                (
-                    _,
-                    _,
-                    current_vision_feats,
-                    current_vision_pos_embeds,
-                    feat_sizes,
-                ) = net._get_image_feature(train_state, frame_idx, 1)
+                # print(imgs_tensor.shape, masks_tensor.shape, support_imgs_tensor.shape, support_masks_tensor.shape)
                 
-            pbar.update()
+                for frame_idx in range(support_masks_tensor.shape[0]):
+                    mask = support_masks_tensor[frame_idx]
+                    _, _, _ = net.train_add_new_mask(
+                        inference_state=train_state,
+                        frame_idx=frame_idx,
+                        obj_id=packs["obj_id"][0],
+                        mask=mask.to(device=GPUdevice),
+                    )
+                    
+                train_state["support_set_stage"] = False
+                for frame_idx in range(imgs_tensor.shape[0]):
+                    (
+                        _,
+                        _,
+                        current_vision_feats,
+                        current_vision_pos_embeds,
+                        feat_sizes,
+                    ) = net._get_image_feature(train_state, frame_idx, 1)
+                    
+                pbar.update()   
+                
+        net.eval()
 
 
 def main():
