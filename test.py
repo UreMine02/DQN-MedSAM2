@@ -113,16 +113,6 @@ def train(rank=0, world_size=0):
 
     nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
     
-    for epoch in range(args.ep):
-        net.train()
-        if args.distributed:
-            nice_train_loader.sampler.set_epoch(epoch)
-            net.module.image_encoder.eval()
-            net.module.sam_prompt_encoder.eval()
-        else:
-            net.image_encoder.eval()
-            net.sam_prompt_encoder.eval()
-
     net.train()
     net.image_encoder.eval()
     net.sam_prompt_encoder.eval()
@@ -138,12 +128,26 @@ def train(rank=0, world_size=0):
             imgs_tensor = F.interpolate(whole_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
             masks_tensor = F.interpolate(whole_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
             
+            support_imgs_tensor = F.interpolate(whole_support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+            support_masks_tensor = F.interpolate(whole_support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
             
             train_state = net.train_init_state(
                 args=args,
-                imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=imgs_tensor
+                imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
             )
             
+            print(imgs_tensor.shape, masks_tensor.shape, support_imgs_tensor.shape, support_masks_tensor.shape)
+            
+            for frame_idx in range(support_masks_tensor.shape[0]):
+                mask = support_masks_tensor[frame_idx]
+                _, _, _ = net.train_add_new_mask(
+                    inference_state=train_state,
+                    frame_idx=frame_idx,
+                    obj_id=packs["obj_id"][0],
+                    mask=mask.to(device=GPUdevice),
+                )
+                
+            train_state["support_set_stage"] = False
             for frame_idx in range(imgs_tensor.shape[0]):
                 (
                     _,

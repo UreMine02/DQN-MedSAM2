@@ -214,11 +214,13 @@ class SAM2VideoPredictor(SAM2Base):
         if video_height is None or video_width is None:
             video_height = self.image_size
             video_width = self.image_size
+            
         images = load_video_frames_from_data(
             imgs_tensor=imgs_tensor,
             offload_video_to_cpu=offload_video_to_cpu,
             async_loading_frames=async_loading_frames,
         )
+        
         support_images = load_video_frames_from_data(
             imgs_tensor=support_imgs_tensor,
             offload_video_to_cpu=offload_video_to_cpu,
@@ -291,6 +293,7 @@ class SAM2VideoPredictor(SAM2Base):
             "invalid_penalty": args.invalid_penalty,
             "memory_bank_size": args.memory_bank_size
         }
+        
         return inference_state
 
     def _obj_id_to_idx(self, inference_state, obj_id):
@@ -1315,6 +1318,7 @@ class SAM2VideoPredictor(SAM2Base):
             image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
         else:
             image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+            
         backbone_out = self.forward_image(image) # dict_keys(['vision_features', 'vision_pos_enc', 'backbone_fpn'])
         # Cache the most recent frame's feature (for repeated interactions with
         # a frame; we can use an LRU cache for more frames in the future).

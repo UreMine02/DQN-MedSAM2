@@ -49,8 +49,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
 
-    net.train()
-
     video_length = args.video_length
     dice_loss_per_class = {}
 
