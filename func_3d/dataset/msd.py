@@ -118,7 +118,7 @@ class MSD(Dataset):
         data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
         support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
         support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
-
+        
         orig_size = image_3d.shape[-2:]
         
         # if random.random() < 0.5:
