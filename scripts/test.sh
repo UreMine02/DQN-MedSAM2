@@ -21,23 +21,23 @@ declare -a ckpt=(
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Heart
-    # output/msd_task02+icl+ppo+skip_penalty+long_horizon+no_augment/2026-04-08-08-07-00/best.pth
-    # output/msd_task02+icl+ppo+no_agent+long_horizon+no_augment/2026-04-10-14-46-14/best.pth
     # output/msd_task02+no_agent+icl+no_augment/2026-04-03-19-32-08/best.pth
-    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-17-16-43-56/best.pth
-    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-04-16-10-46-24/best.pth
     # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
     
+    # MSD Hippo
+    # output/msd_task04+grpo+icl+long_horizon+no_augment/2026-04-27-11-50-03/epoch_24_dice0.7822.pth
+
     # MSD Prostate
     # output/msd_task05+grpo+long_horizon+no_augment/2026-04-26-11-35-38/best.pth
     # output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/best.pth
     # output/msd_task05+ppo+long_horizon+no_augment/2026-04-13-14-13-19/best.pth
 
     # MSD Lung
-    output/msd_task06+no_agent+icl/2026-03-03-20-51-01/best.pth
+    # output/msd_task06+no_agent+icl/2026-03-03-20-51-01/best.pth
 
     # MSD Pancreas
     # output/output/msd_task07+no_agent+icl/2026-03-03-16-50-01/best.pth
+    output/msd_task07+grpo+icl+long_horizon+no_augment/2026-04-26-17-18-17/epoch_21_dice0.5748.pth
 
     # MSD Hepatic
     # output/output/msd_task08+no_agent+icl/2026-03-03-17-16-27/best.pth
