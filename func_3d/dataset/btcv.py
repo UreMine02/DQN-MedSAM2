@@ -12,11 +12,10 @@ from torchvision.transforms.functional import normalize
 from torchvision.transforms import v2
 from torchvision import tv_tensors
 
-
-def scaling(image ,scale=1):
+def scaling(image, scale=1, eps=1e-6):
     image_min = image.min()
     image_max = image.max()
-    image = ((image - image_min)/(image_max-image_min))*scale
+    image = (image - image_min)/(image_max-image_min+eps) * scale
     return image
 
 def remove_negative_samples(image_tensor, mask_tensor):
