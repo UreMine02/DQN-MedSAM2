@@ -175,8 +175,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            # action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
             return {
                 "main_action": valid_actions[action_idx].item(),
             }

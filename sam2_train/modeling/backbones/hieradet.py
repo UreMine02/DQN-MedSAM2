@@ -277,9 +277,14 @@ class Hiera(nn.Module):
         return pos_embed
 
     def forward(self, x: torch.Tensor) -> List[torch.Tensor]:
-        # with torch.autocast("cuda", enabled=False):
+        assert not x.isnan().any()
+        
+        for name, param in self.patch_embed.named_parameters():
+            if param.isnan().any():
+                raise ValueError(f"{name} NaN weight")
+        
         x = self.patch_embed(x) # torch.Size([1, 256, 256, 96])
-        # assert not x.isnan().any()
+        assert not x.isnan().any()
         
         # x: (B, H, W, C)
 
