@@ -1726,7 +1726,7 @@ class SAM2VideoPredictor(SAM2Base):
             elif action == 1:
                 # Skip (equivalent to adding then drop the same frame)
                 drop_frame = frame_idx - 1
-                reward = -1
+                reward = -0.1
             else:
                 # Add the new frame and skip a specific frame
                 drop_frame = action_frame_map[action]
