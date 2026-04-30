@@ -21,8 +21,9 @@ declare -a ckpts=(
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Heart
-    output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
-    output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
+    # output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
+    # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
+    output/msd_task02+icl+grpo+long_horizon+no_augment/2026-04-30-18-07-03/best.pth
     
     # MSD Hippocampus
     # output/msd_task04+grpo+icl+long_horizon+no_augment/2026-04-27-11-50-03/epoch_24_dice0.7822.pth
@@ -55,16 +56,13 @@ declare -a ckpts=(
 
 declare -a datasets=(
     msd
-    msd
 )
 
 declare -a tasks=(
     Task02
-    Task02
 )
 
 declare -a no_agents=(
-    no_agent
     agent
 )
 
