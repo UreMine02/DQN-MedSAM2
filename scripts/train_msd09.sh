@@ -16,6 +16,7 @@
 EXP=msd_task09+icl+grpo+long_horizon+no_augment
 export CUDA_VISIBLE_DEVICES=1
 
+sleep 3h;
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -28,7 +29,7 @@ python train_3d.py \
     -lr 1e-4 \
     -val_freq 1 \
     -ep 100 \
-    -q_updates_per_step 5 \
+    -q_updates_per_step 2 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
