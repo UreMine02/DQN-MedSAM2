@@ -16,6 +16,7 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
+    output/btcv+icl+grpo+long_horizon+no_augment/2026-05-01-15-28-59/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -27,8 +28,8 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset msd \
-            -task "Task04" \
+            -dataset btcv \
+            -task "" \
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
