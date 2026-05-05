@@ -212,8 +212,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         iou_gt = iou_score(pred_mask, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         
+                        print(rank, type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss))
                         # Update the loss of the class
                         valid = 1 if processed_frame < local_length else 0
+                        valid = torch.tensor(valid, device=GPUdevice)
                         print("valid", valid)
                         focal_loss = focal_loss * valid
                         dice_loss = dice_loss * valid
