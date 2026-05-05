@@ -241,6 +241,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         mae_loss = mae_loss * valid
                         bce_loss = bce_loss * valid
                         aux_loss = aux_loss * valid
+                        print(type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss), type(aux_loss))
                         class_loss["num_step"] += valid
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
