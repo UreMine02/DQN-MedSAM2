@@ -153,7 +153,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         for i in range(0, imgs_tensor.shape[0], args.video_length)
                     ]
                 
-                # print(rank, sliding_window)
+                print(rank, imgs_tensor.shape, sliding_window)
                 processed_frame = 0
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -235,16 +235,14 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         
                         # Update the loss of the class
-                        valid = torch.tensor(1, device=GPUdevice) if processed_frame < local_length else torch.tensor(0, device=GPUdevice)
+                        valid = 1 if processed_frame < local_length else 0
                         focal_loss = focal_loss * valid
                         dice_loss = dice_loss * valid
                         mae_loss = mae_loss * valid
                         bce_loss = bce_loss * valid
                         aux_loss = aux_loss * valid
-                        print(type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss), type(aux_loss))
                         class_loss["num_step"] += valid
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
-                        print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]), type(class_loss["aux_loss"]))
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                         dice_loss_per_class[obj_id]["num_step"] += valid
                         
@@ -253,7 +251,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     accum_step = 1
                     # Average loss of this class
                     average_loss(class_loss)
-                    print(type(class_loss["total_loss"]))
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
 
