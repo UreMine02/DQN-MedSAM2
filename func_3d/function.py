@@ -195,7 +195,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         "aux_loss": 0,
                         "num_step": 0
                     }
-
+                    print(rank, len(video_segments))
                     for frame_idx in video_segments.keys():
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
