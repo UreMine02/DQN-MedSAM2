@@ -125,30 +125,25 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 # local_size = len(sliding_window)
                 if args.distributed:
                     local_length = imgs_tensor.shape[0]
-                    max_length = imgs_tensor.shape[0]
-                    dist.all_reduce(torch.tensor(max_length, device=GPUdevice), op=dist.ReduceOp.MAX)
+                    max_length = torch.tensor(max_length, device=GPUdevice)
+                    dist.all_reduce(max_length, op=dist.ReduceOp.MAX)
                     
                     imgs_padding = torch.zeros(max_length - local_length, *imgs_tensor.shape[1:])
                     imgs_tensor = torch.cat([imgs_tensor, imgs_padding], dim=0)
                     masks_padding = torch.zeros(max_length - local_length, *masks_tensor.shape[1:])
                     masks_tensor = torch.cat([masks_tensor, masks_padding], dim=0)
                     
+                    if max_length >= args.video_length:
+                        rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
+                    else:
+                        rounded_length = max_length
+                        
+                    start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                    
                     sliding_window = [
                         slice(i, i+args.video_length) 
-                        for i in range(0, imgs_tensor.shape[0], args.video_length)
+                        for i in range(start_slice, start_slice+rounded_length, args.video_length)
                     ]
-                    
-                    # if max_length >= args.video_length:
-                    #     rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
-                    # else:
-                    #     rounded_length = max_length
-                        
-                    # start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
-                    
-                    # sliding_window = [
-                    #     slice(i, i+args.video_length) 
-                    #     for i in range(start_slice, start_slice+rounded_length, args.video_length)
-                    # ]
                     # local_size = torch.tensor(len(sliding_window), device=GPUdevice)
                     # dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     # sliding_window = sliding_window[:local_size]
@@ -157,7 +152,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         slice(i, i+args.video_length) 
                         for i in range(0, imgs_tensor.shape[0], args.video_length)
                     ]
-                    
+                
+                # print(rank, sliding_window)
+                processed_frame = 0
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
                     slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -236,17 +233,21 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
                         iou_gt = iou_score(pred_mask, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
-                        class_loss["num_step"] += 1
+                        
                         # Update the loss of the class
-                        focal_loss = focal_loss * (1 if frame_idx < local_length else 0)
-                        dice_loss = dice_loss * (1 if frame_idx < local_length else 0)
-                        mae_loss = mae_loss * (1 if frame_idx < local_length else 0)
-                        bce_loss = bce_loss * (1 if frame_idx < local_length else 0)
-                        aux_loss = aux_loss * (1 if frame_idx < local_length else 0)
+                        valid = 1 if processed_frame < local_length else 0
+                        focal_loss = focal_loss * valid
+                        dice_loss = dice_loss * valid
+                        mae_loss = mae_loss * valid
+                        bce_loss = bce_loss * valid
+                        aux_loss = aux_loss * valid
+                        class_loss["num_step"] += valid
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
-                        dice_loss_per_class[obj_id]["num_step"] += 1
+                        dice_loss_per_class[obj_id]["num_step"] += valid
+                        
+                        processed_frame += 1
 
                     accum_step = 1
                     # Average loss of this class
