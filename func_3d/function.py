@@ -205,28 +205,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         else:
                             mask = torch.zeros_like(pred).to(device=GPUdevice)
 
-                        # NOTE: TEST AUXILIARY LOSS
-                        if args.auxiliary_loss == "dice":
-                            cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
-                            cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
-                            aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
-
-                            non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
-                            non_cond_gating_score = list(non_cond_gating_score)
-                            if len(non_cond_gating_score) > 0:
-                                non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
-                                aux_label = []
-                                for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
-                                    aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
-                                aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
-
-                                non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
-                                aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
-
-                            aux_loss = 0.2 * aux_loss
-                        else:
-                            aux_loss = torch.Tensor([0]).to(device=GPUdevice)
-
                         # Calculate the loss
                         obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
                         iou_pred = video_segments[frame_idx][obj_id]["iou"]
@@ -241,9 +219,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dice_loss = dice_loss * valid
                         mae_loss = mae_loss * valid
                         bce_loss = bce_loss * valid
-                        aux_loss = aux_loss * valid
                         class_loss["num_step"] += valid
-                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
+                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss)
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                         dice_loss_per_class[obj_id]["num_step"] += valid
                         
@@ -251,6 +228,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     accum_step = 1
                     # Average loss of this class
+                    print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]))
                     average_loss(class_loss)
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
