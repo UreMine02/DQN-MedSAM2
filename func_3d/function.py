@@ -236,6 +236,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         
                         # Update the loss of the class
                         valid = 1 if processed_frame < local_length else 0
+                        print("valid", valid)
                         focal_loss = focal_loss * valid
                         dice_loss = dice_loss * valid
                         mae_loss = mae_loss * valid
