@@ -518,7 +518,7 @@ class CombinedLoss(nn.Module):
         
         return self.dice_weight*dice, self.focal_weight*focal, self.mae_weight*mae, self.bce_weight*bce
 
-def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss):
+def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss):
     loss_dict["focal_loss"] += focal_loss
     loss_dict["dice_loss"] += dice_loss
     loss_dict["mae_loss"] += mae_loss
