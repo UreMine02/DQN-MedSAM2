@@ -244,7 +244,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         print(type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss), type(aux_loss))
                         class_loss["num_step"] += valid
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
-
+                        print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]), type(class_loss["aux_loss"]))
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
                         dice_loss_per_class[obj_id]["num_step"] += valid
                         
@@ -253,6 +253,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     accum_step = 1
                     # Average loss of this class
                     average_loss(class_loss)
+                    print(type(class_loss["total_loss"]))
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
 

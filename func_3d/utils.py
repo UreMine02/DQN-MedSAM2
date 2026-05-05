@@ -534,6 +534,7 @@ def average_loss(loss_dict):
         loss_dict["bce_loss"] = 0
         loss_dict["total_loss"] = 0
         return
+
     loss_dict["focal_loss"] = loss_dict["focal_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["dice_loss"] = loss_dict["dice_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["mae_loss"] = loss_dict["mae_loss"]/(loss_dict["num_step"]+ 1e-6)
