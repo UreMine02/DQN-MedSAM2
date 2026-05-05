@@ -272,7 +272,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         class_loss["dice_loss"].item(),
                         class_loss["mae_loss"].item(),
                         class_loss["bce_loss"].item(),
-                        class_loss["aux_loss"].item(),
                     )
                     instance_loss["num_step"] += 1
 
@@ -283,7 +282,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 instance_loss["dice_loss"],
                 instance_loss["mae_loss"],
                 instance_loss["bce_loss"],
-                instance_loss["aux_loss"],
             )
             total_loss["num_step"] += 1
             pbar.update()
