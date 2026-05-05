@@ -16,10 +16,11 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    output/btcv+icl+grpo+long_horizon+no_augment/2026-05-01-15-28-59/best.pth
+    # output/msd_task02+icl+grpo+raw_dice+long_horizon+no_augment/2026-05-04-11-50-16/best.pth
+    output/msd_task02+icl+random_drop+long_horizon+flip_augment/2026-04-24-12-59-55/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpt[@]}
 do
@@ -28,11 +29,12 @@ do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
             -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset btcv \
-            -task "" \
+            -dataset msd \
+            -task "Task02" \
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
-            # -no_agent
+            -no_agent \
+            -random_drop
     done
 done

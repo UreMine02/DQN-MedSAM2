@@ -124,25 +124,34 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 # local_size = len(sliding_window)
                 if args.distributed:
-                    min_length = imgs_tensor.shape[0]
-                    dist.all_reduce(torch.tensor(min_length, device=GPUdevice), op=dist.ReduceOp.MIN)
+                    local_length = imgs_tensor.shape[0]
+                    max_length = imgs_tensor.shape[0]
+                    dist.all_reduce(torch.tensor(max_length, device=GPUdevice), op=dist.ReduceOp.MAX)
                     
-                    if min_length >= args.video_length:
-                        rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
-                    else:
-                        rounded_length = min_length
-                        
-                    start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                    imgs_padding = torch.zeros(max_length - local_length, *imgs_tensor.shape[1:])
+                    imgs_tensor = torch.cat([imgs_tensor, imgs_padding], dim=0)
+                    masks_padding = torch.zeros(max_length - local_length, *masks_tensor.shape[1:])
+                    masks_tensor = torch.cat([masks_tensor, masks_padding], dim=0)
                     
                     sliding_window = [
                         slice(i, i+args.video_length) 
-                        for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                        for i in range(0, imgs_tensor.shape[0], args.video_length)
                     ]
-                    local_size = torch.tensor(len(sliding_window), device=GPUdevice)
-                    dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
-                    sliding_window = sliding_window[:local_size]
                     
-                    print(rank, imgs_tensor.shape, sliding_window)
+                    # if max_length >= args.video_length:
+                    #     rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
+                    # else:
+                    #     rounded_length = max_length
+                        
+                    # start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                    
+                    # sliding_window = [
+                    #     slice(i, i+args.video_length) 
+                    #     for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                    # ]
+                    # local_size = torch.tensor(len(sliding_window), device=GPUdevice)
+                    # dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
+                    # sliding_window = sliding_window[:local_size]
                 else:
                     sliding_window = [
                         slice(i, i+args.video_length) 
@@ -229,6 +238,11 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         class_loss["num_step"] += 1
                         # Update the loss of the class
+                        focal_loss = focal_loss * (1 if frame_idx < local_length else 0)
+                        dice_loss = dice_loss * (1 if frame_idx < local_length else 0)
+                        mae_loss = mae_loss * (1 if frame_idx < local_length else 0)
+                        bce_loss = bce_loss * (1 if frame_idx < local_length else 0)
+                        aux_loss = aux_loss * (1 if frame_idx < local_length else 0)
                         update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
                         dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
