@@ -125,7 +125,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 # local_size = len(sliding_window)
                 if args.distributed:
                     local_length = imgs_tensor.shape[0]
-                    max_length = torch.tensor(max_length, device=GPUdevice)
+                    max_length = torch.tensor(imgs_tensor.shape[0], device=GPUdevice)
                     dist.all_reduce(max_length, op=dist.ReduceOp.MAX)
                     
                     imgs_padding = torch.zeros(max_length - local_length, *imgs_tensor.shape[1:])
