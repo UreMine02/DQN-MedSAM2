@@ -235,7 +235,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         
                         # Update the loss of the class
-                        valid = 1 if processed_frame < local_length else 0
+                        valid = torch.Tensor(1) if processed_frame < local_length else torch.Tensor(0)
                         focal_loss = focal_loss * valid
                         dice_loss = dice_loss * valid
                         mae_loss = mae_loss * valid
