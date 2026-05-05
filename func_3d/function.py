@@ -232,6 +232,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     # Average loss of this class
                     print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]))
                     average_loss(class_loss)
+                    print(type(class_loss))
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
 

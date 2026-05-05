@@ -525,14 +525,14 @@ def update_loss(loss_dict, focal_loss, dice_loss, mae_loss, bce_loss):
     loss_dict["bce_loss"] += bce_loss
 
 def average_loss(loss_dict):
-    if loss_dict["num_step"] == 0:
-        # Avoid division by zero
-        loss_dict["focal_loss"] = 0
-        loss_dict["dice_loss"] = 0
-        loss_dict["mae_loss"] = 0
-        loss_dict["bce_loss"] = 0
-        loss_dict["total_loss"] = 0
-        return
+    # if loss_dict["num_step"] == 0:
+    #     # Avoid division by zero
+    #     loss_dict["focal_loss"] = 0
+    #     loss_dict["dice_loss"] = 0
+    #     loss_dict["mae_loss"] = 0
+    #     loss_dict["bce_loss"] = 0
+    #     loss_dict["total_loss"] = 0
+        # return
 
     loss_dict["focal_loss"] = loss_dict["focal_loss"]/(loss_dict["num_step"]+ 1e-6)
     loss_dict["dice_loss"] = loss_dict["dice_loss"]/(loss_dict["num_step"]+ 1e-6)
