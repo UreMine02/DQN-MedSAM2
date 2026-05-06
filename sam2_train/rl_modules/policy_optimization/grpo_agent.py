@@ -112,8 +112,8 @@ class GRPOAgent(BasePOAgent):
         self.epsilon = epsilon
         self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=2)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=2)
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=6)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=6)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -195,7 +195,6 @@ class GRPOAgent(BasePOAgent):
 
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
-        print(len(self.replay_buffer))
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
 
