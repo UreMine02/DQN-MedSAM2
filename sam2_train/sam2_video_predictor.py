@@ -1766,47 +1766,17 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent,
         **kwargs
     ):
-        # compute loss before
-        loss_before = None
-        if train_agent:
-            with torch.no_grad():
-                output_before = self.track_step(
-                    frame_idx=frame_idx,
-                    current_vision_feats=current_vision_feats,
-                    current_vision_pos_embeds=current_vision_pos_embeds,
-                    output_dict=output_dict,
-                    **kwargs
-                )
-
-            pred_masks = output_before["pred_masks"]
-            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-            gt_masks = gt_masks.to(torch.float32)
-
-            loss_before = compute_loss(pred_masks, gt_masks, inference_state)
-
-        state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False,
-            training=train_agent
-        )
-
         bank_size = len(output_dict["non_cond_frame_outputs"])
         bank_full = (bank_size >= self.num_maskmem - 1)
-        n_policy = self._rl_policy_num_actions()
         valid_actions = [1] if bank_full else [0, 1]
-        valid_actions.extend(
-            [k for k in sorted(action_frame_map.keys()) if k < n_policy]
-        )
+        valid_actions.extend([i+2 for i in range(bank_size)])
+        state = torch.zeros(1, 80, device=storage_device)
+        state[:, list(output_dict["non_cond_frame_outputs"].keys())] = 1
         with torch.no_grad():
             action_out = self.agent.select_action(
                 state,
-                valid_actions=torch.tensor(valid_actions),
+                valid_actions,
+                bank_full,
                 training=train_agent
             ) # ask agent
 
@@ -1818,14 +1788,14 @@ class SAM2VideoPredictor(SAM2Base):
         storage_key = "non_cond_frame_outputs"
         if action == 0:
             # Add
-            reward = 0.01
+            reward = 0.0
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
             drop_frame = frame_idx - 1
         else:
             # Add the new frame and drop a specific frame
-            drop_frame = action_frame_map[action]
+            drop_frame = list(output_dict[storage_key].keys())[action - 2]
             output_dict[storage_key].pop(drop_frame)
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
@@ -1842,7 +1812,7 @@ class SAM2VideoPredictor(SAM2Base):
             replay_instance_info = {
                 "frame_idx": frame_idx,
                 "state": state,
-                "loss_before": loss_before.detach().cpu(),
+                "loss_before": 1,
                 "reward": reward,
             }
             replay_instance_info.update(action_out)
@@ -1866,15 +1836,8 @@ class SAM2VideoPredictor(SAM2Base):
 
         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-        next_state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            self.num_maskmem - 1,
-            num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False
-        )
+        next_state = torch.zeros(1, 80, device=storage_device)
+        next_state[:, list(output_dict["non_cond_frame_outputs"].keys())] = 1
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 
@@ -1885,16 +1848,16 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent=False, agent_act=True, generate_rl_samples=False,
         device="cpu"
     ):
-        train_state["support_set_stage"] = True
-        for frame_idx in range(support_masks_tensor.shape[0]):
-            mask = support_masks_tensor[frame_idx]
-            _, _, _ = self.train_add_new_mask(
-                inference_state=train_state,
-                frame_idx=frame_idx,
-                obj_id=obj_id,
-                mask=mask.to(device=device),
-            )
-        train_state["support_set_stage"] = False
+        # train_state["support_set_stage"] = True
+        # for frame_idx in range(support_masks_tensor.shape[0]):
+        #     mask = support_masks_tensor[frame_idx]
+        #     _, _, _ = self.train_add_new_mask(
+        #         inference_state=train_state,
+        #         frame_idx=frame_idx,
+        #         obj_id=obj_id,
+        #         mask=mask.to(device=device),
+        #     )
+        # train_state["support_set_stage"] = False
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
 

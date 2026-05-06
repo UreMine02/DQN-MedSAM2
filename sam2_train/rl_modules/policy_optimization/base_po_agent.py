@@ -86,28 +86,15 @@ class Trajectory:
     def get_transitions(self, device="cpu"):
         transitions = [trans.get() for trans in self.transitions]
         states, log_probs, actions, rewards, next_states, dones = zip(*transitions)
-
-        image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-
-        next_image_feat = torch.cat([state.next_image_feat for state in next_states]).to(device=device, non_blocking=True)
-        next_memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in next_states]).to(device=device, non_blocking=True)
-        next_memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in next_states]).to(device=device, non_blocking=True)
-        next_bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in next_states]).to(device=device, non_blocking=True)
-        next_bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in next_states]).to(device=device, non_blocking=True)
-
+        
+        states = torch.cat(states).to(device=device, non_blocking=True)
+        next_states = torch.cat(next_states).to(device=device, non_blocking=True)
         actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, non_blocking=True)
         log_probs = torch.FloatTensor(log_probs).unsqueeze(1).to(device=device, non_blocking=True)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, non_blocking=True)
 
-        curr_feats = (image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        next_feats = (next_image_feat, next_memory_feat, next_memory_ptr, next_bank_feat, next_bank_ptr)
-
-        return log_probs, actions, rewards, dones, curr_feats, next_feats
+        return log_probs, actions, rewards, dones, states, next_states
 
 class BaseFeatureSummarizer(nn.Module):
     def __init__(self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256, n_layers=4):
@@ -266,18 +253,15 @@ class BasePOAgent(BaseAgent):
         sam2_dim={}
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
-        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
-
-        self.policy_optimizer = optim.AdamW(
-            list(self.policy_net.parameters()) + \
-            list(self.feat_summarizer.parameters()),
-            lr=policy_lr,
+        
+        self.policy_net = nn.Sequential(
+            nn.Linear(80,1024),
+            nn.Linear(1024,8)
         )
-        self.value_optimizer = optim.AdamW(
-            list(self.value_net.parameters()),
-            lr=value_lr,
+
+        self.optimizer = optim.AdamW(
+            self.policy_net.parameters(),
+            lr=policy_lr,
         )
 
         self.tau = tau
@@ -286,13 +270,11 @@ class BasePOAgent(BaseAgent):
         # For distributed training
         self.rank = 0
         self.distributed = False
+        
+        self.await_trajectory = None
 
     def freeze(self):
-        for param in self.feat_summarizer.parameters():
-            param.requires_grad_(False)
         for param in self.policy_net.parameters():
-            param.requires_grad_(False)
-        for param in self.value_net.parameters():
             param.requires_grad_(False)
 
     def init_new_trajectory(self):
@@ -301,18 +283,15 @@ class BasePOAgent(BaseAgent):
     def final_trajectory(self):
         log_probs, action, reward, done, curr_state, next_state = self.await_trajectory.get_transitions(self.device)
 
-        with torch.no_grad():
-            curr_feat = self.feat_summarizer(*curr_state)
-            curr_value = self.value_net(*curr_feat)
-            next_feat = self.feat_summarizer(*next_state)
-            next_value = self.value_net(*next_feat)
-
-            return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
-            return_ = return_.squeeze(-1)
-            advantage = return_ - curr_value.squeeze(-1)
+        L = reward.shape[0]
+        coef = torch.triu(torch.full((L, L), self.gamma, device=reward.device))
+        l = torch.Tensor(circulant(torch.arange(L))).T.to(device=reward.device, non_blocking=True)
+        coef = coef ** l
+        return_ = coef @ reward
+        return_ = return_.squeeze(-1)
 
         for i, ins in enumerate(self.await_trajectory.transitions):
-            ins.set_return_advantage(return_[i].cpu(), advantage[i].cpu())
+            ins.set_return_advantage(return_[i].cpu(), return_[i].cpu())
             self.replay_buffer.append(ins.get_updated())
 
         self.await_trajectory = None
@@ -333,49 +312,33 @@ class BasePOAgent(BaseAgent):
             self.final_trajectory()
 
     @torch.no_grad()
-    def select_action(self, state: RLStates, valid_actions, training=False):
-        self.feat_summarizer.eval()
+    def select_action(self, state, valid_actions, bank_is_full, training=False):
         self.policy_net.eval()
-        self.value_net.eval()
 
-        image_feat = state.next_image_feat.detach().to(torch.float32)
-        memory_feat = state.curr_memory_feat["mem_feat"].detach().to(torch.float32)
-        memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
-        bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
-        bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
-
-        state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_logits = self.policy_net(*state, training=training, return_logits=True).squeeze(0)
+        action_logits = self.policy_net(state).squeeze(0)
         action_logits = action_logits.detach().cpu().float()
         action_dist = Categorical(logits=action_logits)
-
-        valid_actions = torch.as_tensor(valid_actions, dtype=torch.int64).view(-1)
-        valid_actions = valid_actions[valid_actions < action_logits.shape[0]]
-        if valid_actions.numel() == 0:
-            raise RuntimeError(
-                f"PO agent: no valid_actions fit policy logits (got {action_logits.shape[0]} logits)."
-            )
+        action_probs = action_dist.probs
+        
+        valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
 
         if training:
-            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
+            action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
         else:
-            action_idx = torch.argmax(valid_probs)
+            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
 
-        return {"action": valid_actions[action_idx].item(), "log_probs": valid_probs.log()[action_idx].tolist()}
+        action = valid_actions[action_idx].item()
+        return {"action": action, "log_probs": action_probs.log()[action].tolist()}
 
     def to(self, device, non_blocking=False):
         self.device = device
-        self.feat_summarizer.to(device=device, non_blocking=non_blocking)
         self.policy_net.to(device=device, non_blocking=non_blocking)
-        self.value_net.to(device=device, non_blocking=non_blocking)
 
     def to_dtype(self, dtype):
         self.dtype = dtype
-        self.feat_summarizer.to(dtype=dtype)
         self.policy_net.to(dtype=dtype)
-        self.value_net.to(dtype=dtype)
 
     def update(self, num_update):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
@@ -388,34 +351,14 @@ class BasePOAgent(BaseAgent):
         np.random.seed(self.rank + self.epoch * 100)
 
         print(f"Update agent for {num_update} steps")
-        self.feat_summarizer.train()
         self.policy_net.train()
-        self.value_net.train()
 
         total_policy_loss, total_value_loss, total_actor_gradnorm, total_critic_gradnorm = 0, 0, 0, 0
         critic_num_update = 0
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
 
-            # n_actions = {}
-            # for sample in self.replay_buffer:
-            #     action = sample[2]
-            #     if action not in n_actions.keys():
-            #         n_actions[action] = 0
-            #     n_actions[action] += 1
-
-            # p = []
-            # for sample in self.replay_buffer:
-            #     p.append(len(self.replay_buffer) / n_actions[sample[2]])
-
-            # p = np.asanyarray(p)
-            # p = p / p.sum()
-            # batch_idx = np.random.choice(len(self.replay_buffer), size=self.batch_size, replace=False, p=p)
-            # batch = []
-            # for idx in batch_idx:
-            #     batch.append(self.replay_buffer[idx])
-
-            update_value = i % 2
+            update_value = True
             value_loss, policy_loss, actor_gradnorm, critic_gradnorm = self.train_step(batch, update_value=update_value)
 
             total_policy_loss += policy_loss
@@ -437,89 +380,45 @@ class BasePOAgent(BaseAgent):
         device = self.device
 
         states, old_log_probs, actions, rewards, next_states, dones, returns, advantages = zip(*batch)
-
-        image_feat = torch.cat([state.next_image_feat for state in states]).detach()
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
-
+        
+        states = torch.cat(states).to(device=device, non_blocking=True)
         actions = torch.LongTensor(actions).unsqueeze(1)
-        rewards = torch.FloatTensor(rewards).unsqueeze(1)
         old_log_probs = torch.FloatTensor(old_log_probs).unsqueeze(1)
         dones = torch.FloatTensor(dones).unsqueeze(1)
-        advantages = torch.FloatTensor(advantages).unsqueeze(1)
         returns = torch.FloatTensor(returns).unsqueeze(1)
 
-        image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-
         actions = actions.to(device=device, non_blocking=True)
-        rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
         old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
         dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
-        advantages = advantages.to(device=device, dtype=torch.float32, non_blocking=True)
         returns = returns.to(device=device, dtype=torch.float32, non_blocking=True)
 
-        adv_mean = advantages.mean(dim=0, keepdim=True)
-        adv_std = advantages.std(dim=0, keepdim=True)
-        advantages = (advantages - adv_mean) / adv_std
-
         with torch.enable_grad():
-            (
-                image_spatial_query,
-                non_cond_bank_feat,
-                cond_bank_feat,
-                curr_mem_feat
-            ) = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-
-            policy_probs = self.policy_net(
-                image_spatial_query,
-                non_cond_bank_feat,
-                cond_bank_feat,
-                curr_mem_feat
-            )
+            policy_logits = self.policy_net(states)
+            print(policy_logits.shape)
+            policy_probs = policy_logits.softmax(dim=-1)
             action_probs = policy_probs.gather(1, actions)
             log_probs = torch.log(policy_probs)
             log_action_probs = torch.log(action_probs)
 
-            policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
+            policy_loss = self.compute_policy_loss(log_action_probs, returns, old_log_probs)
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
+            assert not policy_loss.isnan().any()
 
-            self.policy_optimizer.zero_grad()
+            self.optimizer.zero_grad()
             policy_loss.backward()
+            for param in self.policy_net.parameters():
+                if param.grad is not None and param.grad.isnan().any():
+                    raise ValueError("policy nan grad")
             actor_gradnorm = nn.utils.clip_grad_norm_(
-                list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.5
+                self.policy_net.parameters(),
+                max_norm=0.1
             )
-            self.policy_optimizer.step()
-
-            if update_value:
-                image_spatial_query = image_spatial_query.detach()
-                non_cond_bank_feat = non_cond_bank_feat.detach()
-                cond_bank_feat = cond_bank_feat.detach()
-                curr_mem_feat = curr_mem_feat.detach()
-
-                pred_value = self.value_net(
-                    image_spatial_query,
-                    non_cond_bank_feat,
-                    cond_bank_feat,
-                    curr_mem_feat
-                )
-                value_loss = F.smooth_l1_loss(pred_value, returns)
-
-                self.value_optimizer.zero_grad()
-                value_loss.backward()
-                critic_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
-                self.value_optimizer.step()
-            else:
-                value_loss = torch.Tensor([0])
-                critic_gradnorm = torch.Tensor([0])
+            self.optimizer.step()
+            
+            value_loss = torch.Tensor([0])
+            critic_gradnorm = torch.Tensor([0])
 
             # total_loss = policy_loss + 0.1 * value_loss
 
@@ -535,33 +434,23 @@ class BasePOAgent(BaseAgent):
         return -(advantage * log_prob)
 
     def state_dict(self):
-        if isinstance(self.feat_summarizer, DDP):
+        if isinstance(self.policy_net, DDP):
             return {
-                "feat_summarizer": self.feat_summarizer.module.state_dict(),
                 "policy_net": self.policy_net.module.state_dict(),
-                "value_net": self.value_net.module.state_dict(),
             }
         return {
-            "feat_summarizer": self.feat_summarizer.state_dict(),
             "policy_net": self.policy_net.state_dict(),
-            "value_net": self.value_net.state_dict(),
         }
 
     def load_state_dict(self, state_dict):
-        self.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
         self.policy_net.load_state_dict(state_dict["policy_net"])
-        self.value_net.load_state_dict(state_dict["value_net"])
 
     def to_distributed(self, rank):
         self.distributed = True
         self.rank = rank
-        self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank], output_device=rank)
         self.policy_net = DDP(self.policy_net, device_ids=[rank], output_device=rank)
-        self.value_net = DDP(self.value_net, device_ids=[rank], output_device=rank)
 
     def num_parameters(self):
         """This function expect modules didn't wrapped by DDP"""
-        return sum(p.numel() for p in self.feat_summarizer.parameters()) + \
-                sum(p.numel() for p in self.policy_net.parameters()) + \
-                sum(p.numel() for p in self.value_net.parameters())
+        return sum(p.numel() for p in self.policy_net.parameters())
 
