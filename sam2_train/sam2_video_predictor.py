@@ -1442,6 +1442,16 @@ class SAM2VideoPredictor(SAM2Base):
         }
 
         if ablation:
+            self.check_drop(
+                inference_state,
+                storage_device,
+                frame_idx,
+                current_vision_feats,
+                current_vision_pos_embeds,
+                output_dict,
+                agent_act=agent_act,
+                **track_step_kwargs
+            )
             self.check_oracle(
                 inference_state,
                 storage_device,
@@ -2031,6 +2041,7 @@ class SAM2VideoPredictor(SAM2Base):
                 drop_frame = list(output_dict["non_cond_frame_outputs"].keys())[0]
                 output_dict["non_cond_frame_outputs"].pop(drop_frame)
                 output_dict["drop_frame"][frame_idx] = drop_frame
+                print(frame_idx, drop_frame)
 
             if frame_idx > 0:
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
@@ -2085,15 +2096,6 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict["oracle_frame"][frame_idx][prev_frame_idx] = dice_after.item()
 
         # print(frame_idx, output_dict["dice_drop"][frame_idx].keys())
-        if not agent_act:
-            output_dict["drop_frame"][frame_idx] = -1
-            if len(output_dict["non_cond_frame_outputs"]) == self.num_maskmem - 1:
-                drop_frame = list(output_dict["non_cond_frame_outputs"].keys())[0]
-                output_dict["non_cond_frame_outputs"].pop(drop_frame)
-                output_dict["drop_frame"][frame_idx] = drop_frame
-
-            if frame_idx > 0:
-                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         
         
     def forward(

@@ -508,7 +508,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                 # ablation_data[obj_id]["rank"],
                 ablation_data[obj_id]["dice"],
                 ablation_data[obj_id]["drop_frame"],
-                ablation_data[obj_id]["min_attn"]
+                ablation_data[obj_id]["min_attn"],
+                ablation_data[obj_id]["oracle_frame"]
             ))
         columns = [
             "id",
@@ -516,7 +517,8 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             # "rank",
             "dice",
             "drop_frame",
-            "min_attn"
+            "min_attn",
+            "oracle_frame",
         ]
         
         df = pd.DataFrame(data=data, columns=columns)
