@@ -186,12 +186,13 @@ class SAM2VideoPredictor(SAM2Base):
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
-        # Warm up the visual backbone and cache the image feature on frame 0
-        inference_state["support_set_stage"] = True
+        # False: query-side bbox/points use `images[frame_idx]`. Support ICL masks turn True in forward().
+        inference_state["support_set_stage"] = False
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty
         }
+        inference_state["memory_bank_size"] = args.memory_bank_size
 
         return inference_state
 
@@ -280,14 +281,14 @@ class SAM2VideoPredictor(SAM2Base):
         # metadata for each tracking frame (e.g. which direction it's tracked)
         inference_state["tracking_has_started"] = False
         inference_state["frames_already_tracked"] = {}
-        # Warm up the visual backbone and cache the image feature on frame 0
-
-        inference_state["support_set_stage"] = True
+        # False: query bbox/points use `images`; support ICL uses `support_images` only while True in forward().
+        inference_state["support_set_stage"] = False
 
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty
         }
+        inference_state["memory_bank_size"] = args.memory_bank_size
         return inference_state
 
     def _obj_id_to_idx(self, inference_state, obj_id):
@@ -1304,10 +1305,33 @@ class SAM2VideoPredictor(SAM2Base):
     def _get_image_feature(self, inference_state, frame_idx, batch_size):
         """Compute the image features on a given frame."""
 
+        imgs = inference_state["images"]
+        sup = inference_state.get("support_images")
+        n_q = int(imgs.shape[0])
+        n_s = int(sup.shape[0]) if sup is not None else 0
+        device = inference_state["device"]
+
         if inference_state["support_set_stage"]:
-            image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+            if n_s > 0 and frame_idx < n_s:
+                image = sup[frame_idx].to(device=device).float().unsqueeze(0)
+            elif frame_idx < n_q:
+                image = imgs[frame_idx].to(device=device).float().unsqueeze(0)
+            else:
+                raise IndexError(
+                    f"support_set_stage: frame_idx={frame_idx} out of range "
+                    f"(support_images T={n_s}, query images T={n_q})"
+                )
         else:
-            image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+            # ICL support masks use frame_idx in [0, S); query propagation uses [0, T). Same dict keys.
+            if frame_idx < n_q:
+                image = imgs[frame_idx].to(device=device).float().unsqueeze(0)
+            elif n_s > 0 and frame_idx < n_s:
+                image = sup[frame_idx].to(device=device).float().unsqueeze(0)
+            else:
+                raise IndexError(
+                    f"_get_image_feature: frame_idx={frame_idx} out of range "
+                    f"(query images T={n_q}, support_images T={n_s})"
+                )
         backbone_out = self.forward_image(image) # dict_keys(['vision_features', 'vision_pos_enc', 'backbone_fpn'])
         # Cache the most recent frame's feature (for repeated interactions with
         # a frame; we can use an LRU cache for more frames in the future).
@@ -1510,6 +1534,17 @@ class SAM2VideoPredictor(SAM2Base):
             for obj_output_dict in inference_state["output_dict_per_obj"].values():
                 obj_output_dict["non_cond_frame_outputs"].pop(t, None)
 
+    def _rl_policy_num_actions(self):
+        """Policy logits = add/skip (2) + one logit per non_cond slot (see BasePolicyNetwork)."""
+        a = self.agent
+        if isinstance(a, GRPOAgent):
+            mod = getattr(a.actor, "module", a.actor)
+            fs = getattr(mod, "feat_summarizer", None)
+            n = fs.num_maskmem if fs is not None else mod.num_maskmem
+        else:
+            n = a.feat_summarizer.num_maskmem
+        return 2 + n
+
     def agent_act(
         self,
         inference_state,
@@ -1607,9 +1642,13 @@ class SAM2VideoPredictor(SAM2Base):
             )
 
             bank_size = len(output_dict["non_cond_frame_outputs"])
-            bank_full = (bank_size >= self.num_maskmem - 1)
+            mem_cap = inference_state["memory_bank_size"]
+            bank_full = bank_size >= mem_cap
+            n_policy = self._rl_policy_num_actions()
             valid_actions = [1] if bank_full else [0, 1]
-            valid_actions.extend(list(action_frame_map.keys()))
+            valid_actions.extend(
+                [k for k in sorted(action_frame_map.keys()) if k < n_policy]
+            )
             with torch.no_grad():
                 action_out = self.agent.select_action(
                     state,
@@ -1759,8 +1798,11 @@ class SAM2VideoPredictor(SAM2Base):
 
         bank_size = len(output_dict["non_cond_frame_outputs"])
         bank_full = (bank_size >= self.num_maskmem - 1)
+        n_policy = self._rl_policy_num_actions()
         valid_actions = [1] if bank_full else [0, 1]
-        valid_actions.extend(list(action_frame_map.keys()))
+        valid_actions.extend(
+            [k for k in sorted(action_frame_map.keys()) if k < n_policy]
+        )
         with torch.no_grad():
             action_out = self.agent.select_action(
                 state,
@@ -1843,6 +1885,7 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent=False, agent_act=True, generate_rl_samples=False,
         device="cpu"
     ):
+        train_state["support_set_stage"] = True
         for frame_idx in range(support_masks_tensor.shape[0]):
             mask = support_masks_tensor[frame_idx]
             _, _, _ = self.train_add_new_mask(
@@ -1851,6 +1894,7 @@ class SAM2VideoPredictor(SAM2Base):
                 obj_id=obj_id,
                 mask=mask.to(device=device),
             )
+        train_state["support_set_stage"] = False
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
 

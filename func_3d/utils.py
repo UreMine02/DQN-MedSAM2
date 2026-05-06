@@ -48,6 +48,9 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             hydra_overrides = [
                 f"++rl_modules.config.agent.num_support={args.num_support}",
             ]
+            from sam2_train.rl_modules.policy_optimization.sam2_rl_ablation import set_ablation_rl_method
+
+            set_ablation_rl_method(args.rl_ablation_method)
             cfg = compose(config_name=args.rl_config)
             print(cfg)
             OmegaConf.resolve(cfg)

@@ -11,9 +11,20 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributions.categorical import Categorical
 
 from sam2_train.rl_modules.policy_optimization.base_po_agent import (BasePOAgent, BaseFeatureSummarizer, BasePolicyNetwork)
+from sam2_train.rl_modules.policy_optimization.sam2_rl_ablation import Sam2RLGRPOActor, is_sam2rl_ablation
+from sam2_train.rl_modules.rl_base_agent import BaseAgent
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
 
 from func_3d.misc import MetricLogger
+
+
+def _rl_state_frame_ix_scalar(state):
+    fi = getattr(state, "frame_ix", None)
+    if fi is None:
+        return 0
+    if isinstance(fi, torch.Tensor):
+        return int(fi.detach().cpu().item())
+    return int(fi)
 
 class GRPOReplayInstance(RLReplayInstance):
     def __init__(
@@ -73,7 +84,20 @@ class GRPOActor(nn.Module):
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
 
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=False):
+    def forward(
+        self,
+        image_feat,
+        memory_feat,
+        memory_ptr,
+        bank_feat,
+        bank_ptr,
+        training=True,
+        return_logits=False,
+        sam2rl_frame_ix=None,
+        **kwargs,
+    ):
+        del sam2rl_frame_ix
+        del kwargs
         curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
         policy_probs = self.policy_net(*curr_feats, training=training, return_logits=return_logits)
         return policy_probs
@@ -95,34 +119,56 @@ class GRPOAgent(BasePOAgent):
         epsilon=0.2,
         sam2_dim={}
     ):
-        super().__init__(
-            num_maskmem=num_maskmem,
-            policy_lr=policy_lr,
-            value_lr=value_lr,
-            gamma=gamma,
-            beta=beta,
-            tau=tau,
-            buffer_size=buffer_size,
-            batch_size=batch_size,
-            device=device,
-            entropy_weight=entropy_weight,
-            sam2_dim=sam2_dim
-        )
-        self.epsilon = epsilon
-        self.range = range
+        if is_sam2rl_ablation():
+            BaseAgent.__init__(
+                self,
+                num_maskmem,
+                policy_lr,
+                gamma,
+                beta,
+                buffer_size,
+                batch_size,
+                device,
+            )
+            self.tau = tau
+            self.entropy_weight = entropy_weight
+            self.epsilon = epsilon
+            self.range = range
+            self.actor = Sam2RLGRPOActor(num_maskmem)
+            self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
+            self.value_net = None
+            self.await_group = None
+            self.rank = 0
+            self.distributed = False
+        else:
+            super().__init__(
+                num_maskmem=num_maskmem,
+                policy_lr=policy_lr,
+                value_lr=value_lr,
+                gamma=gamma,
+                beta=beta,
+                tau=tau,
+                buffer_size=buffer_size,
+                batch_size=batch_size,
+                device=device,
+                entropy_weight=entropy_weight,
+                sam2_dim=sam2_dim
+            )
+            self.epsilon = epsilon
+            self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
-        self.value_net = None
-        self.actor = GRPOActor(feat_summarizer, policy_net)
+            feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
+            policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+            self.value_net = None
+            self.actor = GRPOActor(feat_summarizer, policy_net)
 
-        self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
+            self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
 
-        self.await_group = None
+            self.await_group = None
 
-        # For distributed training
-        self.rank = 0
-        self.distributed = False
+            # For distributed training
+            self.rank = 0
+            self.distributed = False
 
     def to(self, device, non_blocking=True):
         self.device = device
@@ -153,12 +199,35 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
 
-        
-        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
-        action_logits = action_logits.detach().cpu()
+        B = image_feat.shape[0]
+        if is_sam2rl_ablation():
+            fi = _rl_state_frame_ix_scalar(state)
+            sam2_ix = torch.full((B,), fi, dtype=torch.long, device=image_feat.device)
+            action_logits = self.actor(
+                image_feat,
+                memory_feat,
+                memory_ptr,
+                bank_feat,
+                bank_ptr,
+                training=training,
+                return_logits=True,
+                sam2rl_frame_ix=sam2_ix,
+            ).squeeze(0)
+        else:
+            action_logits = self.actor(
+                image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True
+            ).squeeze(0)
+        # CPU softmax in Categorical.probs has no fp16 kernel; actor may still output Half if weights are Half.
+        action_logits = action_logits.detach().cpu().float()
         action_probs = Categorical(logits=action_logits)
 
-        valid_actions = torch.Tensor(valid_actions).to(torch.int64)
+        valid_actions = torch.as_tensor(valid_actions, dtype=torch.int64).view(-1)
+        valid_actions = valid_actions[valid_actions < action_logits.shape[0]]
+        if valid_actions.numel() == 0:
+            raise RuntimeError(
+                f"GRPO: no valid_actions fit policy logits (got {action_logits.shape[0]} logits). "
+                "Increase rl agent num_maskmem or reduce memory bank frames."
+            )
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
         
@@ -220,9 +289,22 @@ class GRPOAgent(BasePOAgent):
             rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
             old_log_probs = old_log_probs.to(device=device, dtype=torch.float32, non_blocking=True)
             dones = dones.to(device=device, dtype=torch.float32, non_blocking=True)
-            
-            # with torch.enable_grad():
-            policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
+
+            if is_sam2rl_ablation():
+                fis = [_rl_state_frame_ix_scalar(s) for s in states]
+                sam2_ix = torch.tensor(fis, dtype=torch.long, device=device)
+                policy_logits = self.actor(
+                    image_feat,
+                    memory_feat,
+                    memory_ptr,
+                    bank_feat,
+                    bank_ptr,
+                    training=True,
+                    return_logits=True,
+                    sam2rl_frame_ix=sam2_ix,
+                )
+            else:
+                policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
             # policy_dist = Categorical(logits=policy_logits)
             policy_probs = policy_logits.softmax(dim=1)
             action_probs = policy_probs.gather(1, actions)
@@ -260,9 +342,20 @@ class GRPOAgent(BasePOAgent):
         return self.actor.state_dict()
 
     def load_state_dict(self, state_dict):
+        actor = self.actor.module if isinstance(self.actor, DDP) else self.actor
+        if is_sam2rl_ablation():
+            if "feat_summarizer" in state_dict:
+                return
+            temp_state_dict = {}
+            for k, v in state_dict.items():
+                if "perceiver" in k:
+                    k = k.replace("perceiver", "qformer")
+                temp_state_dict[k] = v
+            actor.load_state_dict(temp_state_dict)
+            return
         if "feat_summarizer" in state_dict.keys():
-            self.actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
-            self.actor.policy_net.load_state_dict(state_dict["policy_net"])
+            actor.feat_summarizer.load_state_dict(state_dict["feat_summarizer"])
+            actor.policy_net.load_state_dict(state_dict["policy_net"])
         else:
             temp_state_dict = {}
             for k, v in state_dict.items():
@@ -270,7 +363,7 @@ class GRPOAgent(BasePOAgent):
                     k = k.replace('perceiver', 'qformer')
                 temp_state_dict[k] = v
 
-            self.actor.load_state_dict(temp_state_dict)
+            actor.load_state_dict(temp_state_dict)
 
     def to_distributed(self, rank):
         self.distributed = True

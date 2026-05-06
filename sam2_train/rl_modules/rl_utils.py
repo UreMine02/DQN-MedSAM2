@@ -98,6 +98,13 @@ def prepare_rl_state(
     while len(prev_memory_bank) < num_maskmem + num_max_prompt:
         prev_memory_bank.append(torch.zeros(memory_shape, device=device))
         prev_obj_ptr.append(torch.zeros(obj_ptr_shape, device=device))
+
+    # Cố định số slot để mọi transition trong replay buffer có cùng shape (GRPO/PPO torch.cat theo batch).
+    # Khi non_cond nhiều hơn num_maskmem, đoạn trên không cắt bớt → độ dài list thay đổi theo frame (vd. 7 vs 11).
+    target_len = num_maskmem + num_max_prompt
+    if len(prev_memory_bank) > target_len:
+        prev_memory_bank = prev_memory_bank[-target_len:]
+        prev_obj_ptr = prev_obj_ptr[-target_len:]
     
     prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)

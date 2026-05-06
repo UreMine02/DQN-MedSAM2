@@ -1,6 +1,10 @@
 import argparse
 
-def parse_args():    
+# Default for `-memory_bank_size` (change here, or override on the CLI with -memory_bank_size N).
+DEFAULT_MEMORY_BANK_SIZE = 16
+
+
+def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-net', type=str, default='sam2', help='net type')
     parser.add_argument('-encoder', type=str, default='vit_b', help='encoder type')
@@ -12,25 +16,39 @@ def parse_args():
     parser.add_argument('-pretrain', type=str, default="", help='path of pretrain weights')
     parser.add_argument('-val_freq',type=int,default=3,help='interval between each validation')
     parser.add_argument('-gpu', type=bool, default=True, help='use gpu or not')
-    parser.add_argument('-gpu_device', type=int, default=0, help='use which gpu')
+    parser.add_argument('-gpu_device', type=int, default=1, help='use which gpu')
     parser.add_argument('-image_size', type=int, default=1024, help='image_size')
     parser.add_argument('-out_size', type=int, default=1024, help='output_size')
-    parser.add_argument('-distributed', action="store_true", help='multi GPU ids to use')
+    parser.add_argument(
+        '-distributed',
+        action='store_true',
+        help='DDP: one full model per GPU (set CUDA_VISIBLE_DEVICES e.g. 0,1). Does not split one sample across GPUs.',
+    )
     parser.add_argument('-dataset', default='btcv' ,type=str,help='dataset name')
     parser.add_argument('-sam_ckpt', type=str, default=None, help='sam checkpoint address')
     parser.add_argument('-sam_config', type=str, default="sam2_hiera_t" , help='sam checkpoint address')
-    parser.add_argument('-video_length', type=int, default=16, help='sam checkpoint address')
+    parser.add_argument('-video_length', type=int, default=16, help='Max frames per volume (lower uses less GPU memory)')
     parser.add_argument('-b', type=int, default=1, help='batch size for dataloader')
     parser.add_argument('-lr', type=float, default=1e-4, help='initial learning rate')
     parser.add_argument('-weights', type=str, default=0, help='the weights file you want to test')
     parser.add_argument('-multimask_output', type=int, default=1 , help='the number of masks output for multi-class segmentation')
-    parser.add_argument('-memory_bank_size', type=int, default=16, help='sam 2d memory bank size')
+    parser.add_argument(
+        '-memory_bank_size',
+        type=int,
+        default=DEFAULT_MEMORY_BANK_SIZE,
+        help='RL memory bank capacity (default: DEFAULT_MEMORY_BANK_SIZE in cfg.py)',
+    )
     parser.add_argument('-support_instance', type=str, default="img0039", help='support instance'),
-    parser.add_argument('-data_path', type=str, default='/mnt/12T/cuong/AAAI/Combined_Dataset', help='The path of segmentation data'),
+    parser.add_argument('-data_path', type=str, default='/mnt/cuongmp/dataset/Combined_Dataset', help='The path of segmentation data'),
     parser.add_argument('-num_support', type=int, default=10, help='saving trained checkpoints')
     parser.add_argument('-save_ckpt', type=bool, default=True, help='enable wandb')
     parser.add_argument('-wandb_enabled', action="store_true", help='enable wandb')
-    parser.add_argument('-checkpoint_path', type=str, default="/mnt/12T/cuong/medsam2-icl/checkpoint", help='checkpoint root path')
+    parser.add_argument(
+        '-checkpoint_path',
+        type=str,
+        default="/mnt/cuongmp/DynaFold/Generative-Dyna/checkpoint",
+        help='checkpoint root path',
+    )
     parser.add_argument('-truncated_test_frame', type=bool, default=False, help='checkpoint root path')
     parser.add_argument('-task', type=str, default='', help='msd task, leave default for all tasks')
     parser.add_argument('-ep', type=int, default=50, help='number of training epoch')
@@ -38,6 +56,16 @@ def parse_args():
     parser.add_argument('-invalid_penalty', type=float, default=-5, help='number of training epoch')
     parser.add_argument('-q_updates_per_step', type=int, default=1, help='number of agent updates per training step')
     parser.add_argument('-rl_config', type=str, default='normal_agent.yaml', help='number of agent updates per training step')
+    parser.add_argument(
+        '-rl_ablation_method',
+        type=str,
+        choices=['default', 'sam2rl'],
+        default='default',
+        help=(
+            "GRPO policy variant: 'default' = full feature summarizer + policy net; "
+            "'sam2rl' = frame-index embedding + small MLP (ablation)."
+        ),
+    )
     parser.add_argument('-no_agent', action="store_true", help="Not using agent, fallback to default SAM2")
     parser.add_argument('-warmup_ep', type=int, default=0, help="Number of epoch to warmup before starting training agent")
     parser.add_argument('-agent_update_freq', type=int, default=1, help="Update agent every N SAM2 update step")
@@ -46,6 +74,34 @@ def parse_args():
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")
     parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], help="Whether gating highres visual features")
     parser.add_argument('-auxiliary_loss', type=str, choices=["no", "dice"], default="no", help="Whether gating object pointer")
+    parser.add_argument(
+        '-forward_autocast_bf16',
+        action='store_true',
+        help='Use bf16 autocast only around SAM forward (saves VRAM; can cause backward errors on some setups — default off)',
+    )
+    parser.add_argument(
+        '-num_workers',
+        type=int,
+        default=4,
+        help='DataLoader workers (lower saves host RAM; 0 is main process only)',
+    )
+    parser.add_argument(
+        '-bbox_query_prompt_mode',
+        type=str,
+        choices=['first', 'all', 'stride'],
+        default='first',
+        help=(
+            "Query bbox from GT: 'first' = first fg slice only (low VRAM); "
+            "'all' = every fg slice (high VRAM); "
+            "'stride' = fg slices where frame_idx %% bbox_query_prompt_stride == 0."
+        ),
+    )
+    parser.add_argument(
+        '-bbox_query_prompt_stride',
+        type=int,
+        default=3,
+        help="With bbox_query_prompt_mode=stride: add bbox every N frames (0, N, 2N, ... among slices with fg).",
+    )
     opt = parser.parse_args()
 
     return opt

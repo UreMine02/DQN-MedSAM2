@@ -4,12 +4,17 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 from typing import List, Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
+
+# Opt-in: export DQN_MEDSAM2_GRAD_CHECKPOINT=1 to save VRAM (can interact badly with some amp/backward paths).
+_USE_GRAD_CKPT = os.environ.get("DQN_MEDSAM2_GRAD_CHECKPOINT", "0") == "1"
+
 
 class ImageEncoder(nn.Module):
     def __init__(
@@ -31,8 +36,12 @@ class ImageEncoder(nn.Module):
         # feature: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
         # pos: [torch.Size([1, 256, 256, 256]), torch.Size([1, 256, 128, 128]), torch.Size([1, 256, 64, 64]), torch.Size([1, 256, 32, 32])]
 
-        features, pos = checkpoint(self.neck, checkpoint(self.trunk, sample, use_reentrant=False), use_reentrant=False) 
-        # features, pos = self.neck(self.trunk(sample)) 
+        if _USE_GRAD_CKPT:
+            features, pos = checkpoint(
+                self.neck, checkpoint(self.trunk, sample, use_reentrant=False), use_reentrant=False
+            )
+        else:
+            features, pos = self.neck(self.trunk(sample))
         if self.scalp > 0:
             # Discard the lowest resolution features
             features, pos = features[: -self.scalp], pos[: -self.scalp]

@@ -592,7 +592,8 @@ class SAM2Base(torch.nn.Module):
         # In this case, we skip the fusion with any memory.
         if self.num_maskmem == 0:  # Disable memory and skip fusion
             pix_feat = current_vision_feats[-1].permute(1, 2, 0).view(B, C, H, W)
-            return pix_feat
+            gating_score_dict = {"cond_frames": {}, "non_cond_frames": {}}
+            return pix_feat, gating_score_dict, highres_vision_feats, None
 
         num_obj_ptr_tokens = 0
         memory_pos = []
@@ -610,6 +611,20 @@ class SAM2Base(torch.nn.Module):
             )
             
             t_pos_and_prevs = [(0, out) for out in selected_cond_outputs.values()]
+
+            # RL can store more than (num_maskmem-1) non-cond frames; SAM only has t_pos encodings
+            # for t_pos in 1 .. num_maskmem-1 (see maskmem_tpos_enc index num_maskmem - t_pos - 1).
+            if agent_act:
+                _nc = output_dict["non_cond_frame_outputs"]
+                _max = self.num_maskmem - 1
+                if len(_nc) > _max:
+                    agent_non_cond_trimmed = dict(
+                        sorted(_nc.items(), key=lambda kv: kv[0])[-_max:]
+                    )
+                else:
+                    agent_non_cond_trimmed = _nc
+            else:
+                agent_non_cond_trimmed = None
 
             # Add last (self.num_maskmem - 1) frames before current frame for non-conditioning memory
             # the earliest one has t_pos=1 and the latest one has t_pos=self.num_maskmem-1
@@ -655,7 +670,10 @@ class SAM2Base(torch.nn.Module):
             else:
                 # print("Picked by agent:", output_dict["non_cond_frame_outputs"].keys())
                 t_pos_and_prevs.extend(
-                    [(t+1, out) for t, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
+                    [
+                        (t + 1, out)
+                        for t, out in enumerate(agent_non_cond_trimmed.values())
+                    ]
                 )
 
             for t_pos, prev in t_pos_and_prevs:
@@ -707,7 +725,10 @@ class SAM2Base(torch.nn.Module):
                             pos_and_ptrs.append((t_diff, out["obj_ptr"]))
                 else:
                     pos_and_ptrs.extend(
-                        [(frame_idx - t, out["obj_ptr"]) for t, out in output_dict["non_cond_frame_outputs"].items()]
+                        [
+                            (frame_idx - t, out["obj_ptr"])
+                            for t, out in agent_non_cond_trimmed.items()
+                        ]
                     )
                 
                 # If we have at least one object pointer, add them to the across attention
@@ -755,7 +776,8 @@ class SAM2Base(torch.nn.Module):
                 # directly add no-mem embedding (instead of using the transformer encoder)
                 pix_feat_with_mem = current_vision_feats[-1] + self.no_mem_embed
                 pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
-                return pix_feat_with_mem
+                gating_score_dict = {"cond_frames": {}, "non_cond_frames": {}}
+                return pix_feat_with_mem, gating_score_dict, highres_vision_feats, None
 
             # Use a dummy token on the first frame (to avoid emtpy memory input to tranformer encoder)
             to_cat_obj_ptr = None

@@ -9,6 +9,7 @@ from torch.utils.data import Subset
 
 
 def get_dataloader(args, rank=None, world_size=None):
+    nw = max(0, int(getattr(args, "num_workers", 4)))
     if args.dataset == 'combined': #nii
         combined_train_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
         combined_test_dataset = Combined(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
@@ -60,7 +61,7 @@ def get_dataloader(args, rank=None, world_size=None):
                 msd_train_dataset,
                 batch_size=1,
                 shuffle=False,
-                num_workers=4,
+                num_workers=nw,
                 pin_memory=True,
                 sampler=train_sampler
             )
@@ -68,16 +69,16 @@ def get_dataloader(args, rank=None, world_size=None):
                 msd_test_dataset,
                 batch_size=1,
                 shuffle=False,
-                num_workers=2,
+                num_workers=max(0, nw // 2),
                 pin_memory=True,
                 sampler=test_sampler
             )
         else:
             train_sampler = None
             test_sampler = None
-            
-            nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
-            nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
+
+            nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=nw, pin_memory=True)
+            nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=max(0, nw // 2), pin_memory=True)
         '''end'''
     elif args.dataset == 'btcv': #png
         '''btcv data'''

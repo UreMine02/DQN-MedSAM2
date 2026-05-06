@@ -4,15 +4,19 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 
+import os
 from typing import Optional
 
 import torch
 from torch import nn, Tensor
+from torch.utils.checkpoint import checkpoint
 
 from sam2_train.modeling.sam.transformer import RoPEAttention
 
 from sam2_train.modeling.sam2_utils import get_activation_fn, get_clones
-from torch.utils.checkpoint import checkpoint
+
+_USE_GRAD_CKPT = os.environ.get("DQN_MEDSAM2_GRAD_CHECKPOINT", "0") == "1"
+
 
 class MemoryAttentionLayer(nn.Module):
 
@@ -91,11 +95,21 @@ class MemoryAttentionLayer(nn.Module):
         gated_indices: Optional[Tensor] = None
     ) -> torch.Tensor:
 
-        # Self-Attn, Cross-Attn
-        # tgt = self._forward_sa(tgt, query_pos)
-        # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
-        tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
-        tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, use_reentrant=False)
+        if _USE_GRAD_CKPT:
+            tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
+            tgt = checkpoint(
+                self._forward_ca,
+                tgt,
+                memory,
+                query_pos,
+                pos,
+                num_k_exclude_rope,
+                gated_indices,
+                use_reentrant=False,
+            )
+        else:
+            tgt = self._forward_sa(tgt, query_pos)
+            tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))

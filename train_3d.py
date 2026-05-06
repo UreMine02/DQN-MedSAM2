@@ -27,7 +27,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from timm import optim as timm_optim
 
-import wandb # NOTE: WANDB
+# import wandb  # disabled temporarily
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -45,24 +45,52 @@ def train(rank=0, world_size=0):
         GPUdevice = torch.device('cuda', rank)
         # torch.cuda.set_device(GPUdevice)
     else:
-        GPUdevice = torch.device('cuda', args.gpu_device)
+        device_count = torch.cuda.device_count()
+        gpu_idx = args.gpu_device
+        if device_count == 0:
+            raise RuntimeError("No CUDA device detected, but args.gpu=True.")
+        # NOTE: CUDA_VISIBLE_DEVICES re-indexes GPUs inside the process.
+        # Example: CUDA_VISIBLE_DEVICES=1 => the only visible GPU is cuda:0.
+        if gpu_idx < 0 or gpu_idx >= device_count:
+            print(
+                f"[GPU] WARNING: args.gpu_device={gpu_idx} out of range for visible GPUs (count={device_count}). "
+                f"Resetting to cuda:0.",
+                flush=True,
+            )
+            gpu_idx = 0
+        # Make sure downstream code (e.g. func_3d/function.py) uses the same GPU index.
+        args.gpu_device = gpu_idx
+        GPUdevice = torch.device('cuda', gpu_idx)
+
+    if GPUdevice.type == 'cuda':
+        vis = os.environ.get('CUDA_VISIBLE_DEVICES', '(unset — all GPUs visible to process)')
+        name = torch.cuda.get_device_name(GPUdevice)
+        if args.distributed and world_size > 0:
+            print(
+                f'[GPU] rank {rank}/{world_size - 1} | CUDA_VISIBLE_DEVICES={vis} | '
+                f'torch device={GPUdevice} | {name}',
+                flush=True,
+            )
+        else:
+            print(
+                f'[GPU] CUDA_VISIBLE_DEVICES={vis} | torch device={GPUdevice} | {name}',
+                flush=True,
+            )
         
-    # NOTE: WANDB
-    if args.wandb_enabled:
-        wandb.init(
-            project="dqn-medsam2",
-            name=args.exp_name,              # Experiment name from args
-            config=args
-        )
+    # NOTE: WANDB (disabled temporarily)
+    # if args.wandb_enabled:
+    #     wandb.init(
+    #         project="dqn-medsam2",
+    #         name=args.exp_name,
+    #         config=args
+    #     )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
-    net.to(dtype=torch.bfloat16)
+    # FP32 training — bfloat16 forward/backward hit bogus tensor dims with this PyTorch+SAM2 stack.
+    net.to(dtype=torch.float32)
     agent = getattr(net, "agent", None)
     if agent is not None:
-        agent.to_dtype(torch.bfloat16)
-        
-    if args.wandb_enabled:
-        wandb.watch(net)
+        agent.to_dtype(torch.float32)
         
     if args.pretrain:
         print(args.pretrain)
@@ -105,7 +133,6 @@ def train(rank=0, world_size=0):
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.1)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
-    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
@@ -119,9 +146,9 @@ def train(rank=0, world_size=0):
     root_path = args.checkpoint_path
     current_time = datetime.now(pytz.timezone("Australia/Adelaide")).strftime("%Y-%m-%d-%H-%M-%S")
     checkpoint_path = os.path.join(root_path, current_time)
-    if not os.path.exists(checkpoint_path) and args.save_ckpt and rank == 0:
-        os.makedirs(checkpoint_path)
-        print(f"checkpoint saved in {checkpoint_path}")
+    if args.save_ckpt and rank == 0:
+        os.makedirs(checkpoint_path, exist_ok=True)
+        print(f"checkpoint will be saved under {checkpoint_path}")
 
     '''begain training'''
     best_dice = 0.0
@@ -156,10 +183,10 @@ def train(rank=0, world_size=0):
         }
         scheduler.step()
         
-        # NOTE: WANDB
-        if args.wandb_enabled and loss is not None:
-            wandb.log(loss_dict, step=epoch)
-            
+        # NOTE: WANDB (disabled temporarily)
+        # if args.wandb_enabled and loss is not None:
+        #     wandb.log(loss_dict, step=epoch)
+
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
@@ -187,11 +214,11 @@ def train(rank=0, world_size=0):
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-            
-            # NOTE: WANDB
-            if args.wandb_enabled:
-                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-            
+
+            # NOTE: WANDB (disabled temporarily)
+            # if args.wandb_enabled:
+            #     wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
+
         if args.save_ckpt:
             if args.distributed and rank == 0:
                 ckpt = {

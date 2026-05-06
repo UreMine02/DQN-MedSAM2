@@ -346,10 +346,15 @@ class BasePOAgent(BaseAgent):
 
         state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
         action_logits = self.policy_net(*state, training=training, return_logits=True).squeeze(0)
-        action_logits = action_logits.detach().cpu()
+        action_logits = action_logits.detach().cpu().float()
         action_dist = Categorical(logits=action_logits)
 
-        valid_actions = torch.Tensor(valid_actions).to(torch.int64)
+        valid_actions = torch.as_tensor(valid_actions, dtype=torch.int64).view(-1)
+        valid_actions = valid_actions[valid_actions < action_logits.shape[0]]
+        if valid_actions.numel() == 0:
+            raise RuntimeError(
+                f"PO agent: no valid_actions fit policy logits (got {action_logits.shape[0]} logits)."
+            )
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
 
