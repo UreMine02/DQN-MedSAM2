@@ -394,7 +394,6 @@ class BasePOAgent(BaseAgent):
 
         with torch.enable_grad():
             policy_logits = self.policy_net(states)
-            print(policy_logits.shape)
             policy_probs = policy_logits.softmax(dim=-1)
             action_probs = policy_probs.gather(1, actions)
             log_probs = torch.log(policy_probs)
@@ -404,13 +403,9 @@ class BasePOAgent(BaseAgent):
             minus_entropy = (policy_probs * log_probs).sum(dim=1, keepdim=True)
             policy_loss += minus_entropy * self.entropy_weight # entropy regularization
             policy_loss = policy_loss.mean()
-            assert not policy_loss.isnan().any()
 
             self.optimizer.zero_grad()
             policy_loss.backward()
-            for param in self.policy_net.parameters():
-                if param.grad is not None and param.grad.isnan().any():
-                    raise ValueError("policy nan grad")
             actor_gradnorm = nn.utils.clip_grad_norm_(
                 self.policy_net.parameters(),
                 max_norm=0.1
