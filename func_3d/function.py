@@ -123,8 +123,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 #     continue
 
                 # local_size = len(sliding_window)
+                local_length = imgs_tensor.shape[0]
                 if args.distributed:
-                    local_length = imgs_tensor.shape[0]
                     max_length = torch.tensor(imgs_tensor.shape[0], device=GPUdevice)
                     dist.all_reduce(max_length, op=dist.ReduceOp.MAX)
                     
@@ -150,10 +150,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 else:
                     sliding_window = [
                         slice(i, i+args.video_length) 
-                        for i in range(0, imgs_tensor.shape[0], args.video_length)
+                        for i in range(0, local_length, args.video_length)
                     ]
                 
-                print(rank, imgs_tensor.shape, sliding_window)
+                # print(rank, imgs_tensor.shape, sliding_window)
                 processed_frame = 0
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -195,7 +195,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         "aux_loss": 0,
                         "num_step": 0
                     }
-                    print(rank, len(video_segments))
+                    # print(rank, len(video_segments))
                     for frame_idx in video_segments.keys():
                         pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
                         mask = video_segments[frame_idx][obj_id]["image_label"]
@@ -212,11 +212,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         iou_gt = iou_score(pred_mask, mask)
                         dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
                         
-                        print(rank, type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss))
+                        # print(rank, type(focal_loss), type(dice_loss), type(mae_loss), type(bce_loss))
                         # Update the loss of the class
                         valid = 1 if processed_frame < local_length else 0
                         valid = torch.tensor(valid, device=GPUdevice)
-                        print("valid", valid)
                         focal_loss = focal_loss * valid
                         dice_loss = dice_loss * valid
                         mae_loss = mae_loss * valid
@@ -230,9 +229,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                     accum_step = 1
                     # Average loss of this class
-                    print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]))
+                    # print(type(class_loss["focal_loss"]), type(class_loss["dice_loss"]), type(class_loss["mae_loss"]), type(class_loss["bce_loss"]))
                     average_loss(class_loss)
-                    print(type(class_loss))
+                    # print(type(class_loss))
                     avg_loss = class_loss["total_loss"] / accum_step
                     avg_loss.backward()
 
