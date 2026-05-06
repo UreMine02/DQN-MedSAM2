@@ -27,7 +27,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 
 from timm import optim as timm_optim
 
-# import wandb  # disabled temporarily
+import wandb  # disabled temporarily
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
@@ -78,12 +78,12 @@ def train(rank=0, world_size=0):
             )
         
     # NOTE: WANDB (disabled temporarily)
-    # if args.wandb_enabled:
-    #     wandb.init(
-    #         project="dqn-medsam2",
-    #         name=args.exp_name,
-    #         config=args
-    #     )
+    if args.wandb_enabled:
+        wandb.init(
+            project="dqn-medsam2",
+            name=args.exp_name,
+            config=args
+        )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
     # FP32 training — bfloat16 forward/backward hit bogus tensor dims with this PyTorch+SAM2 stack.
@@ -184,8 +184,8 @@ def train(rank=0, world_size=0):
         scheduler.step()
         
         # NOTE: WANDB (disabled temporarily)
-        # if args.wandb_enabled and loss is not None:
-        #     wandb.log(loss_dict, step=epoch)
+        if args.wandb_enabled and loss is not None:
+            wandb.log(loss_dict, step=epoch)
 
         time_end = time.time()
         print(loss_dict)
@@ -216,8 +216,8 @@ def train(rank=0, world_size=0):
                 new_best = True
 
             # NOTE: WANDB (disabled temporarily)
-            # if args.wandb_enabled:
-            #     wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
+            if args.wandb_enabled:
+                wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
 
         if args.save_ckpt:
             if args.distributed and rank == 0:

@@ -9,25 +9,27 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd06-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
-EXP=msd_task06+grpo+icl
+EXP=msd_task06+ppo+sam2rl
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task06 \
-    -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/MSD \
-    -lr 5e-5 \
+    -data_path /data/datasets/nii/MSD \
+    -lr 1e-4 \
     -val_freq 1 \
-    -ep 500 \
+    -ep 50 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3
+    -num_support 0 \
+    -wandb_enabled
