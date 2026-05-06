@@ -160,6 +160,7 @@ class MSD(Dataset):
         data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
         data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
 
+        # if self.mode == "train":
         pos_slices = np.sum(data_seg_3d, axis=(0,1)) > 0
         image_3d = image_3d[:, :, pos_slices]
         data_seg_3d = data_seg_3d[:, :, pos_slices]

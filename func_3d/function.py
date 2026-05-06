@@ -218,27 +218,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                             else:
                                 mask = torch.zeros_like(pred).to(device=GPUdevice)
 
-                            # NOTE: TEST AUXILIARY LOSS
-                            if args.auxiliary_loss == "dice":
-                                cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"]
-                                cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
-                                aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0))
-
-                                non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
-                                non_cond_gating_score = list(non_cond_gating_score)
-                                if len(non_cond_gating_score) > 0:
-                                    non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0)
-                                    aux_label = []
-                                    for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
-                                        aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"])
-                                    aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
-
-                                    non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
-                                    aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
-
-                                aux_loss = 0.2 * aux_loss
-                            else:
-                                aux_loss = torch.Tensor([0]).to(device=GPUdevice)
+                            aux_loss = torch.Tensor([0]).to(device=GPUdevice)
 
                             # Calculate the loss
                             obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"]
@@ -508,6 +488,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["drop_frame"] = drop_frame
                     ablation_data[f"{name}_{obj_id}_{frame_idx}"]["min_attn"] = train_state["output_dict"]["min_attn"][frame_idx]
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["oracle_frame"] = train_state["output_dict"]["oracle_frame"][frame_idx]
 
         average_score(instance_score)
         update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])

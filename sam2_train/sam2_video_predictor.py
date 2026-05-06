@@ -211,7 +211,8 @@ class SAM2VideoPredictor(SAM2Base):
                 "attn_frames": {},
                 "dice_drop": {},
                 "drop_frame": {},
-                "min_attn": {}
+                "min_attn": {},
+                "oracle_frame": {}
             })
         # Slice (view) of each object tracking results, sharing the same memory with "output_dict"
         inference_state["output_dict_per_obj"] = {}
@@ -1441,7 +1442,7 @@ class SAM2VideoPredictor(SAM2Base):
         }
 
         if ablation:
-            self.check_drop(
+            self.check_oracle(
                 inference_state,
                 storage_device,
                 frame_idx,
@@ -1954,7 +1955,8 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         agent_act,
-        **kwargs):
+        **kwargs
+    ):
         output_dict["dice_drop"][frame_idx] = {}
         video_H = inference_state["video_height"]
         video_W = inference_state["video_width"]
@@ -2032,6 +2034,67 @@ class SAM2VideoPredictor(SAM2Base):
 
             if frame_idx > 0:
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                
+    def check_oracle(
+        self,
+        inference_state,
+        storage_device,
+        frame_idx,
+        current_vision_feats,
+        current_vision_pos_embeds,
+        output_dict,
+        agent_act,
+        **kwargs
+    ):
+        output_dict["oracle_frame"][frame_idx] = {}
+        video_H = inference_state["video_height"]
+        video_W = inference_state["video_width"]
+
+        for i, prev_frame_idx in enumerate(output_dict["await_outputs"].keys()):
+            temp_output_dict = {
+                "cond_frame_outputs": output_dict["cond_frame_outputs"].copy(),
+                "non_cond_frame_outputs": {k:v for k,v in output_dict["await_outputs"].items() if k == prev_frame_idx}
+            }
+            # print(frame_idx, temp_output_dict["non_cond_frame_outputs"].keys())
+
+            output_after = self.track_step(
+                frame_idx=frame_idx,
+                current_vision_feats=current_vision_feats,
+                current_vision_pos_embeds=current_vision_pos_embeds,
+                output_dict=temp_output_dict,
+                agent_act=True,
+                **kwargs
+            )
+
+            pred_masks = output_after["pred_masks"]
+            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+            gt_masks = gt_masks.to(torch.float32)
+            if pred_masks.shape[-2:] == (video_H, video_W):
+                pred_masks = pred_masks
+            else:
+                pred_masks = torch.nn.functional.interpolate(
+                    pred_masks,
+                    size=(video_H, video_W),
+                    mode="bilinear",
+                    align_corners=False,
+                )
+            pred_masks = (pred_masks.sigmoid() > 0.5).float()
+
+            dice_after = dice_score(pred_masks, gt_masks, smoothing=1e-8)
+            output_dict["oracle_frame"][frame_idx][prev_frame_idx] = dice_after.item()
+
+        # print(frame_idx, output_dict["dice_drop"][frame_idx].keys())
+        if not agent_act:
+            output_dict["drop_frame"][frame_idx] = -1
+            if len(output_dict["non_cond_frame_outputs"]) == self.num_maskmem - 1:
+                drop_frame = list(output_dict["non_cond_frame_outputs"].keys())[0]
+                output_dict["non_cond_frame_outputs"].pop(drop_frame)
+                output_dict["drop_frame"][frame_idx] = drop_frame
+
+            if frame_idx > 0:
+                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        
         
     def forward(
         self,
