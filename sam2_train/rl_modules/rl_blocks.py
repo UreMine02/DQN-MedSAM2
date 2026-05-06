@@ -122,12 +122,13 @@ class PerceiverResampler(nn.Module):
         #     num_heads=num_heads, downsample_rate=1, dropout=0.1, 
         # )
         self.norm1 = nn.LayerNorm(hidden_dim)
+        self.norm2 = nn.LayerNorm(hidden_dim)
         self.mlp = nn.Sequential(OrderedDict([
+            ("norm", nn.LayerNorm(hidden_dim)),
             ("c_fc", nn.Linear(hidden_dim, hidden_dim * 4)),
             ("gelu", QuickGELU()),
             ("c_proj", nn.Linear(hidden_dim * 4, hidden_dim))
         ]))
-        self.norm2 = nn.LayerNorm(hidden_dim)
         
         self.hidden_dim = hidden_dim
         self.dropout = dropout
@@ -145,6 +146,11 @@ class PerceiverResampler(nn.Module):
         :param x_f: [B,L,D]
         :param x: [B,L,D]
         """
+        # x_f = self.norm1(x_f)
+        # x = self.norm2(x)
+        # x = x + self.attention(x, context=torch.cat([x_f, x], dim=1))
+        # x = x + self.mlp(x)
+        
         x = x + self.attention(self.norm1(x), context=torch.cat([x_f, x], dim=1))
         x = x + self.mlp(self.norm2(x))
         return x
@@ -324,7 +330,7 @@ class RoPEAttention(Attention):
         # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
 
     def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
+        self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0
     ) -> Tensor:
         # Input projections
         q = self.q_proj(q)
@@ -392,11 +398,7 @@ class RoPEAttention(Attention):
         out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
 
         # Compute attn_weight for later use
-        attn_weight = None
-        if return_attn:
-            scale_factor = 1 / math.sqrt(q.size(-1))
-            attn_weight = q @ k.transpose(-2, -1) * scale_factor
-
+        
         # # Attention
         # with torch.backends.cuda.sdp_kernel(
         #     enable_flash=USE_FLASH_ATTN,
@@ -409,4 +411,4 @@ class RoPEAttention(Attention):
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 
-        return out, attn_weight
+        return out

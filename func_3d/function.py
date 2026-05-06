@@ -4,13 +4,25 @@
 import os
 import copy
 import contextlib
+import time
+import random
+import numpy as np
+from tqdm import tqdm
+from tabulate import tabulate
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.distributed as dist
+import torchshow as ts
 from torchvision.utils import draw_segmentation_masks, save_image
+
+
 from tqdm import tqdm
 from tabulate import tabulate
 import numpy as np
+import pandas as pd
+
 from monai.losses import DiceLoss
 
 import cfg
@@ -38,6 +50,18 @@ global_step_best = 0
 epoch_loss_values = []
 metric_values = []
 
+def min_max_scaling(a):
+    return (a - a.min()) / (a.max() - a.min() + 1e-8)
+
+def check(a, bank):
+    in_bank = torch.zeros_like(a, dtype=torch.bool)
+    out_bank = torch.ones_like(a, dtype=torch.bool)
+    in_bank[bank] = True
+    out_bank[bank] = False 
+    min_inbank = a[in_bank].min()
+    max_outbank = a[out_bank].max()
+    return (min_inbank < max_outbank).cpu().item()
+
 def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     if args.distributed:
         # net = net.module
@@ -53,9 +77,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     use_fwd_amp = getattr(args, "forward_autocast_bf16", False)
 
     video_length = args.video_length
-    train_agent = not args.no_agent
-    agent_act = not args.no_agent # and epoch >= 0
-    generate_rl_samples = not args.no_agent
     dice_loss_per_class = {}
 
     lossfunc = paper_loss
@@ -85,7 +106,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
             whole_support_imgs_tensor = packs["support_image"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
             task = packs["task"][0]
-            
+
             obj_list = torch.unique(whole_masks_tensor)[1:].int().tolist()
             instance_loss = {
                 "total_loss": 0,
@@ -117,69 +138,61 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
 
                 support_imgs_tensor = pack["support_image"]
                 support_masks_tensor = pack["support_label"]
-                
+
+                # support_imgs_tensor = F.interpolate(support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+                # support_masks_tensor = F.interpolate(support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+
                 # if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
                 #     print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue  # Skip empty tensors
                 # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
+                sliding_window = [
+                    slice(i, i+args.video_length) 
+                    for i in range(0, imgs_tensor.shape[0], args.video_length)
+                ]
+                
+                processed_frame = 0
+                for slide_idx, slide in enumerate(sliding_window):
+                    slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                    slide_masks_tensor = masks_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
+                    slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+                    slide_masks_tensor = F.interpolate(slide_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
 
-                train_state = sam.train_init_state(
-                    args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
-                )
-                train_state["rl_config"]["memory_bank_size"] = args.memory_bank_size
+                    train_state = sam.train_init_state(
+                        args=args,
+                        imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor, support_imgs_tensor=support_imgs_tensor
+                    )
+                    train_state["rl_config"]["memory_bank_size"] = args.memory_bank_size
 
-                _fwd_cm = (
-                    torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-                    if use_fwd_amp
-                    else contextlib.nullcontext()
-                )
-                with _fwd_cm:
-                    _bbox_mode = getattr(args, "bbox_query_prompt_mode", "first")
-                    _stride = max(1, int(getattr(args, "bbox_query_prompt_stride", 3)))
-                    _added_bbox = False
-                    for frame_idx in range(masks_tensor.shape[0]):
-                        gt_mask = masks_tensor[frame_idx]  # shape: [H, W] (binary mask)
+                    _fwd_cm = (
+                        torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+                        if use_fwd_amp
+                        else contextlib.nullcontext()
+                    )
+                    with _fwd_cm:
+                        _bbox_mode = getattr(args, "bbox_query_prompt_mode", "first")
+                        _stride = max(1, int(getattr(args, "bbox_query_prompt_stride", 3)))
+                        _added_bbox = False
+                        for frame_idx in range(slide_masks_tensor.shape[0]):
+                            gt_mask = slide_masks_tensor[frame_idx]  # shape: [H, W] (binary mask)
 
-                        ys, xs = torch.where(gt_mask > 0)
-
-                        if len(xs) == 0 or len(ys) == 0:
-                            continue
-
-                        if _bbox_mode == "stride" and frame_idx % _stride != 0:
-                            continue
-
-                        x_min = xs.min().item()
-                        y_min = ys.min().item()
-                        x_max = xs.max().item()
-                        y_max = ys.max().item()
-
-                        bbox = [x_min, y_min, x_max, y_max]
-
-                        _, _, _ = sam.train_add_new_bbox(
-                            inference_state=train_state,
-                            frame_idx=frame_idx,
-                            obj_id=obj_id,
-                            bbox=bbox,
-                            normalize_coords=False,
-                        )
-                        _added_bbox = True
-                        if _bbox_mode == "first":
-                            break
-                    if _bbox_mode == "stride" and not _added_bbox:
-                        for frame_idx in range(masks_tensor.shape[0]):
-                            gt_mask = masks_tensor[frame_idx]
                             ys, xs = torch.where(gt_mask > 0)
+
                             if len(xs) == 0 or len(ys) == 0:
                                 continue
-                            bbox = [
-                                xs.min().item(),
-                                ys.min().item(),
-                                xs.max().item(),
-                                ys.max().item(),
-                            ]
+
+                            if _bbox_mode == "stride" and frame_idx % _stride != 0:
+                                continue
+
+                            x_min = xs.min().item()
+                            y_min = ys.min().item()
+                            x_max = xs.max().item()
+                            y_max = ys.max().item()
+
+                            bbox = [x_min, y_min, x_max, y_max]
+
                             _, _, _ = sam.train_add_new_bbox(
                                 inference_state=train_state,
                                 frame_idx=frame_idx,
@@ -187,85 +200,93 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                                 bbox=bbox,
                                 normalize_coords=False,
                             )
-                            break
+                            _added_bbox = True
+                            if _bbox_mode == "first":
+                                break
+                        if _bbox_mode == "stride" and not _added_bbox:
+                            for frame_idx in range(slide_masks_tensor.shape[0]):
+                                gt_mask = slide_masks_tensor[frame_idx]
+                                ys, xs = torch.where(gt_mask > 0)
+                                if len(xs) == 0 or len(ys) == 0:
+                                    continue
+                                bbox = [
+                                    xs.min().item(),
+                                    ys.min().item(),
+                                    xs.max().item(),
+                                    ys.max().item(),
+                                ]
+                                _, _, _ = sam.train_add_new_bbox(
+                                    inference_state=train_state,
+                                    frame_idx=frame_idx,
+                                    obj_id=obj_id,
+                                    bbox=bbox,
+                                    normalize_coords=False,
+                                )
+                                break
 
-                    video_segments = net(
-                        imgs_tensor, masks_tensor,
-                        support_masks_tensor, train_state,
-                        obj_id, 
-                        train_agent=train_agent, agent_act=agent_act, generate_rl_samples=generate_rl_samples,
-                        device=GPUdevice
-                    )
+                        video_segments = net(
+                            slide_imgs_tensor, slide_masks_tensor,
+                            support_masks_tensor, train_state,
+                            obj_id, 
+                            train_agent=(not (args.no_agent or args.random_drop)),
+                            agent_act=(not (args.no_agent or args.random_drop)),
+                            generate_rl_samples=(not (args.no_agent or args.random_drop)),
+                            random_drop=args.random_drop,
+                            start_trajectory=(slide_idx == 0),
+                            end_trajectory=(slide_idx == len(sliding_window)-1),
+                            device=GPUdevice
+                        )
 
-                class_loss = {
-                    "total_loss": 0,
-                    "focal_loss": 0,
-                    "dice_loss": 0,
-                    "mae_loss": 0,
-                    "bce_loss": 0,
-                    "aux_loss": 0,
-                    "num_step": 0
-                }
+                    class_loss = {
+                        "total_loss": 0,
+                        "focal_loss": 0,
+                        "dice_loss": 0,
+                        "mae_loss": 0,
+                        "bce_loss": 0,
+                        "aux_loss": 0,
+                        "num_step": 0
+                    }
 
-                for frame_idx in video_segments.keys():
-                    pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0).float()
-                    mask = video_segments[frame_idx][obj_id]["image_label"]
-                    if mask is not None:
-                        mask = mask == obj_id
-                        mask = mask.to(dtype=torch.float32, device=GPUdevice)
-                    else:
-                        mask = torch.zeros_like(pred).to(device=GPUdevice)
+                    for frame_idx in video_segments.keys():
+                        pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0).float()
+                        mask = video_segments[frame_idx][obj_id]["image_label"]
+                        # print(pred.shape, mask.shape)
+                        if mask is not None:
+                            mask = mask == obj_id
+                            mask = mask.to(dtype=torch.float32, device=GPUdevice)
+                        else:
+                            mask = torch.zeros_like(pred).to(device=GPUdevice)
 
-                    # NOTE: TEST AUXILIARY LOSS
-                    if args.auxiliary_loss == "dice":
-                        cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["cond_frames"].float()
-                        cond_gating_score = F.interpolate(cond_gating_score, size=support_masks_tensor.shape[-2:], mode="nearest")
-                        aux_loss = aux_lossfunc(cond_gating_score, support_masks_tensor.unsqueeze(0).float())
-                        
-                        non_cond_gating_score = video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].values()
-                        non_cond_gating_score = list(non_cond_gating_score)
-                        if len(non_cond_gating_score) > 0:
-                            non_cond_gating_score = torch.cat(list(non_cond_gating_score), dim=0).unsqueeze(0).float()
-                            aux_label = []
-                            for prev_frame_idx in video_segments[frame_idx][obj_id]["gating_score_dict"]["non_cond_frames"].keys():
-                                aux_label.append(video_segments[prev_frame_idx][obj_id]["pred_mask"].float())
-                            aux_label = torch.cat(aux_label, dim=0).unsqueeze(0)
-
-                            non_cond_gating_score = F.interpolate(non_cond_gating_score, size=aux_label.shape[-2:], mode="nearest")
-                            aux_loss += aux_lossfunc(non_cond_gating_score, aux_label)
-
-                        aux_loss = 0.2 * aux_loss
-                    else:
                         aux_loss = torch.zeros(1, device=GPUdevice, dtype=torch.float32)
 
-                    # Calculate the loss
-                    obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"].float()
-                    iou_pred = video_segments[frame_idx][obj_id]["iou"].float()
-                    pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
-                    iou_gt = iou_score(pred_mask, mask, smoothing=1e-8)
-                    dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
-                    class_loss["num_step"] += 1
-                    # Update the loss of the class
-                    update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
+                        # Calculate the loss
+                        obj_pred = video_segments[frame_idx][obj_id]["object_score_logits"].float()
+                        iou_pred = video_segments[frame_idx][obj_id]["iou"].float()
+                        pred_mask = (torch.sigmoid(pred.detach()) > 0.5).float()
+                        iou_gt = iou_score(pred_mask, mask, smoothing=1e-8)
+                        dice_loss, focal_loss, mae_loss, bce_loss = lossfunc(pred, mask, iou_pred, iou_gt.reshape(1), obj_pred)
+                        class_loss["num_step"] += 1
+                        # Update the loss of the class
+                        update_loss(class_loss, focal_loss, dice_loss, mae_loss, bce_loss, aux_loss)
 
-                    dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
-                    dice_loss_per_class[obj_id]["num_step"] += 1
+                        dice_loss_per_class[obj_id]["dice_loss"] += dice_loss.item()
+                        dice_loss_per_class[obj_id]["num_step"] += 1
 
-                accum_step = 1
-                # Average loss of this class
-                average_loss(class_loss)
-                avg_loss = (class_loss["total_loss"] / accum_step).float()
-                avg_loss.backward()
-                
-                for name, param in net.named_parameters():
-                    if param.grad is not None and param.grad.isnan().any():
-                        raise AssertionError(f"{name} grad is nan")
-                        
+                    accum_step = 1
+                    # Average loss of this class
+                    average_loss(class_loss)
+                    avg_loss = (class_loss["total_loss"] / accum_step).float()
+                    avg_loss.backward()
+                    
+                    for name, param in net.named_parameters():
+                        if param.grad is not None and param.grad.isnan().any():
+                            raise AssertionError(f"{name} grad is nan")
+                            
 
-                if (batch_idx + 1) % accum_step == 0:
-                    grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                    optimizer.step()
-                    optimizer.zero_grad()
+                    if (batch_idx + 1) % accum_step == 0:
+                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                        optimizer.step()
+                        optimizer.zero_grad()
 
                 # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                 # losses_reduced = reduce_dict(to_reduce)
@@ -362,7 +383,10 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     agent_act = not args.no_agent
     use_fwd_amp = getattr(args, "forward_autocast_bf16", False)
     # lossfunc = paper_loss
+    
+    ablation_data = {}
 
+    min_attns = []
     for packs in val_loader:
         whole_imgs_tensor = packs["image"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
         whole_masks_tensor = packs["label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
@@ -370,7 +394,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         whole_support_masks_tensor = packs["support_label"].squeeze(0).to(dtype = torch.float32, device = GPUdevice)
         task = packs["task"][0]
         name = packs["name"][0]
-        # cls_id = packs["obj_id"][0]
         # Log initial slice stats for validation
         # print(f"[VALIDATION PACK] Name: {name}")
         # print(f"  Query Total Slices: {whole_masks_tensor.shape[0]}, Classes: {torch.unique(whole_masks_tensor)}")
@@ -381,18 +404,11 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         for obj_id in obj_list:
             pack = extract_object(whole_imgs_tensor, whole_masks_tensor, whole_support_imgs_tensor, whole_support_masks_tensor, \
                                     obj_id=obj_id, video_length=None, num_support=args.num_support)
-            
-            pack = {
-                "image": whole_imgs_tensor,
-                "label": whole_masks_tensor,
-                "support_image": whole_support_imgs_tensor,
-                "support_label": whole_support_masks_tensor,
-            } 
-            # if pack is None:
-            #     print(f"[Validation] [PACK]: No valid for pack for obj_id={obj_id}. Skipping...")
-            #     # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
-            #     # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
-            #     continue
+            if pack is None:
+                print(f"[Validation] [PACK]: No valid for pack for obj_id={obj_id}. Skipping...")
+                # print(f"[DEBUG - QUERY] Slices: {whole_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_masks_tensor)}")
+                # print(f"[DEBUG - SUPPORT] Slices: {whole_support_imgs_tensor.shape[0]}, Unique Classes: {torch.unique(whole_support_masks_tensor)}")
+                continue
             if f"{task}_{obj_id}" not in score_per_class.keys():
                 score_per_class[f"{task}_{obj_id}"] = {
                     "iou": torch.FloatTensor([]).to(device=GPUdevice),
@@ -407,14 +423,21 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
 
             support_imgs_tensor = pack["support_image"]
             support_masks_tensor = pack["support_label"]
-            # support_bbox_dict = pack["support_bbox"]
-            # if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
-            #     print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-            #     continue  # Skip empty tensors
+            
+            support_imgs_tensor = F.interpolate(support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+            support_masks_tensor = F.interpolate(support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
 
-            # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
-            #     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
-            #     continue
+            imgs_tensor = F.interpolate(imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+            masks_tensor = F.interpolate(masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+                    
+            # support_bbox_dict = pack["support_bbox"]
+            if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
+                print(f"VALIDATION: [Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                continue  # Skip empty tensors
+
+            if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
+                print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
+                continue
 
             train_state = sam.val_init_state(
                 args=args,
@@ -481,7 +504,16 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                             )
                             break
 
-                    video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
+                    video_segments = net(
+                        imgs_tensor, 
+                        masks_tensor, 
+                        support_masks_tensor, 
+                        train_state, 
+                        obj_id, 
+                        ablation=args.ablation,
+                        agent_act=agent_act, 
+                        device=GPUdevice
+                    )
 
                 # Record metrics per frame
                 for frame_idx in video_segments.keys():
@@ -506,6 +538,122 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     else:
                         mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
 
+            class_score = {"total_score": 0, "dice_score": 0, "iou_score": 0, "num_step": 0}
+            volume_masks = []
+            volume_preds = []
+            for frame_idx in video_segments.keys():
+                pred = video_segments[frame_idx][obj_id]["pred_mask"].squeeze(0)
+                mask = video_segments[frame_idx][obj_id]["image_label"]
+                pred_mask = torch.where(torch.sigmoid(pred) >= 0.5, 1, 0)
+                if mask is not None:
+                    mask = (mask == obj_id).to(dtype=torch.float32, device=GPUdevice)
+                    volume_masks.append(mask.cpu())
+                    volume_preds.append(pred.cpu())
+                    
+                    (
+                        iou,
+                        dice,
+                        fb_iou,
+                    ) = eval_seg(pred, mask)
+
+                    score_dict = score_per_class[f"{task}_{obj_id}"]
+                    score_dict["iou"] = torch.cat([score_dict["iou"], iou]) 
+                    score_dict["dice"] = torch.cat([score_dict["dice"], dice]) 
+                    score_dict["fb_iou"] = torch.cat([score_dict["fb_iou"], fb_iou]) 
+                    
+                    video_segments[frame_idx]["dice"] = dice.detach().cpu().item()
+                    # print(frame_idx, dice.detach().cpu().item())
+                else:
+                    mask = torch.zeros_like(pred).to(device=GPUdevice)
+
+                if args.vis:
+                    save_dir = "/".join(args.pretrain.split("/")[:-1])
+                    os.makedirs(f"{save_dir}/vis_agent{not args.no_agent}", exist_ok=True)
+                    save_prefix = f"{save_dir}/vis_agent{not args.no_agent}/{name}_{obj_id}_idx{frame_idx}_dice{dice.item():.4f}_"
+                    # print(frame_idx, save_prefix)
+                    # mask *= 2
+                    im = imgs_tensor[frame_idx]
+                    im = (im - im.min()) / (im.max() - im.min()) * 255
+                    im = im.to(torch.uint8)
+                    image_with_gt = draw_segmentation_masks(
+                        im, 
+                        masks=mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
+                    )
+                    
+                    image_with_pred = draw_segmentation_masks(
+                        im, 
+                        masks=pred_mask.bool(),
+                        alpha=0.6, 
+                        colors="red" # You can specify a color or list of colors
+                    )
+                    
+                    save_image(image_with_gt.float() / 255.0, save_prefix + "gt.png")
+                    save_image(image_with_pred.float() / 255.0, save_prefix + "pred.png")
+
+            average_score(class_score)
+            update_score(instance_score, class_score["dice_score"], class_score["iou_score"])
+
+            instance_score["num_step"] += 1
+            
+            # volume_masks = torch.stack(volume_masks)#.flatten(1) # [D,H,W]
+            # volume_preds = torch.stack(volume_preds)#.flatten(1) # [D,H,W]
+            # 
+            # masks[f"{task}_{obj_id}"].append(volume_masks)
+            # preds[f"{task}_{obj_id}"].append(volume_preds)
+
+            # HYPOTHESIS TESTING
+            if args.ablation:
+                for frame_idx in train_state["output_dict"]["dice_drop"].keys():
+                    # print(frame_idx, video_segments[frame_idx]["dice"])
+                    drop_frame = train_state["output_dict"]["drop_frame"][frame_idx]
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"] = {}
+
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["delta"] = train_state["output_dict"]["dice_drop"][frame_idx]
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["dice"] = video_segments[frame_idx]["dice"]
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["drop_frame"] = drop_frame
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["min_attn"] = train_state["output_dict"]["min_attn"][frame_idx]
+                    ablation_data[f"{name}_{obj_id}_{frame_idx}"]["oracle_frame"] = train_state["output_dict"]["oracle_frame"][frame_idx]
+
+        average_score(instance_score)
+        update_score(total_score, instance_score["dice_score"], instance_score["iou_score"])
+        total_score["num_step"] += 1
+        # pbar.update()
+
+    average_score(total_score)
+
+    # HYPOTHESIS TESTING
+    # print(torch.stack(min_attns).mean())
+    if args.ablation:
+        data = []
+        for obj_id in ablation_data.keys():
+            data.append((
+                obj_id,
+                ablation_data[obj_id]["delta"],
+                # ablation_data[obj_id]["rank"],
+                ablation_data[obj_id]["dice"],
+                ablation_data[obj_id]["drop_frame"],
+                ablation_data[obj_id]["min_attn"],
+                ablation_data[obj_id]["oracle_frame"]
+            ))
+        columns = [
+            "id",
+            "delta",
+            # "rank",
+            "dice",
+            "drop_frame",
+            "min_attn",
+            "oracle_frame",
+        ]
+        
+        df = pd.DataFrame(data=data, columns=columns)
+        csv_dir = "/".join(args.pretrain.split("/")[:-1])
+        os.makedirs(csv_dir, exist_ok=True)
+        df.to_csv(f"{csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
+        print(f"Ablation save to {csv_dir}/{args.dataset}_{args.task}_agent{not args.no_agent}_ablation.csv")
+
+
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),
@@ -527,9 +675,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
         avg["dice"] = torch.cat([avg["dice"], metrics_dict["dice"].mean(dim=0, keepdim=True)])
         avg["fb_iou"] = torch.cat([avg["fb_iou"], metrics_dict["fb_iou"].mean(dim=0, keepdim=True)])
         avg["th"] = 0.5
-        
-        # if args.wandb_enabled:
-        #     wandb.log({f"{name}.Dice": metrics_dict["dice"].mean()}, step=epoch)
 
     avg["iou"] = avg["iou"].mean()
     avg["dice"] = avg["dice"].mean()

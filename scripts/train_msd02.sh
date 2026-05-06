@@ -14,28 +14,23 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+grpo+icl+cw_soft_gating+obj_ptr_gating+highres_gating_by_lowres_and_ptr
-export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task02+ppo+sam2rl
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
-    -sam_config sam2_hiera_t \
     -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -rl_config rl_modules/config/ppo_po_agent.yaml \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task02 \
-    -data_path /data/datasets/nii/MSD \
+    -data_path /data/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 500 \
+    -ep 50 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 5 \
-    -gating_dimension "cw" \
-    -gating_softness "soft" \
-    -auxiliary_loss "no" \
-    -wandb_enabled \
-    -obj_ptr_gating \
-    -highres_gating "by_lowres" \
+    -num_support 0 \
+    -memory_bank_size 6 \
+    -wandb_enabled

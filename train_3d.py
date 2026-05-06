@@ -7,15 +7,16 @@
 
 import os
 import time
-
-import cfg
-from func_3d import function
-from conf import settings
-from func_3d.utils import get_network, set_log_dir, create_logger
-from func_3d.dataset import get_dataloader
-from datetime import datetime
 import pytz
 import numpy as np
+from datetime import datetime
+from functools import partial
+
+import cfg
+from conf import settings
+from func_3d import function
+from func_3d.utils import get_network, set_log_dir, create_logger
+from func_3d.dataset import get_dataloader
 
 import torch
 import torch.distributed as dist
@@ -39,44 +40,13 @@ def cleanup():
 
 def train(rank=0, world_size=0):
     args = cfg.parse_args()
-
+    
     if args.distributed:
         setup(rank, world_size)
         GPUdevice = torch.device('cuda', rank)
-        # torch.cuda.set_device(GPUdevice)
     else:
-        device_count = torch.cuda.device_count()
-        gpu_idx = args.gpu_device
-        if device_count == 0:
-            raise RuntimeError("No CUDA device detected, but args.gpu=True.")
-        # NOTE: CUDA_VISIBLE_DEVICES re-indexes GPUs inside the process.
-        # Example: CUDA_VISIBLE_DEVICES=1 => the only visible GPU is cuda:0.
-        if gpu_idx < 0 or gpu_idx >= device_count:
-            print(
-                f"[GPU] WARNING: args.gpu_device={gpu_idx} out of range for visible GPUs (count={device_count}). "
-                f"Resetting to cuda:0.",
-                flush=True,
-            )
-            gpu_idx = 0
-        # Make sure downstream code (e.g. func_3d/function.py) uses the same GPU index.
-        args.gpu_device = gpu_idx
-        GPUdevice = torch.device('cuda', gpu_idx)
-
-    if GPUdevice.type == 'cuda':
-        vis = os.environ.get('CUDA_VISIBLE_DEVICES', '(unset — all GPUs visible to process)')
-        name = torch.cuda.get_device_name(GPUdevice)
-        if args.distributed and world_size > 0:
-            print(
-                f'[GPU] rank {rank}/{world_size - 1} | CUDA_VISIBLE_DEVICES={vis} | '
-                f'torch device={GPUdevice} | {name}',
-                flush=True,
-            )
-        else:
-            print(
-                f'[GPU] CUDA_VISIBLE_DEVICES={vis} | torch device={GPUdevice} | {name}',
-                flush=True,
-            )
-        
+        GPUdevice = torch.device('cuda', args.gpu_device)
+    
     # NOTE: WANDB (disabled temporarily)
     if args.wandb_enabled:
         wandb.init(
@@ -99,8 +69,9 @@ def train(rank=0, world_size=0):
         if "agent" in weights.keys() and not args.no_agent:
             agent.load_state_dict(weights["agent"])
 
+    # if not using agent, fallback to SAM2 fullfinetuning
     # if not args.no_agent:
-    for name, param in net.named_parameters():
+    for name, param in net.named_parameters():        
         if "image_encoder" in name:
             param.requires_grad_(False)
         elif "sam_prompt_encoder" in name:
@@ -156,6 +127,11 @@ def train(rank=0, world_size=0):
         net.train()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
+        #     net.module.image_encoder.eval()
+        #     net.module.sam_prompt_encoder.eval()
+        # else:
+        #     net.image_encoder.eval()
+        #     net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
@@ -190,9 +166,6 @@ def train(rank=0, world_size=0):
         time_end = time.time()
         print(loss_dict)
         print('time_for_training ', time_end - time_start)
-
-        # if args.distributed:
-            # torch.distributed.barrier()
 
         net.eval()
         new_best = False

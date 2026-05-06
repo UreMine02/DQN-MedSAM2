@@ -113,7 +113,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=image_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
         self.memory_spatial_summary = SpatialSummarizer(
             n_query=n_query,
@@ -122,9 +122,9 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=memory_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
-        
+
         self.cond_mem_proj = nn.Linear(memory_dim, image_dim)
         self.cond_obj_proj = nn.Linear(obj_ptr_dim, image_dim)
         self.non_cond_proj = nn.Linear(n_query * memory_dim + obj_ptr_dim, image_dim)
@@ -150,13 +150,13 @@ class BaseFeatureSummarizer(nn.Module):
 
         non_cond_bank_feat = torch.cat([non_cond_bank_feat, non_cond_obj_ptr], dim=-1)
         curr_mem_feat = torch.cat([curr_mem_feat, memory_ptr.unsqueeze(1)], dim=-1)
-        
+
         cond_bank_feat = self.cond_mem_proj(cond_bank_feat)
         cond_obj_ptr = self.cond_obj_proj(cond_obj_ptr)
         cond_bank_feat = torch.flatten(cond_bank_feat, start_dim=1, end_dim=2)
-        
+
         cond_bank_feat = torch.cat([cond_bank_feat, cond_obj_ptr], dim=1)
-        
+
         non_cond_bank_feat = self.non_cond_proj(non_cond_bank_feat)
         curr_mem_feat = self.non_cond_proj(curr_mem_feat)
 
@@ -177,7 +177,7 @@ class BasePolicyNetwork(nn.Module):
         self.action_decoder = nn.ModuleList(
             [PerceiverResampler(self.hidden_dim, num_heads=1, dropout=0.1) for _ in range(n_layers)]
         )
-        
+
         self.action_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
@@ -197,10 +197,10 @@ class BasePolicyNetwork(nn.Module):
             action_query = layer(x_f=action_context, x=action_query, training=training)
 
         actions_logits = self.action_proj(action_query)
-        
+
         return actions_logits.squeeze(-1)
         # if return_logits:
-        
+
         # actions_probs = torch.softmax(actions_logits, dim=1)
 
         # return actions_probs.squeeze(-1)
@@ -219,7 +219,7 @@ class BaseValueNetwork(nn.Module):
         self.value_decoder = nn.ModuleList(
             [PerceiverResampler(self.hidden_dim, 1, dropout=0.1) for _ in range(n_layers)]
         )
-        
+
         self.value_proj = nn.Sequential(
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
@@ -234,7 +234,7 @@ class BaseValueNetwork(nn.Module):
         for layer in self.value_decoder:
             value_query = layer(x_f=tokens, x=value_query, training=training)
 
-        return self.value_proj(tokens[:, 0, :])
+        return self.value_proj(value_query).squeeze(1)
 
 
 class BasePOAgent(BaseAgent):
@@ -356,6 +356,7 @@ class BasePOAgent(BaseAgent):
         total_policy_loss, total_value_loss, total_actor_gradnorm, total_critic_gradnorm = 0, 0, 0, 0
         critic_num_update = 0
         for i in range(num_update):
+            # NOTE: test totally random batch
             batch = random.sample(self.replay_buffer, k=self.batch_size)
 
             update_value = True
@@ -370,9 +371,9 @@ class BasePOAgent(BaseAgent):
                 critic_num_update += 1
 
         return {
-            "actor_loss": total_policy_loss / num_update, 
+            "actor_loss": total_policy_loss / num_update,
             "critic_loss": total_value_loss / critic_num_update,
-            "actor_gradnorm": total_actor_gradnorm / num_update, 
+            "actor_gradnorm": total_actor_gradnorm / num_update,
             "critic_gradnorm": total_critic_gradnorm / critic_num_update,
         }
 
@@ -415,13 +416,22 @@ class BasePOAgent(BaseAgent):
             value_loss = torch.Tensor([0])
             critic_gradnorm = torch.Tensor([0])
 
-            # total_loss = policy_loss + 0.1 * value_loss
-
+            # pred_value = self.value_net(
+            #     image_spatial_query.detach(),
+            #     non_cond_bank_feat.detach(),
+            #     cond_bank_feat.detach(),
+            #     curr_mem_feat.detach()
+            # )
+            # value_loss = F.mse_loss(pred_value, returns)
+            
+            # total_loss = 20 * policy_loss + 200 * value_loss
+            
             # self.optimizer.zero_grad()
             # total_loss.backward()
             # self.optimizer.step()
 
-            # print("loss", policy_loss, value_loss, minus_entropy.mean())
+            # actor_gradnorm = torch.Tensor([0])
+            # critic_gradnorm = torch.Tensor([0])
 
         return value_loss.detach(), policy_loss.detach(), actor_gradnorm, critic_gradnorm
 

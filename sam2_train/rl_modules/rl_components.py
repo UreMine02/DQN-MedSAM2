@@ -1,4 +1,5 @@
 import copy
+import torch
 
 # -------------------------
 # Define Action Space
@@ -77,12 +78,12 @@ class RLReplayInstance:
         self.next_state = next_state
         
         loss_diff = self.loss_before - self.loss_after
-        self.reward = self.reward + loss_diff
+        self.reward = self.reward + loss_diff #torch.sign(loss_diff)
 
     def set_done(self, loss_after):
         self.loss_after = loss_after
         self.next_state = self.state
         
         loss_diff = self.loss_before - self.loss_after
-        self.reward = self.reward + loss_diff
+        self.reward = self.reward + loss_diff #torch.sign(loss_diff)
         self.done = True

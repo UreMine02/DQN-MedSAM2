@@ -1,253 +1,198 @@
-""" Dataloader for the BTCV dataset
-    Yunli Qi
-"""
 import os
-import numpy as np
-import torch
+import glob
+import time
+import random
 import nibabel as nib
-from PIL import Image
-from torch.utils.data import Dataset
+import numpy as np
+import pandas as pd
+
+import torch
 import torch.nn.functional as F
-import torchvision.transforms as T
+from torch.utils.data import Dataset
 
-from func_3d.utils import random_click, generate_bbox
+from torchvision.transforms import v2
+from torchvision import tv_tensors
+from monai import transforms
 
-class Data:
-    def __init__(self, dataset):
-        self.dataset = dataset
-        self.task = []
-    
-    def add_new_task(self, task):
-        self.task.append(task)
 
-class Task:
-    def __init__(self, task):
-        self.task = task
-        self.volume = []
-        self.support_instance = None
-
-    def add_new_volume(self, volume):
-        self.volume.append(volume)
-    
-    def get_support_stance(self):
-        self.support_instance = self.volume[-1]
-        self.volume = self.volume[:-1]
-        for volume in self.volume:
-            volume.support_volume = self.support_instance
-
-class Volume:
-    def __init__(self, volume_name, volume_id, path):
-        self.volume_name = volume_name
-        self.volume_id = volume_id
-        self.train_path = path
-        self.label_path = path.replace("imagesTr", "labelsTr").replace("imagesTs", "labelsTs")
-        self.support_volume= None
-
-def normalization(image):
-    image_min = np.min(image)
-    image_max = np.max(image)
-    image = ((image - image_min)/(image_max-image_min))*255
+def scaling(image, scale=255):
+    image_min = image.min()
+    image_max = image.max()
+    image = (image - image_min)/(image_max-image_min) * scale
     return image
 
 def remove_negative_samples(image, mask):
     pos_slices = np.sum(mask, axis=(0,1)) > 0
     return image[:, :, pos_slices], mask[:, :, pos_slices]
 
+
 class Combined(Dataset):
-    def __init__(self, args, data_path , transform = None, transform_msk = None, mode = 'Training',prompt = 'click', seed=None, variation=0):
-
-        # Set the data list for training
-        self.support_instance = args.support_instance
-        if mode == "Training":
-            self.dir = "imagesTr"
-        else:
-            self.dir = "imagesTs"
-
-        self.dataset = []
-        volume_id = 0
-        self.dataset_list = os.listdir(data_path)
-        
-        for dataset in self.dataset_list:
-            data = Data(dataset)
-            for task in os.listdir(os.path.join(data_path, dataset)):
-                if not task.startswith("Task01"):
-                    continue
-                
-                if task.startswith("."):
-                    continue
-                new_task = Task(task)
-                data.add_new_task(new_task)
-                for volume in os.listdir(os.path.join(data_path, dataset, task, self.dir)):
-                    if volume.startswith("."):
-                        continue                    
-                    new_volume_name = volume
-                    new_volume_path = os.path.join(data_path, dataset, task, self.dir, volume)
-                    new_volume = Volume(new_volume_name, volume_id, new_volume_path)
-                    volume_id += 1
-                    new_task.add_new_volume(new_volume)
-                new_task.get_support_stance()
-            
-            self.dataset.append(data)
-
-        self.name_list = [volume for dataset in self.dataset for task in dataset.task for volume in task.volume]
-        
-        print(len(self.name_list))
-        # Set the basic information of the dataset
-        self.data_path = data_path
+    def __init__(self, args, mode="train"):
+        assert mode in ["train", "test"], f"mode must be either 'train' or 'test', got {mode}"
+        self.subset = "Tr" if mode == 'train' else 'Ts'
+        self.root = args.data_path
         self.mode = mode
-        self.prompt = prompt
-        self.img_size = args.image_size
-        self.transform = transform
-        self.transform_msk = transform_msk
-        self.seed = seed
-        self.variation = variation
-        if mode == 'Training':
-            self.video_length = args.video_length
-        else:
-            self.video_length = None
-        
-        self.newsize = (self.img_size, self.img_size)
+        df = []
 
+        csv_root = "./data/"
+        for csv_path in glob.glob(os.path.join(csv_root, "**", f"*{self.subset}.csv"), recursive=True):
+            df.append(pd.read_csv(os.path.join(csv_path), index_col=0))
+
+        df = pd.concat(df)
+        self.gt_path = np.asarray(df["gt_path"])
+        self.task = np.asarray(df["task"])
+        self.obj_id = np.asarray(df["obj_id"])
+        self.n_pos = np.asarray(df["n_pos"])
+
+        self.image_size = args.image_size
         self.num_support = args.num_support
-        
-    def __len__(self):
-        return len(self.name_list)
+        self.max_slices = args.video_length
 
-    def normalization_safe(self, image):
-        """Safe normalization to avoid zero-size or flat arrays."""
-        if image is None or image.size == 0:
-            raise ValueError("Empty image passed to normalization_safe()")
-        image_min = np.min(image)
-        image_max = np.max(image)
-        if image_max == image_min:
-            return np.zeros_like(image)
-        return (image - image_min) / (image_max - image_min + 1e-8)
+        self.tr_transform = v2.Compose([
+            v2.Resize(size=(self.image_size, self.image_size)),
+            v2.RandomHorizontalFlip(0.5),
+            v2.RandomAffine(degrees=25, translate=(0.15,0.15), scale=(0.8, 1.2)),
+        ])
+
+        self.ts_transform = v2.Compose([
+            v2.Resize(size=(self.image_size, self.image_size)),
+        ])
+
+    def __len__(self):
+        return len(self.gt_path)
 
     def __getitem__(self, index):
-        
-        """Get the images"""
-        name = self.name_list[index]
+        task = self.task[index]
+        obj_id = self.obj_id[index]
+        support_list = (self.task == self.task[index]) & \
+                        (self.obj_id == self.obj_id[index]) & \
+                        (self.n_pos >= self.num_support)
+        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
+        support_index = np.random.choice(support_list, size=1)[0]
 
-        # ====================== QUERY VOLUME ======================
-        img_path = name.train_path
-        mask_path = name.label_path
+        label_path = os.path.join(self.root, self.gt_path[index])
+        image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_img_path = name.support_volume.train_path
-        support_mask_path = name.support_volume.label_path
-        
-        image_3d, data_seg_3d = self.load_image_label(img_path, mask_path)
-        support_image_3d, support_data_seg_3d = self.load_image_label(support_img_path, support_mask_path)
-        
+        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
 
-        # Output dictionary
+        (
+            image_3d,
+            data_seg_3d,
+            support_image_3d,
+            support_data_seg_3d,
+            orig_size
+        ) = self.load_data(image_path, label_path, support_image_path, support_label_path, obj_id)
+
         output_dict = {
-            "image": image_3d,
-            "label": data_seg_3d,
-            "support_image": support_image_3d,
-            "support_label": support_data_seg_3d,
-            "name": name.volume_name
+            "image": image_3d, "label": data_seg_3d,
+            "support_image": support_image_3d, "support_label": support_data_seg_3d,
+            "task": task, "obj_id": obj_id,
+            "name": os.path.basename(image_path), "support_name": os.path.basename(support_image_path),
+            "orig_size": tuple(orig_size)
         }
 
         return output_dict
-    
-    def load_image_label(self, image_path, label_path):
-        image_3d = nib.load(image_path, mmap=True)
-        data_seg_3d = nib.load(label_path, mmap=True)
-        image_3d = image_3d.get_fdata()
-        data_seg_3d = data_seg_3d.get_fdata()
+
+    def load_data(self, image_path, label_path, support_image_path, support_label_path, obj_id):
+        image_3d, data_seg_3d = self.load_image_label(
+            image_path,
+            label_path,
+            obj_id = obj_id,
+            max_slices=-1,
+            slice_selection='contiguous',
+            is_support=False
+        )
+        support_image_3d, support_data_seg_3d = self.load_image_label(
+            support_image_path,
+            support_label_path,
+            obj_id = obj_id,
+            max_slices=self.num_support,
+            slice_selection='random' if self.mode == 'train' else 'evenly',
+            is_support=True
+        )
+
+        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1)
+        support_image_3d = torch.rot90(torch.tensor(support_image_3d)).permute(2, 0, 1).unsqueeze(1).repeat(1, 3, 1, 1)
+        support_data_seg_3d = torch.rot90(torch.tensor(support_data_seg_3d)).permute(2, 0, 1)
+
+        orig_size = image_3d.shape[-2:]
         
+        # if random.random() < 0.5:
+        #     image_3d = image_3d.flip(0)
+        #     data_seg_3d = data_seg_3d.flip(0)
+        
+        # if random.random() < 0.5:
+        #     support_image_3d = support_image_3d.flip(0)
+        #     support_data_seg_3d = support_data_seg_3d.flip(0)
+
+        # image_3d = tv_tensors.Image(image_3d)
+        # data_seg_3d = tv_tensors.Mask(data_seg_3d)
+        # support_image_3d = tv_tensors.Image(support_image_3d)
+        # support_data_seg_3d = tv_tensors.Mask(support_data_seg_3d)
+
+        # if self.mode == "train":
+        #     transform = self.tr_transform
+        # else:
+        #     transform = self.ts_transform
+
+        # image_3d, data_seg_3d = transform(image_3d, data_seg_3d)
+        # support_image_3d, support_data_seg_3d = transform(support_image_3d, support_data_seg_3d)
+
+        return image_3d, data_seg_3d, support_image_3d, support_data_seg_3d, orig_size
+
+    def load_image_label(self, image_path, label_path, obj_id, max_slices=-1, slice_selection='contiguous', is_support=False):
+        image_3d = nib.load(image_path)
+        data_seg_3d = nib.load(label_path)
+        image_3d = image_3d.dataobj
+        data_seg_3d = data_seg_3d.dataobj
+
         if image_3d.ndim == 4:
             if image_3d.shape[-1] == 4:
-                image_3d = image_3d[:, :, :, 2]
+                image_3d = image_3d[..., 2]
             elif image_3d.shape[-1] == 2:
-                image_3d = image_3d[:, :, :, 0]
-            
-        image_3d, data_seg_3d = remove_negative_samples(image_3d, data_seg_3d)
+                image_3d = image_3d[..., 0]
+
+        image_3d = np.asarray(image_3d, dtype=np.float32)
+        data_seg_3d = np.asarray(data_seg_3d, dtype=np.float32)
+        clone_seg_3d = data_seg_3d.copy()
+        data_seg_3d = np.where(data_seg_3d == obj_id, obj_id, 0).astype(np.float32)
+
+        pos_slices = np.sum(data_seg_3d, axis=(0, 1)) > 0
+        image_3d = image_3d[:, :, pos_slices]
+        data_seg_3d = data_seg_3d[:, :, pos_slices]
         
-        max_slices = 16
-        if image_3d.shape[-1] > max_slices:
-            start_slice = np.random.choice(range(image_3d.shape[-1] - max_slices + 1))
-            image_3d = image_3d[:, :, start_slice:start_slice+max_slices]
-            data_seg_3d = data_seg_3d[:, :, start_slice:start_slice+max_slices]
+        assert data_seg_3d.size > 0, f"{image_path}, {np.unique(clone_seg_3d)}"
 
-        image_3d = self.normalization_safe(image_3d)
-        image_3d = torch.rot90(torch.tensor(image_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
-        data_seg_3d = torch.rot90(torch.tensor(data_seg_3d)).permute(2, 0, 1).unsqueeze(0).unsqueeze(0)
+        if image_3d.shape[-1] > max_slices and max_slices > 0:
+            if slice_selection == 'contiguous':
+                choices = list(range(-(max_slices - 2),0)) + list(range(image_3d.shape[-1] - 1))
+                start = np.random.choice(choices)
+                end = start + max_slices
+                start = max(0, start)
+                image_3d = image_3d[..., start:end]
+                data_seg_3d = data_seg_3d[..., start:end]
+            elif slice_selection == 'random':
+                n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
+                slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            elif slice_selection == 'evenly':
+                slice_indices = np.linspace(0, image_3d.shape[-1]-1, max_slices).round().astype(np.int16)
+                image_3d = image_3d[..., slice_indices]
+                data_seg_3d = data_seg_3d[..., slice_indices]
+            else:
+                raise ValueError(f"Slice selection method {slice_selection} not supported yet, please provide value in ['contiguous', 'random', 'evenly']")
 
-        image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.img_size, self.img_size), mode='trilinear', align_corners=False)
-        data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.img_size, self.img_size), mode='nearest')
+        image_3d = scaling(image_3d, scale=1)
+
+        return image_3d, data_seg_3d
+
+    def resize(self, image_3d, data_seg_3d):
+        image_3d = F.interpolate(image_3d, size=(image_3d.shape[2], self.image_size, self.image_size), mode='trilinear', align_corners=False)
+        data_seg_3d = F.interpolate(data_seg_3d, size=(data_seg_3d.shape[2], self.image_size, self.image_size), mode='nearest')
         image_3d = image_3d.squeeze(0).repeat(3, 1, 1, 1).permute(1, 0, 2, 3)
         data_seg_3d = data_seg_3d.squeeze(0).squeeze(0)
 
         return image_3d, data_seg_3d
-    
-
-
-
-        
-# class Combined(Dataset):
-#     def __init__(self, args, data_path, transform=None, transform_msk=None, mode='Training',prompt = 'click', seed=None, variation=0):
-#         self.mode = mode
-#         self.data_path = data_path
-#         self.img_size = args.image_size
-#         self.transform = transform or T.ToTensor()
-#         self.transform_msk = transform_msk or T.ToTensor()
-#         self.name_list = []
-
-#         img_folder = "imagesTr" if mode == "Training" else "imagesTs"
-#         msk_folder = "labelsTr" if mode == "Training" else "labelsTs"
-
-#         for dataset_name in os.listdir(data_path):
-#             if dataset_name.startswith("."):
-#                 continue
-#             dataset_path = os.path.join(data_path, dataset_name)
-#             for task_name in os.listdir(dataset_path):
-#                 task_path = os.path.join(dataset_path, task_name)
-#                 img_dir = os.path.join(task_path, img_folder)
-#                 msk_dir = os.path.join(task_path, msk_folder)
-
-#                 if not os.path.exists(img_dir) or not os.path.exists(msk_dir):
-#                     continue
-
-#                 for fname in os.listdir(img_dir):
-#                     if not fname.endswith(".png"):
-#                         continue
-#                     img_path = os.path.join(img_dir, fname)
-#                     msk_path = os.path.join(msk_dir, fname)
-#                     if os.path.exists(msk_path):
-#                         self.name_list.append({
-#                             "img_path": img_path,
-#                             "mask_path": msk_path
-#                         })
-
-#         self.resize = T.Resize((self.img_size, self.img_size))
-#         print(f"[INFO] Found {len(self.name_list)} samples in {self.mode} set.")
-
-#     def __len__(self):
-#         return len(self.name_list)
-
-#     def __getitem__(self, idx):
-#         item = self.name_list[idx]
-
-#         img = Image.open(item["img_path"]).convert("L")
-#         msk = Image.open(item["mask_path"]).convert("L")
-
-#         img = self.resize(img)
-#         msk = self.resize(msk)
-
-#         img_tensor = self.transform(img)
-#         msk_tensor = self.transform_msk(msk)
-
-#         if img_tensor.shape[0] == 1:
-#             img_tensor = img_tensor.repeat(3, 1, 1)
-
-#         # support = chính ảnh (bạn có thể thay bằng random khác nếu cần)
-#         output = {
-#             "image": img_tensor,
-#             "label": msk_tensor,
-#             "support_image": img_tensor.clone(),
-#             "support_label": msk_tensor.clone(),
-#             "name": os.path.basename(item["img_path"])
-#         }
-
-#         return output

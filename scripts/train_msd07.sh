@@ -9,10 +9,10 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd07-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2
+# conda init
+# conda activate rlsam2
 
 EXP=msd_task07+grpo+icl
 
@@ -30,5 +30,5 @@ python train_3d.py \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 3 \
-    -distributed
+    -num_support 5 \
+    -wandb_enabled

@@ -16,7 +16,7 @@ def parse_args():
     parser.add_argument('-pretrain', type=str, default="", help='path of pretrain weights')
     parser.add_argument('-val_freq',type=int,default=3,help='interval between each validation')
     parser.add_argument('-gpu', type=bool, default=True, help='use gpu or not')
-    parser.add_argument('-gpu_device', type=int, default=1, help='use which gpu')
+    parser.add_argument('-gpu_device', type=int, default=0, help='use which gpu')
     parser.add_argument('-image_size', type=int, default=1024, help='image_size')
     parser.add_argument('-out_size', type=int, default=1024, help='output_size')
     parser.add_argument(
@@ -67,12 +67,14 @@ def parse_args():
         ),
     )
     parser.add_argument('-no_agent', action="store_true", help="Not using agent, fallback to default SAM2")
+    parser.add_argument('-ablation', action="store_true", help="Not using agent, fallback to default SAM2")
+    parser.add_argument('-random_drop', action='store_true', help='Random dropping from memory bank')
     parser.add_argument('-warmup_ep', type=int, default=0, help="Number of epoch to warmup before starting training agent")
     parser.add_argument('-agent_update_freq', type=int, default=1, help="Update agent every N SAM2 update step")
     parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "no"], default="no", help="Compute and multiply gating score along which dimension ")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")
-    parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], help="Whether gating highres visual features")
+    parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], default="no", help="Whether gating highres visual features")
     parser.add_argument('-auxiliary_loss', type=str, choices=["no", "dice"], default="no", help="Whether gating object pointer")
     parser.add_argument(
         '-forward_autocast_bf16',

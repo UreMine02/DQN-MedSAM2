@@ -44,7 +44,7 @@ class PPOAgent(BasePOAgent):
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
         
-        if local_count < 200:
+        if local_count < self.batch_size:
             return None
         
         out = super().update(num_update)

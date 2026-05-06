@@ -1,5 +1,6 @@
 # Deep Q-Learning Agent
 import random
+import time
 import numpy as np
 from collections import deque
 
@@ -198,27 +199,9 @@ class GRPOAgent(BasePOAgent):
         memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
-
-        B = image_feat.shape[0]
-        if is_sam2rl_ablation():
-            fi = _rl_state_frame_ix_scalar(state)
-            sam2_ix = torch.full((B,), fi, dtype=torch.long, device=image_feat.device)
-            action_logits = self.actor(
-                image_feat,
-                memory_feat,
-                memory_ptr,
-                bank_feat,
-                bank_ptr,
-                training=training,
-                return_logits=True,
-                sam2rl_frame_ix=sam2_ix,
-            ).squeeze(0)
-        else:
-            action_logits = self.actor(
-                image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True
-            ).squeeze(0)
-        # CPU softmax in Categorical.probs has no fp16 kernel; actor may still output Half if weights are Half.
-        action_logits = action_logits.detach().cpu().float()
+        
+        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
+        action_logits = action_logits.detach().cpu()
         action_probs = Categorical(logits=action_logits)
 
         valid_actions = torch.as_tensor(valid_actions, dtype=torch.int64).view(-1)
@@ -232,10 +215,11 @@ class GRPOAgent(BasePOAgent):
         valid_probs = valid_dist.probs
         
         # if not training:
-            # print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
+        #     print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
             main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            # main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
@@ -243,8 +227,8 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-
+            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
             return {
                 "main_action": valid_actions[action_idx].item(),
             }
@@ -257,12 +241,13 @@ class GRPOAgent(BasePOAgent):
         
         if local_count < self.batch_size:
             return None
-        
+
         np.random.seed(self.rank + self.epoch * 100)
         self.actor.train()
 
         device = self.device
         total_policy_loss, total_policy_gradnorm = 0, 0
+
         for i in range(num_update):
             batch = random.sample(self.replay_buffer, k=self.batch_size)
 
@@ -314,15 +299,18 @@ class GRPOAgent(BasePOAgent):
             policy_loss = self.compute_policy_loss(log_action_probs, rewards, old_log_probs)
             # minus_entropy = -policy_dist.entropy().mean()
             minus_entropy = (action_probs * log_action_probs).mean()
-            policy_loss = 10 * policy_loss + minus_entropy * self.entropy_weight # entropy regularization
+            policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
 
             self.policy_optimizer.zero_grad()
             policy_loss.backward()
-            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.1)
+            gradnorm = torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=0.5)
             self.policy_optimizer.step()
-            
+
             total_policy_loss += policy_loss.detach()
             total_policy_gradnorm += gradnorm
+        
+        # Clear buffer after update for on-policy training
+        self.replay_buffer.clear()
 
         return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
 

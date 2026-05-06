@@ -13,8 +13,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+grpo+icl+cw_gating+semantic_filtering_with_proj_before_reshape
-export CUDA_VISIBLE_DEVICES=0
+EXP=msd_task09+icl+grpo+long_horizon+no_augment
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -24,12 +24,13 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task Task09 \
-    -data_path /data/datasets/nii/MSD \
+    -data_path /data/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 500 \
-    -q_updates_per_step 1 \
+    -ep 100 \
+    -q_updates_per_step 5 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
     -num_support 5 \
+    -memory_bank_size 6 \
     -wandb_enabled

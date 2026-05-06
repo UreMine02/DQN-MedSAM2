@@ -54,6 +54,8 @@ def train(rank=0, world_size=0):
         elif "q_agent" in weights.keys() and not args.no_agent:
             net.agent.load_state_dict(weights["q_agent"])
             print("Loaded DQN weights")
+        elif not args.no_agent:
+            raise ValueError("Agent weights not found!!!")
     
     if args.distributed:
         net = DDP(net, device_ids=[rank])

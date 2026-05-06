@@ -10,33 +10,68 @@
 #SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/eval-btcv-%j.out"
 
-conda activate rlsam2
-cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
-conda init
-conda activate rlsam2
+# conda activate rlsam2
+# cd /hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/
+# conda init
+# conda activate rlsam2
 
-declare -a ckpt=(
-    # NOTE: FINAL
-    # output/msd_task07+grpo+icl/2026-03-09-14-50-42/epoch_14_dice0.5667.pth
-    # output/msd_task10+grpo+icl/2026-03-10-19-22-49/best.pth
+declare -a ckpts=(
+    # Sarcoma
+    output/sarcoma+ppo+sam2rl/2026-05-06-23-41-48/best.pth
 
-    # NOTE: TESTING
-    
+    # MSD-Prostate
+    output/msd_task05+ppo+sam2rl/2026-05-06-23-41-28/best.pth
+
+    # MSD-Lung
+    output/msd_task06+ppo+sam2rl/2026-05-06-19-23-41/best.pth
+
+    # MSD-Colon
+    # output/msd_task10+ppo+sam2rl/2026-05-06-18-53-29/best.pth
 )
 
-# export CUDA_VISIBLE_DEVICES=0
+declare -a datasets=(
+    sarcoma
+    msd
+    msd
+)
 
-for idx in ${!ckpt[@]}
+declare -a tasks=(
+    ""
+    "Task05"
+    "Task06"
+)
+
+declare -a no_agents=()
+
+for i in ${!ckpts[@]};
 do
-    for shot in 5;
+    # echo $i
+    # datasets+=("msd")
+    # tasks+=("Task10")
+    no_agents+=("agent")
+done
+
+# echo $datasets
+
+export CUDA_VISIBLE_DEVICES=0
+
+for idx in ${!ckpts[@]}
+do
+    # echo ${ckpts[idx]}
+    # echo ${tasks[idx]}
+    # echo ${no_agents[idx]}
+    for shot in 0;
     do
         python eval_3d.py \
-            -pretrain ${ckpt[idx]} \
-            -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -dataset btcv \
-            -task "" \
-            -data_path /hpcfs/users/a1232079/duyanh/MedSAM2/datasets/nii/BTCV \
-            -num_support $shot
-            # -no_agent
+            -pretrain "${ckpts[idx]}" \
+            -rl_config rl_modules/config/ppo_po_agent.yaml \
+            -dataset "${datasets[idx]}" \
+            -task "${tasks[idx]}" \
+            -data_path /data/datasets/nii/ \
+            -num_support $shot \
+            -memory_bank_size 6 \
+            -ablation \
+            -vis \
+            $( [ ${no_agents[idx]} = "no_agent" ] && echo "-no_agent" )
     done
 done
