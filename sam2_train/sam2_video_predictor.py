@@ -1666,7 +1666,7 @@ class SAM2VideoPredictor(SAM2Base):
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
                     # reward = inference_state['rl_config']['lazy_penalty']
-                    reward = -0.01
+                    reward = -0.001
                 else:
                     # Add the new frame and skip a specific frame
                     drop_frame = action_frame_map[action]
@@ -1699,11 +1699,11 @@ class SAM2VideoPredictor(SAM2Base):
                         else:
                             one_hot_rw = 0
 
-                        reward += (loss_before.detach().cpu() - loss_after.detach().cpu())
+                        # reward += (loss_before.detach().cpu() - loss_after.detach().cpu())
                         
-                #         reward += (1 - loss_after.detach().cpu())
-                # else:
-                #     reward += (1 - loss_before.detach().cpu())
+                        reward += (1 - loss_after.detach().cpu())
+                else:
+                    reward += (1 - loss_before.detach().cpu())
 
                 replay_instance_info = {
                     "frame_idx": frame_idx,
