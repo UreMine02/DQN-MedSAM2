@@ -269,6 +269,7 @@ class SAM2VideoPredictor(SAM2Base):
             async_loading_frames=async_loading_frames,
         )
 
+        print(images.shape, support_images.shape)
         inference_state = {}
         inference_state["images"] = images
         inference_state["support_images"] = support_images
@@ -2088,16 +2089,16 @@ class SAM2VideoPredictor(SAM2Base):
         random_drop=False,
         device="cpu"
     ):
-        # train_state["support_set_stage"] = True
-        # for frame_idx in range(support_masks_tensor.shape[0]):
-        #     mask = support_masks_tensor[frame_idx]
-        #     _, _, _ = self.train_add_new_mask(
-        #         inference_state=train_state,
-        #         frame_idx=frame_idx,
-        #         obj_id=obj_id,
-        #         mask=mask.to(device=device),
-        #     )
-        # train_state["support_set_stage"] = False
+        train_state["support_set_stage"] = True
+        for frame_idx in range(support_masks_tensor.shape[0]):
+            mask = support_masks_tensor[frame_idx]
+            _, _, _ = self.train_add_new_mask(
+                inference_state=train_state,
+                frame_idx=frame_idx,
+                obj_id=obj_id,
+                mask=mask.to(device=device),
+            )
+        train_state["support_set_stage"] = False
 
         video_segments = {}  # video_segments contains the per-frame segmentation results
         propagate_kwargs = {

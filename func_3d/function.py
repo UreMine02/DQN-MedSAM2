@@ -139,8 +139,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 support_imgs_tensor = pack["support_image"]
                 support_masks_tensor = pack["support_label"]
 
-                # support_imgs_tensor = F.interpolate(support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
-                # support_masks_tensor = F.interpolate(support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
+                support_imgs_tensor = F.interpolate(support_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
+                support_masks_tensor = F.interpolate(support_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
 
                 # if imgs_tensor.numel() == 0 or masks_tensor.numel() == 0:
                 #     print(f"[Query] Warning: Empty image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
@@ -148,9 +148,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                 # if support_imgs_tensor.numel() == 0 or support_masks_tensor.numel() == 0:
                 #     print(f"[Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
                 #     continue
+                
+                if imgs_tensor.shape[0] >= args.video_length:
+                    rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
+                else:
+                    rounded_length = imgs_tensor.shape[0]
+                    
+                start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                
                 sliding_window = [
                     slice(i, i+args.video_length) 
-                    for i in range(0, imgs_tensor.shape[0], args.video_length)
+                    for i in range(start_slice, start_slice+rounded_length, args.video_length)
                 ]
                 
                 processed_frame = 0
@@ -172,57 +180,57 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         else contextlib.nullcontext()
                     )
                     with _fwd_cm:
-                        _bbox_mode = getattr(args, "bbox_query_prompt_mode", "first")
-                        _stride = max(1, int(getattr(args, "bbox_query_prompt_stride", 3)))
-                        _added_bbox = False
-                        for frame_idx in range(slide_masks_tensor.shape[0]):
-                            gt_mask = slide_masks_tensor[frame_idx]  # shape: [H, W] (binary mask)
+                        # _bbox_mode = getattr(args, "bbox_query_prompt_mode", "first")
+                        # _stride = max(1, int(getattr(args, "bbox_query_prompt_stride", 3)))
+                        # _added_bbox = False
+                        # for frame_idx in range(slide_masks_tensor.shape[0]):
+                        #     gt_mask = slide_masks_tensor[frame_idx]  # shape: [H, W] (binary mask)
 
-                            ys, xs = torch.where(gt_mask > 0)
+                        #     ys, xs = torch.where(gt_mask > 0)
 
-                            if len(xs) == 0 or len(ys) == 0:
-                                continue
+                        #     if len(xs) == 0 or len(ys) == 0:
+                        #         continue
 
-                            if _bbox_mode == "stride" and frame_idx % _stride != 0:
-                                continue
+                        #     if _bbox_mode == "stride" and frame_idx % _stride != 0:
+                        #         continue
 
-                            x_min = xs.min().item()
-                            y_min = ys.min().item()
-                            x_max = xs.max().item()
-                            y_max = ys.max().item()
+                        #     x_min = xs.min().item()
+                        #     y_min = ys.min().item()
+                        #     x_max = xs.max().item()
+                        #     y_max = ys.max().item()
 
-                            bbox = [x_min, y_min, x_max, y_max]
+                        #     bbox = [x_min, y_min, x_max, y_max]
 
-                            _, _, _ = sam.train_add_new_bbox(
-                                inference_state=train_state,
-                                frame_idx=frame_idx,
-                                obj_id=obj_id,
-                                bbox=bbox,
-                                normalize_coords=False,
-                            )
-                            _added_bbox = True
-                            if _bbox_mode == "first":
-                                break
-                        if _bbox_mode == "stride" and not _added_bbox:
-                            for frame_idx in range(slide_masks_tensor.shape[0]):
-                                gt_mask = slide_masks_tensor[frame_idx]
-                                ys, xs = torch.where(gt_mask > 0)
-                                if len(xs) == 0 or len(ys) == 0:
-                                    continue
-                                bbox = [
-                                    xs.min().item(),
-                                    ys.min().item(),
-                                    xs.max().item(),
-                                    ys.max().item(),
-                                ]
-                                _, _, _ = sam.train_add_new_bbox(
-                                    inference_state=train_state,
-                                    frame_idx=frame_idx,
-                                    obj_id=obj_id,
-                                    bbox=bbox,
-                                    normalize_coords=False,
-                                )
-                                break
+                        #     _, _, _ = sam.train_add_new_bbox(
+                        #         inference_state=train_state,
+                        #         frame_idx=frame_idx,
+                        #         obj_id=obj_id,
+                        #         bbox=bbox,
+                        #         normalize_coords=False,
+                        #     )
+                        #     _added_bbox = True
+                        #     if _bbox_mode == "first":
+                        #         break
+                        # if _bbox_mode == "stride" and not _added_bbox:
+                        #     for frame_idx in range(slide_masks_tensor.shape[0]):
+                        #         gt_mask = slide_masks_tensor[frame_idx]
+                        #         ys, xs = torch.where(gt_mask > 0)
+                        #         if len(xs) == 0 or len(ys) == 0:
+                        #             continue
+                        #         bbox = [
+                        #             xs.min().item(),
+                        #             ys.min().item(),
+                        #             xs.max().item(),
+                        #             ys.max().item(),
+                        #         ]
+                        #         _, _, _ = sam.train_add_new_bbox(
+                        #             inference_state=train_state,
+                        #             frame_idx=frame_idx,
+                        #             obj_id=obj_id,
+                        #             bbox=bbox,
+                        #             normalize_coords=False,
+                        #         )
+                        #         break
 
                         video_segments = net(
                             slide_imgs_tensor, slide_masks_tensor,
