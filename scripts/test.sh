@@ -17,28 +17,32 @@
 
 declare -a ckpts=(
     # Sarcoma
-    output/sarcoma+ppo+sam2rl/2026-05-06-23-41-48/best.pth
+    # output/sarcoma+ppo+sam2rl/2026-05-06-23-41-48/best.pth
+
+    # MSD-Heart
+    output/msd_task02+ppo+sam2rl/2026-05-07-05-29-23/best.pth
 
     # MSD-Prostate
-    output/msd_task05+ppo+sam2rl/2026-05-06-23-41-28/best.pth
+    # output/msd_task05+ppo+sam2rl/2026-05-06-23-41-28/best.pth
 
     # MSD-Lung
-    output/msd_task06+ppo+sam2rl/2026-05-06-19-23-41/best.pth
+    # output/msd_task06+ppo+sam2rl/2026-05-06-19-23-41/best.pth
+
+    # MSD-Spleen
+    output/msd_task09+ppo+sam2rl/2026-05-07-08-04-02/best.pth
 
     # MSD-Colon
     # output/msd_task10+ppo+sam2rl/2026-05-06-18-53-29/best.pth
 )
 
 declare -a datasets=(
-    sarcoma
     msd
     msd
 )
 
 declare -a tasks=(
-    ""
-    "Task05"
-    "Task06"
+    "Task02"
+    "Task09"
 )
 
 declare -a no_agents=()
