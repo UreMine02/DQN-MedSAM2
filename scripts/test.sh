@@ -20,7 +20,7 @@ declare -a ckpts=(
     # output/sarcoma+ppo+sam2rl/2026-05-06-23-41-48/best.pth
 
     # MSD-Heart
-    output/msd_task02+ppo+sam2rl/2026-05-07-05-29-23/best.pth
+    # output/msd_task02+ppo+sam2rl/2026-05-07-05-29-23/best.pth
 
     # MSD-Prostate
     # output/msd_task05+ppo+sam2rl/2026-05-06-23-41-28/best.pth
@@ -29,19 +29,20 @@ declare -a ckpts=(
     # output/msd_task06+ppo+sam2rl/2026-05-06-19-23-41/best.pth
 
     # MSD-Spleen
-    output/msd_task09+ppo+sam2rl/2026-05-07-08-04-02/best.pth
+    # output/msd_task09+ppo+sam2rl/2026-05-07-08-04-02/best.pth
+    output/msd_task09+ppo+sam2rl/2026-05-07-13-48-40/best.pth
 
     # MSD-Colon
     # output/msd_task10+ppo+sam2rl/2026-05-06-18-53-29/best.pth
 )
 
 declare -a datasets=(
-    msd
+    # msd
     msd
 )
 
 declare -a tasks=(
-    "Task02"
+    # "Task02"
     "Task09"
 )
 
@@ -64,7 +65,7 @@ do
     # echo ${ckpts[idx]}
     # echo ${tasks[idx]}
     # echo ${no_agents[idx]}
-    for shot in 0;
+    for shot in 5;
     do
         python eval_3d.py \
             -pretrain "${ckpts[idx]}" \
