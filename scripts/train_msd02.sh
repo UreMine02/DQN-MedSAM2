@@ -15,7 +15,7 @@
 # conda activate rlsam2
 
 EXP=msd_task02+ppo+sam2rl
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -27,10 +27,10 @@ python train_3d.py \
     -data_path /data/datasets/nii/ \
     -lr 1e-4 \
     -val_freq 1 \
-    -ep 50 \
+    -ep 30 \
     -q_updates_per_step 1 \
     -lazy_penalty 0.0 \
     -invalid_penalty -0.01 \
-    -num_support 0 \
+    -num_support 5 \
     -memory_bank_size 6 \
     -wandb_enabled

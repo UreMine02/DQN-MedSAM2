@@ -14,7 +14,7 @@
 # conda activate rlsam2
 
 EXP=msd_task09+ppo+sam2rl
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \

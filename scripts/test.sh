@@ -58,7 +58,7 @@ done
 
 # echo $datasets
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpts[@]}
 do
