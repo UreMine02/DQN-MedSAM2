@@ -28,7 +28,7 @@ declare -a ckpts=(
     # output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
     # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
     # output/msd_task02+icl+grpo+raw_dice+long_horizon+no_augment/2026-05-06-10-30-25/best.pth
-    output/msd_task02+icl+grpo+penalty0.0+long_horizon+no_augment/2026-05-05-23-37-41/best.pth
+    # output/msd_task02+icl+grpo+penalty0.0+long_horizon+no_augment/2026-05-05-23-37-41/best.pth
     # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
     # output/msd_task02+icl+grpo+long_horizon+no_augment/2026-04-30-18-07-03/best.pth
     # output/msd_task02+icl+grpo+long_horizon+no_augment+lr2e-4/2026-05-01-07-12-31/best.pth
@@ -138,6 +138,7 @@ declare -a ckpts=(
     # MSD Hippocampus
     # output/msd_task04+grpo+icl+long_horizon+no_augment/2026-04-27-11-50-03/epoch_24_dice0.7822.pth
     # output/msd_task04+no_agent+icl+long_horizon+no_augment/2026-04-28-20-05-44/best.pth
+    output/msd_task04+no_agent+icl+long_horizon+no_augment/2026-04-28-20-05-44/epoch_99_dice0.7747.pth
 
     # MSD Prostate
     # output/msd_task05+grpo+long_horizon+no_augment/2026-04-26-11-35-38/best.pth
@@ -176,13 +177,13 @@ for i in ${!ckpts[@]};
 do
     # echo $i
     datasets+=("msd")
-    tasks+=("Task02")
-    no_agents+=("agent")
+    tasks+=("Task04")
+    no_agents+=("no_agent")
 done
 
 # echo $datasets
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for idx in ${!ckpts[@]}
 do
