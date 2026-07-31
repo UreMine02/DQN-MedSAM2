@@ -102,12 +102,6 @@ def prepare_rl_state(
     prev_memory_bank = torch.stack(prev_memory_bank, dim=1)
     prev_obj_ptr = torch.stack(prev_obj_ptr, dim=1)
     
-    #TODO: Finding out why this part affecting testing
-    # if training:
-    #     randperm = torch.randperm(num_maskmem)
-    #     prev_memory_bank[:, :num_maskmem] = prev_memory_bank[:, randperm]
-    #     prev_obj_ptr[:, :num_maskmem] = prev_obj_ptr[:, randperm]
-    
     if offload_to_cpu:
         next_image_feat = next_image_feat.detach().cpu()
         curr_memory_feat = curr_memory_feat.detach().cpu()

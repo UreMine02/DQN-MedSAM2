@@ -120,10 +120,29 @@ def train(rank=0, world_size=0):
         os.makedirs(checkpoint_path)
         print(f"checkpoint saved in {checkpoint_path}")
 
-    '''begain training'''
+    if args.stop_sam2_ep >= 0 and rank == 0:
+        if agent is None or args.no_agent:
+            print(f"WARNING: -stop_sam2_ep {args.stop_sam2_ep} without an agent: nothing is trained from that epoch on")
+        elif args.stop_sam2_ep <= args.warmup_ep:
+            print(f"WARNING: -stop_sam2_ep {args.stop_sam2_ep} <= -warmup_ep {args.warmup_ep}: "
+                  f"SAM2 stops before the agent starts training")
+
+    '''begin training'''
     best_dice = 0.0
     for epoch in range(args.ep):
-        net.train()
+        # From stop_sam2_ep on, SAM2 is frozen and only the RL agent keeps training.
+        # It also switches to eval() so the agent learns against the same forward path
+        # validation uses (memory-mask binarization, obj-ptr selection, mask-decoder
+        # stability branch, no dropout).
+        train_sam2 = args.stop_sam2_ep < 0 or epoch < args.stop_sam2_ep
+        if not train_sam2 and epoch == args.stop_sam2_ep:
+            for param in net.parameters():
+                param.requires_grad_(False)
+            optimizer.zero_grad(set_to_none=True)
+            if rank == 0:
+                print(f"Epoch {epoch}: SAM2 frozen and set to eval, training the RL agent only")
+
+        net.train() if train_sam2 else net.eval()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
         #     net.module.image_encoder.eval()
@@ -144,7 +163,7 @@ def train(rank=0, world_size=0):
             bce_loss,
             aux_loss,
             agent_loss
-        ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank)
+        ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank, train_sam2=train_sam2)
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
@@ -154,9 +173,23 @@ def train(rank=0, world_size=0):
             'train/aux_loss': aux_loss,
             "train/actor_loss": agent_loss["actor_loss"],
             "train/critic_loss": agent_loss["critic_loss"],
-            "train/lr": optimizer.param_groups[0]['lr'],
+            "train/lr": optimizer.param_groups[0]['lr'] if train_sam2 else 0.0,
         }
-        scheduler.step()
+        # PPO training diagnostics (only present when the agent's update() produced
+        # them, e.g. not yet warmed up, or not applicable to the current PO agent).
+        ppo_metric_keys = (
+            "episodic_return_mean", "episodic_return_std",
+            "policy_entropy",
+            "ratio_mean", "ratio_std", "clip_fraction",
+            "explained_variance",
+            "adv_mean", "adv_std",
+        )
+        for key in ppo_metric_keys:
+            if key in agent_loss:
+                loss_dict[f"train/{key}"] = agent_loss[key]
+        # No point annealing an LR that no longer drives any update.
+        if train_sam2:
+            scheduler.step()
         
         # NOTE: WANDB
         if args.wandb_enabled and loss is not None:

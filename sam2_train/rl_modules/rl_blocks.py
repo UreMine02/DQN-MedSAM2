@@ -45,6 +45,13 @@ class CrossAttention(nn.Module):
         )
     
     def forward(self, x, context=None, mask=None):
+        """
+        :param x: [B,L_q,D] queries
+        :param context: [B,L_ctx,D] keys/values; self-attention when None
+        :param mask: [B,L_ctx] bool, True marks a *valid* key. This is the SDPA
+            convention (True = attend); note nn.MultiheadAttention's key_padding_mask
+            uses the opposite sense, and PerceiverResampler below converts for it.
+        """
         is_self_attn = context is None
         context = context if context is not None else x
 
@@ -53,13 +60,21 @@ class CrossAttention(nn.Module):
         q = self.to_q(x)
         k = self.to_k(context)
         v = self.to_v(context)
-        
-        b, n, d = q.shape 
+
+        b, n, d = q.shape
 
         q = q.reshape(b, -1, h, d // h).permute(0, 2, 1, 3).reshape(b*h, -1, d // h)
         k = k.reshape(b, -1, h, d // h).permute(0, 2, 1, 3).reshape(b*h, -1, d // h)
         v = v.reshape(b, -1, h, d // h).permute(0, 2, 1, 3).reshape(b*h, -1, d // h)
-        out = F.scaled_dot_product_attention(q, k, v)
+
+        attn_mask = None
+        if mask is not None:
+            # A row with no valid key makes softmax return NaN; let it attend everywhere.
+            mask = mask | (~mask.any(dim=-1, keepdim=True))
+            # The folds above are batch-major/head-minor, so repeat_interleave aligns.
+            attn_mask = mask.repeat_interleave(h, dim=0).unsqueeze(1)  # [b*h,1,L_ctx]
+
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
         out = out.reshape(b, h, n, -1).permute(0, 2, 1, 3).reshape(b, n, -1)
 
         return self.to_out(out)
@@ -78,10 +93,21 @@ class QFormerBlock(nn.Module):
         self.norm2 = nn.LayerNorm(query_dim)
         self.norm3 = nn.LayerNorm(query_dim)
 
-    def forward(self, x, context):
+    def forward(self, x, context, context_mask=None, self_mask=None):
+        """
+        Self-attention among the queries, then cross-attention to the context. Keeping
+        the two softmaxes separate is the point: fusing them makes the queries compete
+        with every context token for attention mass, which starves any comparison
+        between the queries themselves.
+
+        :param x: [B,L_q,D] queries
+        :param context: [B,L_ctx,D] keys/values
+        :param context_mask: [B,L_ctx] bool, True = valid context token
+        :param self_mask: [B,L_q] bool, True = valid query token
+        """
         assert context is not None
-        x = self.attn1(self.norm1(x)) + x
-        x = self.attn2(self.norm2(x), context=context) + x
+        x = self.attn1(self.norm1(x), mask=self_mask) + x
+        x = self.attn2(self.norm2(x), context=context, mask=context_mask) + x
         x = self.mlp(self.norm3(x)) + x
         return x
     
@@ -133,22 +159,40 @@ class PerceiverResampler(nn.Module):
         self.hidden_dim = hidden_dim
         self.dropout = dropout
         
-    def attention(self, x: torch.Tensor, context: torch.Tensor):
+    def attention(self, x: torch.Tensor, context: torch.Tensor, key_padding_mask=None):
         # attn = self.attn(x, context=context)
-        attn = self.attn(x, context, context, need_weights=False)[0]
+        attn = self.attn(x, context, context, need_weights=False,
+                         key_padding_mask=key_padding_mask)[0]
         # attn = self.attn(q=x, k=context, v=context, num_k_exclude_rope={})
         return attn
-        
-    def forward(self, x_f, x, training=True):
+
+    def forward(self, x_f, x, context_mask=None):
         """
         Forward
-        
-        :param x_f: [B,L,D]
-        :param x: [B,L,D]
+
+        :param x_f: [B,L,D] context; the queries are appended to it, so this block
+            does cross- and self-attention in a single softmax
+        :param x: [B,L,D] queries
+        :param context_mask: [B,L_ctx] bool, True = valid context token. Same sense as
+            CrossAttention.mask above; inverted here because nn.MultiheadAttention's
+            key_padding_mask marks entries to *ignore*.
         """
-        x_f = self.norm1(x_f)
-        x = self.norm2(x)
-        x = x + self.attention(x, context=torch.cat([x_f, x], dim=1))
+        h = self.norm2(x)
+        context = torch.cat([self.norm1(x_f), h], dim=1)
+
+        key_padding_mask = None
+        if context_mask is not None:
+            # The appended queries are always valid keys.
+            valid = torch.cat(
+                [context_mask,
+                 torch.ones(x.shape[0], x.shape[1], dtype=torch.bool, device=x.device)],
+                dim=1,
+            )
+            # A fully-masked row would make softmax return NaN.
+            valid = valid | (~valid.any(dim=-1, keepdim=True))
+            key_padding_mask = ~valid
+
+        x = x + self.attention(h, context=context, key_padding_mask=key_padding_mask)
         x = x + self.mlp(x)
         return x
     
@@ -168,7 +212,7 @@ class SpatialSummarizer(nn.Module):
         
         self.initialize_parameters()
         
-    def forward(self, x, training=True):
+    def forward(self, x):
         """x: [B,C,H,W]"""
         B, C, H, W = x.shape
         
@@ -179,7 +223,6 @@ class SpatialSummarizer(nn.Module):
             spatial_query = layer(
                 x_f=x,
                 x=spatial_query,
-                training=training
             )
             
         return spatial_query
@@ -224,192 +267,3 @@ class BidirectionalQFormer(nn.Module):
         x = self.q_former_1(x, y)
         y = self.q_former_2(y, x)
         return x, y
-
-class Attention(nn.Module):
-    """
-    An attention layer that allows for downscaling the size of the embedding
-    after projection to queries, keys, and values.
-    """
-
-    def __init__(
-        self,
-        embedding_dim: int,
-        num_heads: int,
-        downsample_rate: int = 1,
-        dropout: float = 0.0,
-        kv_in_dim: int = None,
-    ) -> None:
-        super().__init__()
-        self.embedding_dim = embedding_dim
-        self.kv_in_dim = kv_in_dim if kv_in_dim is not None else embedding_dim
-        self.internal_dim = embedding_dim // downsample_rate
-        self.num_heads = num_heads
-        assert (
-            self.internal_dim % num_heads == 0
-        ), "num_heads must divide embedding_dim."
-
-        self.q_proj = nn.Linear(embedding_dim, self.internal_dim)
-        self.k_proj = nn.Linear(self.kv_in_dim, self.internal_dim)
-        self.v_proj = nn.Linear(self.kv_in_dim, self.internal_dim)
-        self.out_proj = nn.Linear(self.internal_dim, embedding_dim)
-
-        self.dropout_p = dropout
-
-    def _separate_heads(self, x: Tensor, num_heads: int) -> Tensor:
-        b, n, c = x.shape
-        x = x.reshape(b, n, num_heads, c // num_heads)
-        return x.transpose(1, 2)  # B x N_heads x N_tokens x C_per_head
-
-    def _recombine_heads(self, x: Tensor) -> Tensor:
-        b, n_heads, n_tokens, c_per_head = x.shape
-        x = x.transpose(1, 2)
-        return x.reshape(b, n_tokens, n_heads * c_per_head)  # B x N_tokens x C
-
-    def forward(self, q: Tensor, k: Tensor, v: Tensor) -> Tensor:
-        # Input projections
-        q = self.q_proj(q)
-        k = self.k_proj(k)
-        v = self.v_proj(v)
-
-        # Separate into heads
-        q = self._separate_heads(q, self.num_heads)
-        k = self._separate_heads(k, self.num_heads)
-        v = self._separate_heads(v, self.num_heads)
-
-        dropout_p = self.dropout_p if self.training else 0.0
-        # Attention
-        with torch.backends.cuda.sdp_kernel(
-            enable_flash=USE_FLASH_ATTN,
-            # if Flash attention kernel is off, then math kernel needs to be enabled
-            enable_math=(OLD_GPU and dropout_p > 0.0) or MATH_KERNEL_ON,
-            enable_mem_efficient=OLD_GPU,
-        ):
-            out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-
-        out = self._recombine_heads(out)
-        out = self.out_proj(out)
-
-        return out
-
-
-class RoPEAttention(Attention):
-    """Attention with rotary position encoding."""
-
-    def __init__(
-        self,
-        *args,
-        rope_theta=10000.0,
-        # whether to repeat q rope to match k length
-        # this is needed for cross-attention to memories
-        rope_k_repeat=False,
-        feat_sizes=(32, 32),  # [w, h] for stride 16 feats at 512 resolution
-        **kwargs,
-    ):
-        super().__init__(*args, **kwargs)
-
-        self.compute_cis = partial(
-            compute_axial_cis, dim=self.internal_dim // self.num_heads, theta=rope_theta
-        )
-        freqs_cis = self.compute_cis(end_x=feat_sizes[0], end_y=feat_sizes[1])
-        self.freqs_cis = freqs_cis
-        self.rope_k_repeat = rope_k_repeat
-
-        # CW GATING BEFORE PROJ
-        self.ctx_gating_ptr_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-        self.ctx_gating_mem_proj = nn.Linear(self.kv_in_dim, self.kv_in_dim)
-
-        # # CW GATING AFTER POS EMBED
-        # self.ctx_gating_ptr_proj = nn.Linear(self.internal_dim, self.internal_dim)
-        # self.ctx_gating_mem_proj = nn.Linear(self.internal_dim, self.internal_dim)
-
-        # SW GATING
-        # self.ctx_gating_ptr_proj = nn.Linear(4, 4096)
-        # self.ctx_gating_mem_proj = nn.Linear(4096, 4096)
-
-    def forward(
-        self, q: Tensor, k: Tensor, v: Tensor, return_attn: bool, num_k_exclude_rope: int = 0
-    ) -> Tensor:
-        # Input projections
-        q = self.q_proj(q)
-        k = self.k_proj(k)
-        v = self.v_proj(v)
-
-        # Separate into heads
-        q = self._separate_heads(q, self.num_heads)
-        k = self._separate_heads(k, self.num_heads)
-        v = self._separate_heads(v, self.num_heads)
-
-        # Apply rotary position encoding
-        w = h = math.sqrt(q.shape[-2])
-        self.freqs_cis = self.freqs_cis.to(q.device)
-        if self.freqs_cis.shape[0] != q.shape[-2]:
-            self.freqs_cis = self.compute_cis(end_x=w, end_y=h).to(q.device)
-        if q.shape[-2] != k.shape[-2]:
-            assert self.rope_k_repeat
-
-        num_k_rope = k.size(-2) - num_k_exclude_rope
-        q, k[:, :, :num_k_rope] = apply_rotary_enc(
-            q,
-            k[:, :, :num_k_rope],
-            freqs_cis=self.freqs_cis,
-            repeat_freqs_k=self.rope_k_repeat,
-        )
-
-        # # NOTE: TEST GATING
-        # if num_k_exclude_rope > 0:
-        #     m = num_k_exclude_rope // 4
-        #     b, h, l, d = k.shape
-        #     mem, ptr = k.tensor_split(indices=(-num_k_exclude_rope,), dim=2)
-
-        #     # CW GATING
-        #     mem_ = mem.reshape(b, h, m, -1, d) # [1,h,m,4096,256]
-        #     ptr_ = ptr.reshape(b, h, m, -1, d) # [1,h,m,4,256]
-
-        #     mem_ = self.ctx_gating_mem_proj(mem_)
-        #     ptr_ = self.ctx_gating_ptr_proj(ptr_)
-
-        #     ptr_ = ptr_.sum(dim=-2, keepdim=True)
-        #     gating_logits = mem_ + ptr_ # [1,m,4096,64]
-        #     gating_score = gating_logits.sigmoid() # [1,m,4096,64]
-
-        #     gated_mem = mem_ * gating_score
-        #     gated_mem = gated_mem.reshape(b, h, -1, d)
-
-        #     k = torch.cat([gated_mem, ptr], dim=2)
-
-            # # SW GATING
-            # mem_ = mem.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4096]
-            # ptr_ = ptr.reshape(b, m, -1, d).transpose(2, 3) # [1,m,64,4]
-
-            # mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,64,4096]
-            # ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1,m,64,4096]
-
-            # gating_logits = mem_ + ptr_ # [1,m,64,4096]
-            # gating_score = gating_logits.sigmoid() # [1,m,64,4096]
-            # gated_mem = mem_ * gating_score
-            # gated_mem = gated_mem.transpose(2, 3).reshape(b, -1, d)
-
-            # k = torch.cat([gated_mem, ptr], dim=1)
-
-        dropout_p = self.dropout_p if self.training else 0.0
-        out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-
-        # Compute attn_weight for later use
-        attn_weight = None
-        if return_attn:
-            scale_factor = 1 / math.sqrt(q.size(-1))
-            attn_weight = q @ k.transpose(-2, -1) * scale_factor
-
-        # # Attention
-        # with torch.backends.cuda.sdp_kernel(
-        #     enable_flash=USE_FLASH_ATTN,
-        #     # if Flash attention kernel is off, then math kernel needs to be enabled
-        #     enable_math=(OLD_GPU and dropout_p > 0.0) or MATH_KERNEL_ON,
-        #     enable_mem_efficient=OLD_GPU,
-        # ):
-        #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-
-        out = self._recombine_heads(out)
-        out = self.out_proj(out)
-
-        return out, attn_weight

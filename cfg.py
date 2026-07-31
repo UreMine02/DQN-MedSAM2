@@ -41,6 +41,7 @@ def parse_args():
     parser.add_argument('-no_agent', action="store_true", help="Not using agent, fallback to default SAM2")
     parser.add_argument('-random_drop', action='store_true', help='Random dropping from memory bank')
     parser.add_argument('-warmup_ep', type=int, default=0, help="Number of epoch to warmup before starting training agent")
+    parser.add_argument('-stop_sam2_ep', type=int, default=-1, help="Epoch from which SAM2 is frozen and only the RL agent keeps training (-1 to train SAM2 for the whole run)")
     parser.add_argument('-agent_update_freq', type=int, default=1, help="Update agent every N SAM2 update step")
     parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "no"], default="no", help="Compute and multiply gating score along which dimension ")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")

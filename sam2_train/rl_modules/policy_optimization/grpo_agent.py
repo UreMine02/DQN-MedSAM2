@@ -74,9 +74,10 @@ class GRPOActor(nn.Module):
         self.feat_summarizer = feat_summarizer
         self.policy_net = policy_net
 
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=False):
-        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training)
-        policy_probs = self.policy_net(*curr_feats, training=training, return_logits=return_logits)
+    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
+        # curr_feats ends with the padding masks, which policy_net takes positionally.
+        curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
+        policy_probs = self.policy_net(*curr_feats)
         return policy_probs
 
 class GRPOAgent(BasePOAgent):
@@ -94,6 +95,8 @@ class GRPOAgent(BasePOAgent):
         device="cpu",
         entropy_weight=0.1,
         epsilon=0.2,
+        lr_T_max=1000,
+        min_lr=0.0,
         sam2_dim={}
     ):
         super().__init__(
@@ -107,6 +110,8 @@ class GRPOAgent(BasePOAgent):
             batch_size=batch_size,
             device=device,
             entropy_weight=entropy_weight,
+            lr_T_max=lr_T_max,
+            min_lr=min_lr,
             sam2_dim=sam2_dim
         )
         self.epsilon = epsilon
@@ -118,6 +123,13 @@ class GRPOAgent(BasePOAgent):
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
         self.policy_optimizer = optim.AdamW(self.actor.parameters(), lr=policy_lr, weight_decay=0.01)
+        # The base scheduler tracks an optimizer this agent doesn't use: the actor has its
+        # own optimizer, so it needs its own cosine schedule, stepped once per update().
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            self.policy_optimizer,
+            T_max=lr_T_max,
+            eta_min=min_lr,
+        )
 
         self.await_group = None
 
@@ -154,7 +166,7 @@ class GRPOAgent(BasePOAgent):
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
         
-        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=training, return_logits=True).squeeze(0)
+        action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_probs = Categorical(logits=action_logits)
 
@@ -175,14 +187,18 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-            # action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
             return {
                 "main_action": valid_actions[action_idx].item(),
             }
 
+    # update() is called from inside train_sam, which runs under no_grad once SAM2 is
+    # frozen (-stop_sam2_ep); the actor still needs a graph. Every other agent gets this
+    # from a `with torch.enable_grad()` inside its train_step.
+    @torch.enable_grad()
     def update(self, num_update):
-        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.device)
         
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
@@ -226,7 +242,7 @@ class GRPOAgent(BasePOAgent):
                 print(a, rewards[actions == a].median())
             
             # with torch.enable_grad():
-            policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr, training=True, return_logits=True)
+            policy_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
             # policy_dist = Categorical(logits=policy_logits)
             policy_probs = policy_logits.softmax(dim=1)
             action_probs = policy_probs.gather(1, actions)
@@ -249,7 +265,15 @@ class GRPOAgent(BasePOAgent):
         # Clear buffer after update for on-policy training
         self.replay_buffer.clear()
 
-        return {"actor_loss": total_policy_loss / num_update, "actor_gradnorm": total_policy_gradnorm / num_update}
+        # Logged before stepping so the value matches the LR the updates above ran at.
+        current_lr = self.policy_optimizer.param_groups[0]["lr"]
+        self.step_lr_scheduler()
+
+        return {
+            "actor_loss": total_policy_loss / num_update,
+            "actor_gradnorm": total_policy_gradnorm / num_update,
+            "agent_lr": current_lr,
+        }
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         advantage = advantage.detach()

@@ -1238,7 +1238,13 @@ class SAM2VideoPredictor(SAM2Base):
                 gating_score_dict = current_out["gating_score_dict"]
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
 
-        if train_agent and end_trajectory:
+        # Close the transition left pending by the last frame of THIS chunk. The next
+        # chunk runs on a fresh inference_state with an empty memory bank, so the action
+        # taken here can never be observed there: leaving the instance open would pair
+        # its loss_before with the next chunk's frame-0 loss and its state with a
+        # post-reset next_state. Marking it done also tells compute_gae not to bootstrap
+        # or propagate credit across the boundary.
+        if train_agent and getattr(self.agent, "await_replay_instance", None) is not None:
             storage_device = inference_state["device"]
             pred_masks_gpu = output_dict["await_outputs"][frame_idx]["pred_masks"]
             pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
@@ -1247,7 +1253,11 @@ class SAM2VideoPredictor(SAM2Base):
 
             loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-            self.agent.clear_await(loss_after.detach().cpu())
+            self.agent.set_await_done(loss_after.detach().cpu())
+
+        # One trajectory spans every chunk of a (volume, obj_id); GAE runs once here.
+        if train_agent and end_trajectory:
+            self.agent.final_trajectory()
 
 
     def _add_output_per_object(
@@ -1561,7 +1571,7 @@ class SAM2VideoPredictor(SAM2Base):
                 )
             else:
                 # Finalize replay buffer instance from previous frame
-                if frame_idx > 1 and train_agent:
+                if train_agent and getattr(self.agent, "await_replay_instance", None) is not None:
                     self.agent_update_second_stage(
                         inference_state=inference_state,
                         output_dict=output_dict,
@@ -1665,8 +1675,7 @@ class SAM2VideoPredictor(SAM2Base):
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
                 elif action == 1:
                     # Skip (equivalent to adding then drop the same frame)
-                    # reward = inference_state['rl_config']['lazy_penalty']
-                    reward = -0.001
+                    reward = inference_state['rl_config']['lazy_penalty']
                 else:
                     # Add the new frame and skip a specific frame
                     drop_frame = action_frame_map[action]
@@ -1763,6 +1772,8 @@ class SAM2VideoPredictor(SAM2Base):
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     output_dict=output_dict,
+                    agent_act=True,
+                    memory_bank_size=inference_state["rl_config"]["memory_bank_size"],
                     **kwargs
                 )
 
@@ -1780,7 +1791,7 @@ class SAM2VideoPredictor(SAM2Base):
             frame_idx,
             num_maskmem=inference_state['rl_config']['memory_bank_size'],
             num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False,
+            offload_to_cpu=True,
             training=train_agent
         )
 
@@ -1797,7 +1808,7 @@ class SAM2VideoPredictor(SAM2Base):
             ) # ask agent
 
         action = action_out["action"]
-        # state.offload_to_cpu()
+        state.offload_to_cpu()
 
         reward = 0.
         drop_frame = None
@@ -1808,7 +1819,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
         elif action == 1:
             # Skip (equivalent to adding then drop the same frame)
-            reward = -0.1
+            reward = 0
             drop_frame = frame_idx - 1
         else:
             # Add the new frame and drop a specific frame
@@ -1816,14 +1827,14 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict[storage_key].pop(drop_frame)
             output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
-        # if not train_agent:
-        #     print(
-        #         f"[Q] frame {frame_idx-1} "
-        #         f"action {action} "
-        #         f" drop_frame {drop_frame} "
-        #         f" bank_size {bank_size} "
-        #         f" penalty {reward} "
-        #     )
+        if not train_agent:
+            print(
+                f"[Q] frame {frame_idx-1} "
+                f"action {action} "
+                f" drop_frame {drop_frame} "
+                f" bank_size {bank_size} "
+                f" penalty {reward} "
+            )
 
         if train_agent:
             replay_instance_info = {
@@ -1853,15 +1864,21 @@ class SAM2VideoPredictor(SAM2Base):
 
         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-        next_state, action_frame_map = prepare_rl_state(
-            current_vision_feats,
-            current_vision_pos_embeds,
-            output_dict,
-            frame_idx,
-            num_maskmem=inference_state['rl_config']['memory_bank_size'],
-            num_max_prompt=inference_state["support_num_frames"],
-            offload_to_cpu=False
-        )
+        # agent_update_first_stage runs next, on this same frame and this same (still
+        # unmutated) output_dict, and the state it builds is exactly this transition's
+        # successor. Policy-optimization agents take it from there by reference; only
+        # agents that push straight to a replay buffer need it materialized now.
+        next_state = None
+        if getattr(self.agent, "materialize_next_state", True):
+            next_state, _ = prepare_rl_state(
+                current_vision_feats,
+                current_vision_pos_embeds,
+                output_dict,
+                frame_idx,
+                num_maskmem=inference_state['rl_config']['memory_bank_size'],
+                num_max_prompt=inference_state["support_num_frames"],
+                offload_to_cpu=True
+            )
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 

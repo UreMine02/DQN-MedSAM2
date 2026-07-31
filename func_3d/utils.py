@@ -52,6 +52,14 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             print(cfg)
             OmegaConf.resolve(cfg)
             net.agent = instantiate(cfg.rl_modules.config.agent, _recursive_=True)
+
+            # Warm-start the agent's recency prior from SAM2's (already checkpoint-loaded)
+            # temporal position encoding, so bank slots are distinguishable by age.
+            summarizer = getattr(net.agent, "feat_summarizer", None)
+            if summarizer is None and getattr(net.agent, "actor", None) is not None:
+                summarizer = net.agent.actor.feat_summarizer
+            if summarizer is not None:
+                summarizer.load_sam2_temporal_prior(net.maskmem_tpos_enc, net.num_maskmem)
     else:
         print('the network name you have entered is not supported yet')
         sys.exit()

@@ -19,6 +19,8 @@ class PPOAgent(BasePOAgent):
         device="cpu",
         entropy_weight=0.1,
         epsilon=0.2,
+        lr_T_max=1000,
+        min_lr=0.0,
         sam2_dim={}
     ):
         super().__init__(
@@ -32,6 +34,8 @@ class PPOAgent(BasePOAgent):
             batch_size=batch_size,
             device=device,
             entropy_weight=entropy_weight,
+            lr_T_max=lr_T_max,
+            min_lr=min_lr,
             sam2_dim=sam2_dim
         )
         self.epsilon = epsilon
@@ -39,17 +43,18 @@ class PPOAgent(BasePOAgent):
     def clear_buffer(self):
         self.replay_buffer.clear()
         
-    def update(self, num_update):
-        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.rank)
+    def update(self, num_ep):
+        local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.device)
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
-        
-        if local_count < self.batch_size:
+
+        if local_count < self.buffer_size:
             return None
-        
-        out = super().update(num_update)
-        self.clear_buffer()
-        
+
+        out = super().update(num_ep)
+        if out is not None:
+            self.clear_buffer()
+
         return out
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):

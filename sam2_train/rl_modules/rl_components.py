@@ -5,8 +5,8 @@ import torch
 # Define Action Space
 # -------------------------
 ACTION_SPACE = {
-    0: "skip",
-    1: "add",
+    0: "add",
+    1: "skip",
     2: "add_drop_oldest",
     3: "add_drop_lowest_iou",
     4: "add_drop_random",
@@ -73,9 +73,17 @@ class RLReplayInstance:
         return tuple((self.state, self.action, self.reward, self.next_state, self.done)) # Call tuple to create a copy
     
     # Update after
-    def update(self, loss_after, next_state):
+    def update(self, loss_after, next_state=None):
+        """Close the transition with the loss the action actually produced.
+
+        `next_state` may be None for agents that fill it in by reference later (see
+        BasePOAgent.init_new_replay_instance): the successor state is byte-identical to
+        the state the next transition is about to be built from, so materializing it
+        twice only doubles the memory the replay buffer holds.
+        """
         self.loss_after = loss_after
-        self.next_state = next_state
+        if next_state is not None:
+            self.next_state = next_state
         
         loss_diff = self.loss_before - self.loss_after
         self.reward = self.reward + loss_diff #torch.sign(loss_diff)

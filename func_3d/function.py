@@ -42,7 +42,7 @@ global_step_best = 0
 epoch_loss_values = []
 metric_values = []
 
-def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
+def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, train_sam2=True):
     if args.distributed:
         # net = net.module
         GPUdevice = torch.device('cuda', rank)
@@ -66,13 +66,23 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
         "num_step": 0
     }
     target_class = 4
-    agent_loss = {"actor_loss": 0, "critic_loss": 0}
+    # Generic accumulators: keyed by whatever metrics the agent's update() returns
+    # (actor/critic loss, PPO ratio/entropy/explained-variance/advantage stats,
+    # episodic return stats, ...), averaged per-key over however many steps
+    # produced that key.
+    agent_metric_sums = {}
+    agent_metric_counts = {}
     agent_step = 0
     metric_logger = MetricLogger(delimiter=" ")
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
 
-    with tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0, miniters=10) as pbar:
+    # Once SAM2 is frozen (epoch >= args.stop_sam2_ep) it runs in eval mode and nothing
+    # below needs an autograd graph: the losses are still computed, but only as RL
+    # rewards / logging. The agent's own update re-enables grad locally, so its training
+    # is unaffected.
+    with torch.set_grad_enabled(train_sam2), \
+        tqdm(total=len(train_loader), desc=f'Epoch {epoch}', unit='img', position=0, miniters=10) as pbar:
         for batch_idx, packs in enumerate(train_loader): #metric_logger.log_every(train_loader, print_freq, header=header):
             whole_imgs_tensor = packs["image"].squeeze(0)
             whole_masks_tensor = packs["label"].squeeze(0)
@@ -153,7 +163,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                         for i in range(0, local_length, args.video_length)
                     ]
                 
-                # print(rank, imgs_tensor.shape, sliding_window)
                 processed_frame = 0
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -233,12 +242,13 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     average_loss(class_loss)
                     # print(type(class_loss))
                     avg_loss = class_loss["total_loss"] / accum_step
-                    avg_loss.backward()
+                    if train_sam2:
+                        avg_loss.backward()
 
-                    if (batch_idx + 1) % accum_step == 0:
-                        grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
-                        optimizer.step()
-                        optimizer.zero_grad()
+                        if (batch_idx + 1) % accum_step == 0:
+                            grad_norm = torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=0.1)
+                            optimizer.step()
+                            optimizer.zero_grad()
 
                     # to_reduce = {k: class_loss[k] for k in class_loss.keys() if k not in ["num_step", "total_loss"]}
                     # losses_reduced = reduce_dict(to_reduce)
@@ -253,18 +263,17 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     else:
                         agent = getattr(net.module, "agent", None)
 
-                    if agent is not None:
+                    if agent is not None and epoch >= args.warmup_ep:
                         q_updates_per_step = getattr(args, "q_updates_per_step", 0)
-                        q_updates_per_step = (q_updates_per_step - 2 + 1) * epoch // args.ep + 2
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
                             # metric_logger.update(actor_gradnorm=agent_step_loss["actor_gradnorm"].item())
-                            agent_loss["actor_loss"] += agent_step_loss["actor_loss"]
-                            if "critic_loss" in agent_step_loss.keys():
-                                # metric_logger.update(critic_loss=agent_step_loss["critic_loss"].item())
-                                # metric_logger.update(critic_gradnorm=agent_step_loss["critic_gradnorm"].item())
-                                agent_loss["critic_loss"] += agent_step_loss["critic_loss"]
+                            for metric_name, metric_value in agent_step_loss.items():
+                                if hasattr(metric_value, "item"):
+                                    metric_value = metric_value.item()
+                                agent_metric_sums[metric_name] = agent_metric_sums.get(metric_name, 0.0) + metric_value
+                                agent_metric_counts[metric_name] = agent_metric_counts.get(metric_name, 0) + 1
                             agent_step += 1
 
                     # Add the loss of the class to the instance
@@ -292,9 +301,10 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
 
     if agent_step > 0:
-        avg_agent_loss = {}
-        avg_agent_loss["actor_loss"] = agent_loss["actor_loss"] / agent_step
-        avg_agent_loss["critic_loss"] = agent_loss["critic_loss"] / agent_step
+        avg_agent_loss = {
+            metric_name: total / agent_metric_counts[metric_name]
+            for metric_name, total in agent_metric_sums.items()
+        }
     else:
         avg_agent_loss = {
             "actor_loss": 0,
