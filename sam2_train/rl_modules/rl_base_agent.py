@@ -3,12 +3,6 @@ from collections import deque
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
 
 class BaseAgent:
-    # Whether the caller must build the successor state when it closes a transition.
-    # Off-policy agents push straight to the replay buffer and need it there and then;
-    # BasePOAgent holds transitions in a Trajectory and fills next_state in by reference
-    # from the following transition's state instead.
-    materialize_next_state = True
-
     def __init__(
         self,
         num_maskmem, 
@@ -32,20 +26,36 @@ class BaseAgent:
         self.epoch = 0
     
     def init_new_replay_instance(self, **instance_info):
+        """Open a transition, closing the pending one first.
+
+        The state we are opening with is, by construction, the successor of the
+        transition that is still pending: it is built from the same frame, straight
+        after that transition's action was applied to the memory bank. So opening is
+        exactly the moment the previous transition's next_state becomes available, and
+        no second prepare_rl_state is needed.
+        """
+        self.close_await_replay_instance(next_state=instance_info.get("state"))
         self.await_replay_instance = RLReplayInstance(**instance_info)
-        
-    def update_await_replay_instance(self, loss_after, next_state):
-        self.await_replay_instance.update(loss_after, next_state)
-        self.replay_buffer.append(self.await_replay_instance.get())
-        self.await_replay_instance = None
-    
-    def set_await_done(self, loss_after):
-        """Terminate the pending transition at the end of a chunk."""
+
+    def close_await_replay_instance(self, next_state=None, done=False):
         if self.await_replay_instance is None:
             return
-        self.await_replay_instance.set_done(loss_after)
-        self.replay_buffer.append(self.await_replay_instance.get())
+        self.await_replay_instance.close(next_state=next_state, done=done)
+        self.store_transition(self.await_replay_instance)
         self.await_replay_instance = None
+
+    def store_transition(self, instance):
+        """Off-policy agents write straight to the replay buffer."""
+        self.replay_buffer.append(instance.get())
+
+    def set_await_done(self):
+        """Terminate the pending transition at the end of a chunk.
+
+        Every chunk runs on a fresh inference_state, so its last frame is a real
+        terminal: the next chunk rebuilds the memory bank from scratch and nothing the
+        agent did here can reach it.
+        """
+        self.close_await_replay_instance(done=True)
 
     def final_trajectory(self):
         """Off-policy agents write straight to the buffer, so there is nothing to close

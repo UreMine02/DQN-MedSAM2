@@ -72,26 +72,18 @@ class RLReplayInstance:
     def get(self):
         return tuple((self.state, self.action, self.reward, self.next_state, self.done)) # Call tuple to create a copy
     
-    # Update after
-    def update(self, loss_after, next_state=None):
-        """Close the transition with the loss the action actually produced.
+    def close(self, next_state=None, done=False):
+        """Attach the successor state and the terminal flag.
 
-        `next_state` may be None for agents that fill it in by reference later (see
-        BasePOAgent.init_new_replay_instance): the successor state is byte-identical to
-        the state the next transition is about to be built from, so materializing it
-        twice only doubles the memory the replay buffer holds.
+        The reward is already final by the time a transition is opened: both sides of
+        the counterfactual (loss_before / loss_after) are measured on the same frame,
+        back to back, before the environment moves on. So closing is bookkeeping only.
+
+        `next_state` is shared by reference with the following transition's state rather
+        than materialized again -- they are the same snapshot, and a state is ~16MB
+        (a [1,256,64,64] image feature plus an 11-slot memory bank). A terminal
+        transition self-loops instead; nothing reads it, since done=1 masks the
+        bootstrap.
         """
-        self.loss_after = loss_after
-        if next_state is not None:
-            self.next_state = next_state
-        
-        loss_diff = self.loss_before - self.loss_after
-        self.reward = self.reward + loss_diff #torch.sign(loss_diff)
-
-    def set_done(self, loss_after):
-        self.loss_after = loss_after
-        self.next_state = self.state
-        
-        loss_diff = self.loss_before - self.loss_after
-        self.reward = self.reward + loss_diff #torch.sign(loss_diff)
-        self.done = True
+        self.next_state = self.state if (done or next_state is None) else next_state
+        self.done = done

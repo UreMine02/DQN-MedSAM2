@@ -6,7 +6,6 @@
 #SBATCH --mem=200GB # ram
 #SBATCH --time=2:00:00 # time
 #SBATCH -J msd02 # job name
-#SBATCH -A strategic
 #SBATCH -o "/hpcfs/users/a1232079/duyanh/MedSAM2/code/DQN-MedSAM2/msd02-%j.out"
 
 # conda activate rlsam2
@@ -28,9 +27,9 @@ python train_3d.py \
     -data_path /data/datasets/nii/ \
     -lr 2e-4 \
     -val_freq 1 \
-    -ep 100 \
-    -warmup_ep 20 \
-    -stop_sam2_ep 40 \
+    -ep 1000 \
+    -warmup_ep 0 \
+    -stop_sam2_ep 100 \
     -q_updates_per_step 4 \
     -lazy_penalty 0.0 \
     -invalid_penalty 0.0 \

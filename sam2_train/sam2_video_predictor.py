@@ -15,7 +15,7 @@ from torch.utils.checkpoint import checkpoint
 
 from sam2_train.modeling.sam2_base import NO_OBJ_SCORE, SAM2Base
 from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load_video_frames, load_video_frames_from_data
-from sam2_train.rl_modules.rl_utils import prepare_rl_state, compute_loss
+from sam2_train.rl_modules.rl_utils import prepare_rl_state, compute_loss, deterministic_dropout
 from sam2_train.rl_modules.policy_optimization.grpo_agent import GRPOAgent
 
 class SAM2VideoPredictor(SAM2Base):
@@ -1238,22 +1238,13 @@ class SAM2VideoPredictor(SAM2Base):
                 gating_score_dict = current_out["gating_score_dict"]
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
 
-        # Close the transition left pending by the last frame of THIS chunk. The next
-        # chunk runs on a fresh inference_state with an empty memory bank, so the action
-        # taken here can never be observed there: leaving the instance open would pair
-        # its loss_before with the next chunk's frame-0 loss and its state with a
-        # post-reset next_state. Marking it done also tells compute_gae not to bootstrap
-        # or propagate credit across the boundary.
-        if train_agent and getattr(self.agent, "await_replay_instance", None) is not None:
-            storage_device = inference_state["device"]
-            pred_masks_gpu = output_dict["await_outputs"][frame_idx]["pred_masks"]
-            pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
-            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-            gt_masks = gt_masks.to(torch.float32)
-
-            loss_after = compute_loss(pred_masks, gt_masks, inference_state)
-
-            self.agent.set_await_done(loss_after.detach().cpu())
+        # Terminate the transition left pending by the last frame of THIS chunk. The
+        # next chunk runs on a fresh inference_state with an empty memory bank, so the
+        # action taken here can never be observed there; marking it done tells
+        # compute_gae not to bootstrap or propagate credit across the reset. Its reward
+        # was already measured when it was opened, so nothing has to be computed here.
+        if train_agent:
+            self.agent.set_await_done()
 
         # One trajectory spans every chunk of a (volume, obj_id); GAE runs once here.
         if train_agent and end_trajectory:
@@ -1570,18 +1561,8 @@ class SAM2VideoPredictor(SAM2Base):
                     **track_step_kwargs
                 )
             else:
-                # Finalize replay buffer instance from previous frame
-                if train_agent and getattr(self.agent, "await_replay_instance", None) is not None:
-                    self.agent_update_second_stage(
-                        inference_state=inference_state,
-                        output_dict=output_dict,
-                        frame_idx=frame_idx,
-                        storage_device=storage_device,
-                        current_vision_feats=current_vision_feats,
-                        current_vision_pos_embeds=current_vision_pos_embeds,
-                    )
-
-                # Initiate replay buffer instance for current frame
+                # Opens this frame's transition and closes the previous one; the reward
+                # is fully measured inside, so there is no second stage.
                 self.agent_update_first_stage(
                     inference_state=inference_state,
                     storage_device=storage_device,
@@ -1763,11 +1744,16 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent,
         **kwargs
     ):
-        # compute loss before
-        loss_before = None
-        if train_agent:
-            with torch.no_grad():
-                output_before = self.track_step(
+        def measure_loss():
+            """Dice loss on this frame under whatever the memory bank currently holds.
+
+            Dropout-free so the before/after pair differs only by the agent's action;
+            see rl_utils.deterministic_dropout. SAM2 stays in train mode, so the memory
+            encoding, obj_ptr selection and mask-decoder branches are the ones being
+            trained -- only the randomness is gone.
+            """
+            with torch.no_grad(), deterministic_dropout(self):
+                output = self.track_step(
                     frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
@@ -1776,13 +1762,11 @@ class SAM2VideoPredictor(SAM2Base):
                     memory_bank_size=inference_state["rl_config"]["memory_bank_size"],
                     **kwargs
                 )
-
-            pred_masks = output_before["pred_masks"]
-            pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
+            pred_masks = output["pred_masks"].to(storage_device, non_blocking=True).to(torch.float32)
             gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-            gt_masks = gt_masks.to(torch.float32)
+            return compute_loss(pred_masks, gt_masks.to(torch.float32), inference_state)
 
-            loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+        loss_before = measure_loss() if train_agent else None
 
         state, action_frame_map = prepare_rl_state(
             current_vision_feats,
@@ -1837,50 +1821,35 @@ class SAM2VideoPredictor(SAM2Base):
             )
 
         if train_agent:
+            # The other half of the counterfactual: same frame, same dropout-free path,
+            # only the bank has changed. Measuring it here rather than reading the next
+            # frame's await_outputs is the point of the whole restructure -- await_outputs
+            # comes from the stochastic training pass, so differencing against it left
+            # dropout noise in every reward, including "skip", which cannot move the bank
+            # at all and must therefore score exactly 0.
+            if action == 1:
+                # Skip leaves output_dict untouched, so the bank feeding this frame is
+                # bit-for-bit the one loss_before was measured on. With dropout silenced
+                # the second pass is provably identical -- take the shortcut and get an
+                # exact 0 instead of paying for a forward that can only return the same
+                # number.
+                loss_after = loss_before
+            else:
+                loss_after = measure_loss()
+            reward = reward + (loss_before - loss_after).item()
+
             replay_instance_info = {
                 "frame_idx": frame_idx,
                 "state": state,
                 "loss_before": loss_before.detach().cpu(),
+                "loss_after": loss_after.detach().cpu(),
                 "reward": reward,
             }
             replay_instance_info.update(action_out)
 
+            # Opening closes the transition pending from the previous frame, handing it
+            # this state as its successor.
             self.agent.init_new_replay_instance(**replay_instance_info)
-
-    # loss_after + next_state
-    def agent_update_second_stage(
-        self,
-        inference_state,
-        output_dict,
-        frame_idx,
-        storage_device,
-        current_vision_feats,
-        current_vision_pos_embeds,
-    ):
-        pred_masks_gpu = output_dict["await_outputs"][frame_idx-1]["pred_masks"]
-        pred_masks = pred_masks_gpu.to(storage_device, non_blocking=True).to(torch.float32)
-        gt_masks = inference_state["gt_masks"][frame_idx-1].to(device=storage_device, non_blocking=True)
-        gt_masks = gt_masks.to(torch.float32)
-
-        loss_after = compute_loss(pred_masks, gt_masks, inference_state)
-
-        # agent_update_first_stage runs next, on this same frame and this same (still
-        # unmutated) output_dict, and the state it builds is exactly this transition's
-        # successor. Policy-optimization agents take it from there by reference; only
-        # agents that push straight to a replay buffer need it materialized now.
-        next_state = None
-        if getattr(self.agent, "materialize_next_state", True):
-            next_state, _ = prepare_rl_state(
-                current_vision_feats,
-                current_vision_pos_embeds,
-                output_dict,
-                frame_idx,
-                num_maskmem=inference_state['rl_config']['memory_bank_size'],
-                num_max_prompt=inference_state["support_num_frames"],
-                offload_to_cpu=True
-            )
-
-        self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 
     def forward(
         self,

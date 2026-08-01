@@ -3,7 +3,9 @@ Q-learning utilities cho SAM2 memory management.
 """
 import math
 import random
+import contextlib
 import torch
+import torch.nn as nn
 import numpy as np
 from functools import partial
 from monai.losses import DiceLoss, FocalLoss
@@ -11,6 +13,43 @@ from sam2_train.rl_modules.rl_components import RLStates
 from sam2_train.modeling.position_encoding import compute_axial_cis
 
 EPS = 1e-6
+
+@contextlib.contextmanager
+def deterministic_dropout(model):
+    """Silence dropout for the duration of the block, without touching `self.training`.
+
+    The RL reward is a counterfactual: loss with the memory bank before the agent's
+    action minus loss after it. Both sides have to come from the same deterministic
+    function of the bank, otherwise the difference carries dropout noise -- and a "skip"
+    action, which provably leaves the bank untouched, still earns a nonzero random
+    reward. SAM2's memory attention runs at dropout 0.1, so under net.train() that noise
+    is always present.
+
+    Calling .eval() would fix the noise but is the wrong tool: SAM2 also gates
+    conditioning obj_ptr selection (sam2_base ~L690), non-overlap mask constraints
+    (~L919) and memory-encoder mask binarization (~L928) on self.training, so an
+    eval-mode measurement would score a *different* system from the one being trained.
+    Here only the stochasticity is removed, so SAM2 keeps training with dropout and
+    keeps co-adapting to the bank distribution the agent produces.
+
+    Covers both ways SAM2 expresses dropout: nn.Dropout modules (memory_attention) and
+    the plain `dropout_p` attribute read by scaled_dot_product_attention
+    (sam/transformer).
+    """
+    saved = []
+    for module in model.modules():
+        if isinstance(module, nn.Dropout):
+            saved.append((module, "p", module.p))
+            module.p = 0.0
+        if hasattr(module, "dropout_p"):
+            saved.append((module, "dropout_p", module.dropout_p))
+            module.dropout_p = 0.0
+    try:
+        yield
+    finally:
+        for module, attr, value in saved:
+            setattr(module, attr, value)
+
 
 def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     ndim = x.ndim

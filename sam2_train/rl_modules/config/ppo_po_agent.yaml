@@ -1,21 +1,21 @@
 agent:
   _target_: sam2_train.rl_modules.policy_optimization.ppo_agent.PPOAgent
   num_maskmem: 6
-  policy_lr: 1e-3
-  value_lr: 1e-3
+  policy_lr: 1e-4
+  value_lr: 1e-4
   gamma: 0.99
   beta: 0.99
-  buffer_size: 1024
+  buffer_size: 2048
   batch_size: 128
   entropy_weight: 0.001
   epsilon: 0.2
   tau: 0.9
   # Cosine LR annealing: one step per agent update, so lr_T_max is the expected
   # number of agent updates over the whole run.
-  lr_T_max: 500
+  lr_T_max: 1000
   min_lr: 1e-5
   sam2_dim:
-    n_query: 32
+    n_query: 64
     image_dim: 256
     memory_dim: 64
     obj_ptr_dim: 256

@@ -56,6 +56,57 @@ def compute_gae(values: torch.Tensor, next_value: torch.Tensor, rewards: torch.T
 
     return coef @ delta + values
 
+class RunningReturnScale:
+    """Running std of the discounted return, for reward scaling.
+
+    The reward is a difference of dice losses, so returns land around 1e-2 while the
+    critic's head naturally emits O(1). A critic asked to fit targets two orders of
+    magnitude below its own output scale converges to predicting the mean, which reads
+    as explained_variance ~ 0 no matter how long it trains. Dividing rewards by this
+    keeps the value targets at unit scale.
+
+    Scale only, no centering: shifting rewards would shift V by a constant, which is
+    harmless, but it buys nothing and makes checkpoints harder to compare. The policy is
+    unaffected either way, since train_step re-normalizes advantages per minibatch --
+    this is purely a critic conditioning fix.
+    """
+
+    def __init__(self, eps=1e-8):
+        self.mean = 0.0
+        self.var = 1.0
+        self.count = eps
+
+    def update(self, x: torch.Tensor):
+        x = x.reshape(-1).to(torch.float64)
+        n = x.numel()
+        if n == 0:
+            return
+        batch_mean = x.mean().item()
+        batch_var = x.var(unbiased=False).item()
+
+        delta = batch_mean - self.mean
+        total = self.count + n
+        # Chan et al. parallel variance, so the estimate survives being fed one
+        # trajectory at a time.
+        self.mean += delta * n / total
+        self.var = (
+            self.var * self.count + batch_var * n + delta ** 2 * self.count * n / total
+        ) / total
+        self.count = total
+
+    @property
+    def std(self):
+        return max(self.var, 1e-12) ** 0.5
+
+    def state_dict(self):
+        return {"mean": self.mean, "var": self.var, "count": self.count}
+
+    def load_state_dict(self, state):
+        self.mean = state.get("mean", 0.0)
+        self.var = state.get("var", 1.0)
+        self.count = state.get("count", 1e-8)
+
+
 class POReplayInstance(RLReplayInstance):
     def __init__(
         self,
@@ -118,9 +169,9 @@ class Trajectory:
         missing = [i for i, t in enumerate(self.transitions) if t.next_state is None]
         if missing:
             raise RuntimeError(
-                f"transitions {missing} have no next_state; every non-terminal "
-                "transition must be followed by init_new_replay_instance (which "
-                "backfills it) and every terminal one by set_done"
+                f"transitions {missing} have no next_state; every transition must be "
+                "closed by close_await_replay_instance, either by the next "
+                "init_new_replay_instance or by set_await_done at a chunk boundary"
             )
 
         transitions = [trans.get() for trans in self.transitions]
@@ -374,8 +425,14 @@ class BaseValueNetwork(nn.Module):
             nn.LayerNorm(self.hidden_dim),
             nn.Linear(self.hidden_dim, 1)
         )
-        
-        nn.init.zeros_(self.value_proj[1])
+
+        # Start at V(s) = 0. With default init the head emits values of std ~0.3 while
+        # the returns it has to fit are far smaller, so the critic spends its early
+        # budget unlearning an arbitrary offset and explained_variance starts deeply
+        # negative. Both weight and bias have to go: zeroing the weight alone still
+        # leaves a random constant.
+        nn.init.zeros_(self.value_proj[1].weight)
+        nn.init.zeros_(self.value_proj[1].bias)
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, pad_masks=None):
         B = image_spatial_query.shape[0]
@@ -400,10 +457,6 @@ class BaseValueNetwork(nn.Module):
 
 
 class BasePOAgent(BaseAgent):
-    # next_state is shared by reference with the following transition's state; see
-    # init_new_replay_instance.
-    materialize_next_state = False
-
     def __init__(
         self,
         num_maskmem,
@@ -460,6 +513,9 @@ class BasePOAgent(BaseAgent):
         # used to log mean/std of episodic return to wandb once per epoch.
         self.episode_returns = []
 
+        # Keeps the critic's targets at unit scale; see RunningReturnScale.
+        self.return_scale = RunningReturnScale()
+
     def freeze(self):
         for param in self.feat_summarizer.parameters():
             param.requires_grad_(False)
@@ -485,6 +541,27 @@ class BasePOAgent(BaseAgent):
 
         log_probs, action, reward, done, curr_state, next_state = self.await_trajectory.get_transitions(self.device)
 
+        # Episodic return: total (undiscounted) RAW reward per episode, i.e. per chunk,
+        # not per volume — a volume holds as many episodes as it has chunks, and their
+        # count varies with volume length, so summing the whole trajectory would make
+        # the metric track volume size instead of policy quality. Taken before scaling
+        # so the logged number stays in dice-loss units and is comparable across runs.
+        segment_ends = done.reshape(-1).nonzero(as_tuple=True)[0].tolist()
+        if not segment_ends or segment_ends[-1] != len(done) - 1:
+            segment_ends.append(len(done) - 1)
+        start = 0
+        for end in segment_ends:
+            self.episode_returns.append(reward[start:end + 1].sum().item())
+            start = end + 1
+
+        # Refresh the scale from this trajectory's raw discounted return, then scale.
+        # compute_gae with values=0 and tau=1 is exactly the Monte-Carlo discounted
+        # return, segmented at the same terminals.
+        # zeros = torch.zeros_like(reward)
+        # mc_return = compute_gae(zeros, zeros, reward, done, self.gamma, 1.0)
+        # self.return_scale.update(mc_return)
+        # reward = reward / self.return_scale.std
+
         # These are value *targets*: they must be computed with dropout off. update()
         # leaves the modules in train mode, so do not rely on the last select_action.
         self.feat_summarizer.eval()
@@ -496,21 +573,11 @@ class BasePOAgent(BaseAgent):
             next_feat = self.feat_summarizer(*next_state)
             next_value = self.value_net(*next_feat)
 
+            # V was trained on scaled returns, so it already lives in the scaled space;
+            # feeding it scaled rewards keeps every term of the GAE recursion consistent.
             return_ = compute_gae(curr_value, next_value, reward, done, self.gamma, self.tau)
             return_ = return_.squeeze(-1)
             advantage = return_ - curr_value.squeeze(-1)
-
-        # Episodic return: total (undiscounted) reward per episode, i.e. per chunk, not
-        # per volume — a volume holds as many episodes as it has chunks, and their count
-        # varies with volume length, so summing the whole trajectory would make the
-        # metric track volume size instead of policy quality.
-        segment_ends = done.reshape(-1).nonzero(as_tuple=True)[0].tolist()
-        if not segment_ends or segment_ends[-1] != len(done) - 1:
-            segment_ends.append(len(done) - 1)
-        start = 0
-        for end in segment_ends:
-            self.episode_returns.append(reward[start:end + 1].sum().item())
-            start = end + 1
 
         for i, ins in enumerate(self.await_trajectory.transitions):
             ins.set_return_advantage(return_[i].cpu(), advantage[i].cpu())
@@ -540,39 +607,13 @@ class BasePOAgent(BaseAgent):
         return stats
 
     def init_new_replay_instance(self, **instance_info):
+        self.close_await_replay_instance(next_state=instance_info.get("state"))
         self.await_replay_instance = POReplayInstance(**instance_info)
 
-        # Backfill the successor of the transition we just closed. agent_act always runs
-        # the second stage (which closes transition t) immediately before the first
-        # stage (which builds the state for t+1), from the same vision feats and the same
-        # unmutated output_dict -- so s_{t+1} IS the next_state of t. Sharing the object
-        # instead of calling prepare_rl_state a second time saves one full state
-        # materialization per step and halves what the replay buffer holds (a state is
-        # ~16MB: a [1,256,64,64] image feature plus an 11-slot memory bank).
-        if self.await_trajectory is not None and self.await_trajectory.transitions:
-            prev = self.await_trajectory.transitions[-1]
-            if prev.next_state is None:
-                prev.next_state = self.await_replay_instance.state
-
-    def update_await_replay_instance(self, loss_after, next_state=None):
-        self.await_replay_instance.update(loss_after, next_state)
-        self.await_trajectory.add_transition(self.await_replay_instance)
-        self.await_replay_instance = None
-
-    def set_await_done(self, loss_after):
-        """Terminate the pending transition at a chunk boundary.
-
-        Every chunk runs on a fresh inference_state, so the last frame of a chunk is a
-        real terminal: nothing the agent did there can reach the next chunk. Closing the
-        transition here (rather than letting it hang until the next chunk's frame 1)
-        keeps loss_before/loss_after on the same frame and stops a fabricated
-        cross-chunk (s, a, s') from entering the buffer.
-        """
-        if self.await_replay_instance is None:
-            return
-        self.await_replay_instance.set_done(loss_after)
-        self.await_trajectory.add_transition(self.await_replay_instance)
-        self.await_replay_instance = None
+    def store_transition(self, instance):
+        """Hold transitions in the trajectory; they only reach the replay buffer once
+        final_trajectory has run GAE over the whole volume."""
+        self.await_trajectory.add_transition(instance)
 
     @torch.no_grad()
     def select_action(self, state: RLStates, valid_actions, bank_is_full, training=False):
@@ -694,6 +735,9 @@ class BasePOAgent(BaseAgent):
             "actor_gradnorm": total_actor_gradnorm / num_update,
             "critic_gradnorm": total_critic_gradnorm / critic_num_update,
             "agent_lr": current_lr,
+            # Raw dice-loss units per unit of scaled return; multiply episodic_return_*
+            # by this to compare against an unscaled run.
+            "return_scale": self.return_scale.std,
         }
         for k, total in metric_sums.items():
             out[k] = total / metric_counts[k]
@@ -888,11 +932,15 @@ class BasePOAgent(BaseAgent):
                 "feat_summarizer": self.feat_summarizer.module.state_dict(),
                 "policy_net": self.policy_net.module.state_dict(),
                 "value_net": self.value_net.module.state_dict(),
+                "return_scale": self.return_scale.state_dict(),
             }
         return {
             "feat_summarizer": self.feat_summarizer.state_dict(),
             "policy_net": self.policy_net.state_dict(),
             "value_net": self.value_net.state_dict(),
+            # Without this a resumed run would restart the scale at 1.0 while the critic
+            # is already trained in the scaled space, silently rescaling every target.
+            "return_scale": self.return_scale.state_dict(),
         }
 
     def load_state_dict(self, state_dict, strict=False):
@@ -903,6 +951,9 @@ class BasePOAgent(BaseAgent):
         Missing/unexpected keys are printed rather than swallowed, because silently
         reinitialising the whole policy would look like a training collapse.
         """
+        if "return_scale" in state_dict:
+            self.return_scale.load_state_dict(state_dict["return_scale"])
+
         for name in ("feat_summarizer", "policy_net", "value_net"):
             module = getattr(self, name)
             if module is None or name not in state_dict:
