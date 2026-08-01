@@ -13,8 +13,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+icl+ppo+long_horizon+no_augment
-export CUDA_VISIBLE_DEVICES=0
+EXP=msd_task09+icl+ppo+long_horizon+no_augment+test
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -35,4 +35,4 @@ python train_3d.py \
     -invalid_penalty 0.0 \
     -num_support 5 \
     -memory_bank_size 6 \
-    -wandb_enabled \
+    # -wandb_enabled \
