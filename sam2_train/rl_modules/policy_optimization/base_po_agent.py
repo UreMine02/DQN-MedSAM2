@@ -909,7 +909,7 @@ class BasePOAgent(BaseAgent):
                 return_var = returns.var(unbiased=False)
                 explained_variance = 1.0 - (returns - pred_value).var(unbiased=False) / return_var.clamp(min=1e-8)
                 metrics["explained_variance"] = explained_variance.item()
-            
+
             total_loss = policy_loss + value_loss
             
             self.optimizer.zero_grad()

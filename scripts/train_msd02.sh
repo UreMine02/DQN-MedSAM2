@@ -29,7 +29,7 @@ python train_3d.py \
     -val_freq 1 \
     -ep 1000 \
     -warmup_ep 0 \
-    -stop_sam2_ep 100 \
+    -stop_sam2_ep 1000 \
     -q_updates_per_step 4 \
     -lazy_penalty 0.0 \
     -invalid_penalty 0.0 \

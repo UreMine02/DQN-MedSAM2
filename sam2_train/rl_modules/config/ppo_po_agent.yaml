@@ -3,7 +3,7 @@ agent:
   num_maskmem: 6
   policy_lr: 1e-4
   value_lr: 1e-4
-  gamma: 0.99
+  gamma: 0.9
   beta: 0.99
   buffer_size: 2048
   batch_size: 128
@@ -15,7 +15,7 @@ agent:
   lr_T_max: 1000
   min_lr: 1e-5
   sam2_dim:
-    n_query: 64
+    n_query: 32
     image_dim: 256
     memory_dim: 64
     obj_ptr_dim: 256
