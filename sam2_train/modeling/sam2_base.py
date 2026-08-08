@@ -728,6 +728,17 @@ class SAM2Base(torch.nn.Module):
                         t_diff_max = max_obj_ptrs_in_encoder - 1
                         tpos_dim = C if self.proj_tpos_enc_in_obj_ptrs else self.mem_dim
                         obj_pos = torch.tensor(pos_list, device=device)
+                        # The division below assumes t_diff <= t_diff_max. The agent path
+                        # already breaks that (it may keep frame 0 while tracking frame 15,
+                        # giving 2.5), and pool recall makes it far worse -- a memory 300
+                        # frames back lands at 50, where the low-frequency sine dims alias.
+                        # Saturating keeps it in the range the encoding was trained on.
+                        #
+                        # Gated, not unconditional: clamping changes the features of every
+                        # existing agent run, so switching it on for pool-free runs would
+                        # silently move the baseline this work is measured against.
+                        if getattr(self, "clamp_obj_ptr_tpos", False):
+                            obj_pos = obj_pos.clamp(min=0, max=t_diff_max)
                         obj_pos = get_1d_sine_pe(obj_pos / t_diff_max, dim=tpos_dim)
                         obj_pos = self.obj_ptr_tpos_proj(obj_pos)
                         obj_pos = obj_pos.unsqueeze(1).expand(-1, B, self.mem_dim)

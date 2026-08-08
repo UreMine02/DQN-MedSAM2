@@ -2,11 +2,9 @@
 Q-learning utilities cho SAM2 memory management.
 """
 import math
-import random
 import contextlib
 import torch
 import torch.nn as nn
-import numpy as np
 from functools import partial
 from monai.losses import DiceLoss, FocalLoss
 from sam2_train.rl_modules.rl_components import RLStates
@@ -93,14 +91,16 @@ def prepare_rl_state(
     num_maskmem,
     num_max_prompt=10,
     offload_to_cpu=True,
-    training=False
+    training=False,
+    global_pool=None,
 ):
     next_image_feat = current_vision_feats[-1] + current_vision_pos_embeds[-1]
     next_image_feat = next_image_feat.permute(1, 2, 0).reshape(1, 256, 64, 64)
-    curr_memory_feat = output_dict["await_outputs"][frame_idx-1]
+    candidate_key = frame_idx - 1
+    curr_memory_feat = output_dict["await_outputs"][candidate_key]
     curr_memory_feat = curr_memory_feat["maskmem_features"] + curr_memory_feat["maskmem_pos_enc"][0]
-    curr_obj_ptr = output_dict["await_outputs"][frame_idx-1]["obj_ptr"]
-    
+    curr_obj_ptr = output_dict["await_outputs"][candidate_key]["obj_ptr"]
+
     # Add non_cond memory
     cond_bank_list = list(output_dict["cond_frame_outputs"].values())
     non_cond_bank_list = list(output_dict["non_cond_frame_outputs"].values())
@@ -145,7 +145,32 @@ def prepare_rl_state(
         next_image_feat = next_image_feat.detach().cpu()
         curr_memory_feat = curr_memory_feat.detach().cpu()
         curr_obj_ptr = curr_obj_ptr.detach().cpu()
-        
+
+    list_frame = list(output_dict["non_cond_frame_outputs"].keys())
+
+    # Ages only exist when the pool does. With it disabled the state carries None and the
+    # summarizer skips the age term entirely, so the pool-off path stays bit-identical to
+    # the pre-pool one.
+    cand_age, bank_age, pool_state = None, None, None
+    if global_pool is not None and global_pool.enabled:
+        age_device = torch.device("cpu") if offload_to_cpu else device
+        cand_age = torch.tensor(
+            [[float(frame_idx - candidate_key)]], device=age_device
+        )
+        # Zero for the unoccupied slots prepare_rl_state zero-fills above; they are masked
+        # out downstream, so the value is never read.
+        bank_ages = [float(frame_idx - k) for k in list_frame]
+        bank_ages += [0.0] * (num_maskmem - len(bank_ages))
+        bank_age = torch.tensor([bank_ages[:num_maskmem]], device=age_device)
+
+        pool_state = dict(global_pool.snapshot(memory_shape, obj_ptr_shape, offload_to_cpu))
+        pool_ages = [
+            float(frame_idx - pooled_key)
+            for pooled_key, _ in global_pool.local_view()
+        ][: global_pool.capacity]
+        pool_ages += [0.0] * (global_pool.capacity - len(pool_ages))
+        pool_state["age"] = torch.tensor([pool_ages], device=age_device)
+
     rl_state = {
         "frame_idx": frame_idx,
         "next_image_feat": next_image_feat.clone().detach(),
@@ -156,18 +181,22 @@ def prepare_rl_state(
         "prev_memory_bank": {
             "mem_feat": prev_memory_bank.clone().detach(),
             "obj_ptr": prev_obj_ptr.clone().detach(),
-        }
+        },
+        # Shared, not cloned: the pool mutates once every `stride` frames, so cloning it
+        # per state would multiply the replay buffer's footprint by the pool size for no
+        # gain -- states are read-only once built.
+        "global_pool": pool_state,
+        "cand_age": cand_age,
+        "bank_age": bank_age,
     }
-    
+
     state = RLStates(**rl_state)
-    list_frame = list(output_dict["non_cond_frame_outputs"].keys())
-    # if training:
-    #     avail_index = np.argsort(randperm)[:len(non_cond_bank_list)].tolist()
-    #     action_frame_map = {action+2:list_frame[i] for i, action in enumerate(avail_index)}
-    # else:
-    action_frame_map = {k+2:v for k, v in enumerate(list_frame)}
-    
-    return state, action_frame_map
+    # Bank slot k (the k-th non_cond_bank_feat token the summarizer builds) holds this
+    # frame key. Callers turn a swap action's slot index into a frame key by indexing
+    # this list directly -- there is no action-index offset baked in here anymore.
+    bank_frame_keys = list_frame
+
+    return state, bank_frame_keys
 
 def compute_loss(
     pred_masks,
@@ -190,44 +219,6 @@ def compute_loss(
         ).squeeze()
         
     loss = dice_loss_fn(video_res_masks, gt_masks)
-    
+
     return loss
-
-
-def map_action(action, output_dict, storage_key):
-    """
-    Map an integer action to a drop_key (frame index) for the given storage_key.
-    Returns None if no drop should happen (or no candidate to drop).
-    Safety: never index into empty lists and prefer per-entry iou if available.
-    """
-    # get current keys in memory (ordered)
-    mem_dict = output_dict.get(storage_key, {})
-    sorted_keys = sorted(mem_dict.keys())
-    if len(sorted_keys) == 0:
-        return None
-
-    # actions:
-    # 0: skip
-    # 1: add (if full, fallback to drop oldest)
-    # 2: add_drop_oldest
-    # 3: add_drop_lowest_iou
-    # 4: add_drop_random
-
-    # drop oldest (for action 1 or 2)
-    if action == 2:
-        return sorted_keys[0]
-
-    # drop lowest IoU (action == 3)
-    if action == 3:
-        # try to collect IoU per stored entry (prefer entry['iou'] or entry['object_score_logits'])
-        iou_list = [mem_dict[k]["ious"].item() for k in sorted_keys]
-        min_idx = np.argmin(iou_list)
-        return sorted_keys[min_idx]
-
-    # drop random (action == 4)
-    if action == 4:
-        return random.choice(sorted_keys)
-
-    # action == 1
-    return None
 

@@ -25,6 +25,7 @@ from func_3d.utils import (
     extract_object_multiple
 )
 from func_3d.misc import MetricLogger, reduce_dict
+from sam2_train.rl_modules.rl_components import GlobalMemoryPool
 
 import wandb
 
@@ -163,6 +164,19 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                         for i in range(0, local_length, args.video_length)
                     ]
                 
+                # One pool per (volume, obj_id), created before the chunk loop and shared
+                # by every chunk of it: an archive of frames the agent has already evicted
+                # from the (much smaller) memory bank and may want to recall.
+                global_pool = GlobalMemoryPool(
+                    capacity=args.pool_size, stride=args.pool_stride
+                )
+
+                # One tracking state per (volume, obj_id) as well. Chunking exists only to
+                # bound the autograd graph SAM2 backprops through; the RL environment --
+                # memory bank, conditioning frames, pending candidate -- is not chunked, so
+                # the agent's trajectory and its credit assignment run the whole volume.
+                train_state = None
+
                 processed_frame = 0
                 for slide_idx, slide in enumerate(sliding_window):
                     slide_imgs_tensor = imgs_tensor[slide].to(dtype=torch.float32, device=GPUdevice, non_blocking=True)
@@ -170,15 +184,25 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                     slide_imgs_tensor = F.interpolate(slide_imgs_tensor, size=(args.image_size, args.image_size), mode="bilinear", align_corners=False)
                     slide_masks_tensor = F.interpolate(slide_masks_tensor.unsqueeze(1), size=(args.image_size, args.image_size), mode="nearest").squeeze(1)
                     
-                    if not args.distributed:
-                        train_state = net.train_init_state(
+                    net_module = net.module if args.distributed else net
+                    if train_state is None:
+                        train_state = net_module.train_init_state(
                             args=args,
-                            imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor, support_imgs_tensor=support_imgs_tensor
+                            imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor,
+                            support_imgs_tensor=support_imgs_tensor,
+                            global_pool=global_pool,
+                            # Where this chunk starts in the volume; frame indices stay
+                            # volume-global, the image/label tensors do not.
+                            chunk_start=slide.start,
+                            total_num_frames=imgs_tensor.shape[0],
                         )
                     else:
-                        train_state = net.module.train_init_state(
-                            args=args,
-                            imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor, support_imgs_tensor=support_imgs_tensor
+                        # Same state, next window: the memory bank and the agent's pending
+                        # transition carry over, so the trajectory does not restart here.
+                        net_module.train_advance_chunk(
+                            train_state,
+                            imgs_tensor=slide_imgs_tensor, masks_tensor=slide_masks_tensor,
+                            chunk_start=slide.start,
                         )
 
                     # with torch.cuda.amp.autocast():
@@ -192,6 +216,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                         random_drop=args.random_drop,
                         start_trajectory=(slide_idx == 0),
                         end_trajectory=(slide_idx == len(sliding_window)-1),
+                        add_support=(slide_idx == 0),
                         device=GPUdevice
                     )
                     # Record the loss in this step
@@ -268,7 +293,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                         agent_step_loss = agent.update(q_updates_per_step)
                         if agent_step_loss is not None:
                             # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
-                            # metric_logger.update(actor_gradnorm=agent_step_loss["actor_gradnorm"].item())
+                            # metric_logger.update(policy_gradnorm=agent_step_loss["policy_gradnorm"].item())
                             for metric_name, metric_value in agent_step_loss.items():
                                 if hasattr(metric_value, "item"):
                                     metric_value = metric_value.item()
@@ -300,16 +325,16 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
     average_loss(total_loss)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
 
+    # Empty when the agent never ran an update this epoch (still warming up, or the
+    # replay buffer hasn't filled) -- callers should skip logging entirely rather than
+    # log a flat 0, which would misread as "the agent trained and had zero loss."
     if agent_step > 0:
         avg_agent_loss = {
             metric_name: total / agent_metric_counts[metric_name]
             for metric_name, total in agent_metric_sums.items()
         }
     else:
-        avg_agent_loss = {
-            "actor_loss": 0,
-            "critic_loss": 0,
-        }
+        avg_agent_loss = {}
 
     return (
         total_loss["total_loss"],
@@ -338,6 +363,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     masks = {}
     preds = {}
     agent_act = not args.no_agent
+    agent = getattr(net.module if args.distributed else net, "agent", None)
     # lossfunc = paper_loss
 
     for packs in val_loader:
@@ -400,16 +426,22 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             #     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
             #     continue
 
-            if not args.distributed:
-                train_state = net.val_init_state(
-                    args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
-                )
-            else:
-                train_state = net.module.val_init_state(
-                    args=args,
-                    imgs_tensor=imgs_tensor, masks_tensor=masks_tensor, support_imgs_tensor=support_imgs_tensor
-                )
+            init_state_fn = (
+                net.val_init_state if not args.distributed
+                else net.module.val_init_state
+            )
+            # Validation never chunks: the whole volume is tracked in one pass, so
+            # chunk_start is 0 and the state is never advanced. The pool is still
+            # per-(volume, obj_id) and must not leak between them.
+            train_state = init_state_fn(
+                args=args,
+                imgs_tensor=imgs_tensor, masks_tensor=masks_tensor,
+                support_imgs_tensor=support_imgs_tensor,
+                global_pool=GlobalMemoryPool(
+                    capacity=args.pool_size, stride=args.pool_stride
+                ),
+                chunk_start=0,
+            )
 
             with torch.no_grad():
                 # with torch.cuda.amp.autocast():
@@ -431,7 +463,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
                     #         for i, out_obj_id in enumerate(out_obj_ids)
                     #     }
 
-                video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, device=GPUdevice)
+                video_segments = net(imgs_tensor, masks_tensor, support_masks_tensor, train_state, obj_id, agent_act=agent_act, log_reward=agent_act, device=GPUdevice)
             
             # Record the loss in this step
             for frame_idx in video_segments.keys():
@@ -494,5 +526,16 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     ))
 
     print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou", "th"], floatfmt=".4f", tablefmt="grid"))
+
+    # RL diagnostics from this validation pass: reward the agent's greedy decisions
+    # produced on held-out data, and what it actually decided. Empty (nothing logged)
+    # when there's no agent, the agent type doesn't implement this (e.g. the separate
+    # Q-learning hierarchy), or it never got a real decision to make.
+    if agent is not None and hasattr(agent, "pop_val_stats"):
+        val_stats = agent.pop_val_stats()
+        if args.wandb_enabled and val_stats:
+            wandb.log({f"rl/{key}": value for key, value in val_stats.items()}, step=epoch)
+        if val_stats:
+            print(val_stats)
 
     return avg['iou'], avg['dice']

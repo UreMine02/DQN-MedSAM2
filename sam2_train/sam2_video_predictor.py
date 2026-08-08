@@ -18,6 +18,40 @@ from sam2_train.utils.misc import concat_points, fill_holes_in_mask_scores, load
 from sam2_train.rl_modules.rl_utils import prepare_rl_state, compute_loss, deterministic_dropout
 from sam2_train.rl_modules.policy_optimization.grpo_agent import GRPOAgent
 
+
+def _detach_in_place(obj, seen):
+    """Strip the autograd graph off every tensor reachable from `obj`, in place.
+
+    Called when a tracking state moves on to the next chunk. The memory bank, the
+    conditioning frames and the pending candidate all survive that boundary, but the
+    graph that produced them was freed by the chunk's own `backward()`: reusing those
+    tensors as-is would either raise "backward through the graph a second time" on the
+    next chunk, or -- worse, while it still works -- pin every previous chunk's
+    activations for the length of the volume.
+
+    In place rather than rebuilding the dicts, because the same output dict is aliased
+    from several places (`await_outputs[k]` and `non_cond_frame_outputs[k]` are the same
+    object once a frame is admitted to the bank) and rebinding would silently fork them.
+    `detach()` shares storage, so this is bookkeeping, not a copy. `seen` guards against
+    walking a shared sub-dict twice.
+    """
+    if id(obj) in seen:
+        return
+    seen.add(id(obj))
+    if isinstance(obj, dict):
+        items = obj.items()
+    elif isinstance(obj, list):
+        items = enumerate(obj)
+    else:
+        return
+    for key, value in items:
+        if torch.is_tensor(value):
+            if value.grad_fn is not None or value.requires_grad:
+                obj[key] = value.detach()
+        else:
+            _detach_in_place(value, seen)
+
+
 class SAM2VideoPredictor(SAM2Base):
     """The predictor class to handle user interactions and manage inference states."""
 
@@ -120,6 +154,9 @@ class SAM2VideoPredictor(SAM2Base):
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
         async_loading_frames=False,
+        global_pool=None,
+        chunk_start=0,
+        total_num_frames=None,
     ):
         """Initialize a inference state."""
         if video_height is None or video_width is None:
@@ -192,8 +229,23 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty,
-            "memory_bank_size": args.memory_bank_size
+            "memory_bank_size": args.memory_bank_size,
+            "recall_every": getattr(args, "recall_every", 1),
+            "agent_act_every": getattr(args, "agent_act_every", 1),
         }
+        # Validation tracks a whole volume in a single pass, so `chunk_start` is 0 and
+        # `train_advance_chunk` never runs; the fields exist so the two paths index
+        # `images` / `gt_masks` through the same expression.
+        inference_state["global_pool"] = global_pool
+        inference_state["chunk_start"] = chunk_start
+        inference_state["start_frame_idx"] = chunk_start
+        inference_state["total_num_frames"] = (
+            len(images) if total_num_frames is None else int(total_num_frames)
+        )
+        # Only recall can produce obj_ptr distances far outside SAM2's trained range, so
+        # the saturation in _prepare_memory_conditioned_features is tied to the pool being
+        # on -- a pool-free run stays bit-identical to before this feature existed.
+        self.clamp_obj_ptr_tpos = global_pool is not None and global_pool.enabled
 
         return inference_state
 
@@ -209,12 +261,22 @@ class SAM2VideoPredictor(SAM2Base):
         offload_video_to_cpu=False,
         offload_state_to_cpu=False,
         async_loading_frames=False,
+        global_pool=None,
+        chunk_start=0,
+        total_num_frames=None,
     ):
-        """Initialize a inference state."""
+        """Initialize a tracking state for one (volume, obj_id).
+
+        Created once per volume, not once per chunk: `train_advance_chunk` swaps the
+        image/GT window in for each subsequent chunk while everything that makes up the
+        RL environment -- the memory bank, the conditioning frames, the pending candidate
+        -- stays put. `chunk_start` is where the state's `images`/`gt_masks` begin in the
+        volume; every frame index the tracker and the agent see is volume-global.
+        """
         if video_height is None or video_width is None:
             video_height = self.image_size
             video_width = self.image_size
-            
+
         images = load_video_frames_from_data(
             imgs_tensor=imgs_tensor,
             offload_video_to_cpu=offload_video_to_cpu,
@@ -291,9 +353,75 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["rl_config"] = {
             "lazy_penalty": args.lazy_penalty,
             "invalid_penalty": args.invalid_penalty,
-            "memory_bank_size": args.memory_bank_size
+            "memory_bank_size": args.memory_bank_size,
+            "recall_every": getattr(args, "recall_every", 1),
+            "agent_act_every": getattr(args, "agent_act_every", 1),
         }
-        
+        # Owned by the caller and shared by every chunk of one (volume, obj_id). Keyed by
+        # volume-global frame index, same as everything else now that the state itself
+        # spans the volume.
+        inference_state["global_pool"] = global_pool
+        # Where this chunk's `images`/`gt_masks` start in the volume: frame indices are
+        # volume-global, the tensors are not, so every lookup subtracts this.
+        inference_state["chunk_start"] = chunk_start
+        # First frame of the whole trajectory (not of this chunk). The frame before it has
+        # no encoded memory, so it is the one frame with no agent decision to make.
+        inference_state["start_frame_idx"] = chunk_start
+        # Length of the volume, not of this chunk -- SAM2 reads it to bound the obj_ptr
+        # window, which must not shrink just because the chunk did.
+        inference_state["total_num_frames"] = (
+            len(images) if total_num_frames is None else int(total_num_frames)
+        )
+        # Only recall can produce obj_ptr distances far outside SAM2's trained range, so
+        # the saturation in _prepare_memory_conditioned_features is tied to the pool being
+        # on -- a pool-free run stays bit-identical to before this feature existed.
+        self.clamp_obj_ptr_tpos = global_pool is not None and global_pool.enabled
+
+        return inference_state
+
+    def train_advance_chunk(
+        self,
+        inference_state,
+        imgs_tensor,
+        masks_tensor,
+        chunk_start,
+        offload_video_to_cpu=None,
+        async_loading_frames=False,
+    ):
+        """Slide the state's image/GT window on to the next chunk of the same volume.
+
+        This is what replaces re-running `train_init_state` per chunk. Everything the RL
+        environment is made of -- `output_dict` (memory bank, conditioning frames, pending
+        candidate), the global pool, the object-index maps -- is left exactly as the
+        previous chunk left it, so the agent's trajectory runs the length of the volume
+        instead of restarting every `video_length` frames. Only two things change: which
+        frames the state can decode, and the fact that the carried-over tensors must lose
+        their (already-freed) autograd graph; see `_detach_in_place`.
+        """
+        if offload_video_to_cpu is None:
+            offload_video_to_cpu = inference_state["offload_video_to_cpu"]
+
+        images = load_video_frames_from_data(
+            imgs_tensor=imgs_tensor,
+            offload_video_to_cpu=offload_video_to_cpu,
+            async_loading_frames=async_loading_frames,
+        )
+        inference_state["images"] = images
+        inference_state["num_frames"] = len(images)
+        inference_state["gt_masks"] = masks_tensor
+        inference_state["chunk_start"] = chunk_start
+        # The support frames were prompted once, on the first chunk; re-entering the
+        # support stage here would decode query frames out of `support_images`.
+        inference_state["support_set_stage"] = False
+
+        seen = set()
+        _detach_in_place(inference_state["output_dict"], seen)
+        for obj_output_dict in inference_state["output_dict_per_obj"].values():
+            _detach_in_place(obj_output_dict, seen)
+        for obj_temp_dict in inference_state["temp_output_dict_per_obj"].values():
+            _detach_in_place(obj_temp_dict, seen)
+        _detach_in_place(inference_state["constants"], seen)
+
         return inference_state
 
     def _obj_id_to_idx(self, inference_state, obj_id):
@@ -1172,15 +1300,22 @@ class SAM2VideoPredictor(SAM2Base):
         generate_rl_samples=False,
         start_trajectory=False,
         end_trajectory=False,
-        random_drop=False
+        random_drop=False,
+        log_reward=False,
     ):
         """Propagate the input points across frames to track in the entire video."""
-        self.train_propagate_in_video_preflight(inference_state)
+        # Only the first chunk of a volume has temporary support outputs to consolidate.
+        # Re-running it on a later chunk would be worse than wasteful: it pops every
+        # conditioning frame's index out of `non_cond_frame_outputs`, which used to be
+        # empty at that point and now holds the agent's carried-over memory bank.
+        if not inference_state["tracking_has_started"]:
+            self.train_propagate_in_video_preflight(inference_state)
 
         output_dict = inference_state["output_dict"]
         consolidated_frame_inds = inference_state["consolidated_frame_inds"]
         obj_ids = inference_state["obj_ids"]
         num_frames = inference_state["num_frames"]
+        chunk_start = inference_state["chunk_start"]
         batch_size = self._get_obj_num(inference_state)
         if len(output_dict["cond_frame_outputs"]) == 0:
             raise RuntimeError("No points are provided; please add points first")
@@ -1189,7 +1324,9 @@ class SAM2VideoPredictor(SAM2Base):
         )
 
         inference_state["support_set_stage"] = False
-        processing_order = range(num_frames)
+        # Volume-global indices: this chunk continues where the previous one stopped,
+        # rather than restarting the numbering at 0.
+        processing_order = range(chunk_start, chunk_start + num_frames)
 
         if train_agent and start_trajectory:
             self.agent.init_new_trajectory()
@@ -1218,7 +1355,8 @@ class SAM2VideoPredictor(SAM2Base):
                 agent_act=agent_act,
                 train_agent=train_agent,
                 generate_rl_samples=generate_rl_samples,
-                random_drop=random_drop
+                random_drop=random_drop,
+                log_reward=log_reward,
             )
             output_dict[storage_key][frame_idx] = current_out
             # Create slices of per-object outputs for subsequent interaction with each
@@ -1227,6 +1365,23 @@ class SAM2VideoPredictor(SAM2Base):
                 inference_state, frame_idx, current_out, storage_key
             )
             inference_state["frames_already_tracked"][frame_idx] = {"reverse": reverse}
+
+            # Archive this frame if it lands on the pool's stride.
+            global_pool = inference_state.get("global_pool")
+            if global_pool is not None:
+                global_pool.maybe_push(frame_idx, current_out)
+
+            # Only the immediately preceding frame's pending output is ever read again
+            # (as the next frame's candidate); anything older was either admitted to the
+            # bank -- which holds the very same dict, so this does not free it -- or
+            # rejected for good. Dropping it matters now that the state lives for a whole
+            # volume rather than a 16-frame chunk: otherwise every frame's memory
+            # features, vision features and masks stay pinned to the end of the volume.
+            if storage_key == "await_outputs":
+                stale_idx = frame_idx - 1
+                output_dict["await_outputs"].pop(stale_idx, None)
+                for obj_output_dict in inference_state["output_dict_per_obj"].values():
+                    obj_output_dict["await_outputs"].pop(stale_idx, None)
 
             # Resize the output mask to the original video resolution (we directly use
             # the mask scores on GPU for output to avoid any CPU conversion in between)
@@ -1238,16 +1393,13 @@ class SAM2VideoPredictor(SAM2Base):
                 gating_score_dict = current_out["gating_score_dict"]
             yield frame_idx, obj_ids, current_out["ious"], current_out["object_score_logits"], video_res_masks, gating_score_dict
 
-        # Terminate the transition left pending by the last frame of THIS chunk. The
-        # next chunk runs on a fresh inference_state with an empty memory bank, so the
-        # action taken here can never be observed there; marking it done tells
-        # compute_gae not to bootstrap or propagate credit across the reset. Its reward
-        # was already measured when it was opened, so nothing has to be computed here.
-        if train_agent:
-            self.agent.set_await_done()
-
-        # One trajectory spans every chunk of a (volume, obj_id); GAE runs once here.
+        # A chunk boundary is no longer a terminal: the next chunk continues on this same
+        # state, with this chunk's memory bank still in it, so the transition left pending
+        # here is closed by the first decision of the next chunk and credit flows across
+        # the boundary like any other step. Only the end of the volume is a real terminal.
         if train_agent and end_trajectory:
+            self.agent.set_await_done()
+            # One trajectory per (volume, obj_id); GAE runs once, over the whole volume.
             self.agent.final_trajectory()
 
 
@@ -1316,10 +1468,14 @@ class SAM2VideoPredictor(SAM2Base):
         """Compute the image features on a given frame."""
 
         if inference_state["support_set_stage"]:
+            # Support prompts have their own numbering, independent of the volume's.
             image = inference_state["support_images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
         else:
-            image = inference_state["images"][frame_idx].to(device=inference_state["device"]).float().unsqueeze(0)
-            
+            # `frame_idx` is volume-global; `images` only holds the current chunk.
+            local_idx = frame_idx - inference_state.get("chunk_start", 0)
+            image = inference_state["images"][local_idx].to(device=inference_state["device"]).float().unsqueeze(0)
+
+
         backbone_out = self.forward_image(image) # dict_keys(['vision_features', 'vision_pos_enc', 'backbone_fpn'])
         # Cache the most recent frame's feature (for repeated interactions with
         # a frame; we can use an LRU cache for more frames in the future).
@@ -1357,7 +1513,8 @@ class SAM2VideoPredictor(SAM2Base):
         agent_act=False,
         train_agent=False,
         generate_rl_samples=False,
-        random_drop=False
+        random_drop=False,
+        log_reward=False,
     ):
         """Run tracking on a single frame based on current inputs and previous memory."""
         # Retrieve correct image features
@@ -1371,8 +1528,11 @@ class SAM2VideoPredictor(SAM2Base):
 
         storage_device = inference_state["device"]
 
-        # NOTE: Agent act on memory bank before running a track step
-        if frame_idx > 0:
+        # NOTE: Agent act on memory bank before running a track step.
+        # Against the trajectory's first frame, not the chunk's: every later chunk
+        # continues on the same state, so its opening frame has a real predecessor in
+        # `await_outputs` and a real decision to make.
+        if frame_idx > inference_state.get("start_frame_idx", 0):
             if random_drop:
                 if len(output_dict["non_cond_frame_outputs"]) + 1 >= self.num_maskmem:
                     drop_frame = np.random.choice(list(output_dict["non_cond_frame_outputs"].keys()), size=1)[0]
@@ -1385,7 +1545,7 @@ class SAM2VideoPredictor(SAM2Base):
                     "feat_sizes": feat_sizes,
                     "point_inputs": point_inputs,
                     "mask_inputs": mask_inputs,
-                    "num_frames": inference_state["num_frames"],
+                    "num_frames": inference_state["total_num_frames"],
                     "track_in_reverse": reverse,
                     "run_mem_encoder": run_mem_encoder,
                     "prev_sam_mask_logits": prev_sam_mask_logits,
@@ -1401,6 +1561,7 @@ class SAM2VideoPredictor(SAM2Base):
                     train_agent,
                     agent_act,
                     generate_rl_samples,
+                    log_reward=log_reward,
                     **track_step_kwargs
                 )
 
@@ -1415,7 +1576,7 @@ class SAM2VideoPredictor(SAM2Base):
             point_inputs=point_inputs,
             mask_inputs=mask_inputs,
             output_dict=output_dict,
-            num_frames=inference_state["num_frames"],
+            num_frames=inference_state["total_num_frames"],
             track_in_reverse=reverse,
             run_mem_encoder=run_mem_encoder,
             prev_sam_mask_logits=prev_sam_mask_logits,
@@ -1544,6 +1705,7 @@ class SAM2VideoPredictor(SAM2Base):
         train_agent,
         agent_act,
         generate_rl_samples,
+        log_reward=False,
         **track_step_kwargs
     ):
         if generate_rl_samples or train_agent or agent_act:
@@ -1571,6 +1733,7 @@ class SAM2VideoPredictor(SAM2Base):
                     current_vision_pos_embeds=current_vision_pos_embeds,
                     output_dict=output_dict,
                     train_agent=train_agent,
+                    log_reward=log_reward,
                     **track_step_kwargs
                 )
     @torch.no_grad()
@@ -1602,13 +1765,14 @@ class SAM2VideoPredictor(SAM2Base):
 
                 pred_masks = output_before["pred_masks"]
                 pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-                gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+                local_idx = frame_idx - inference_state["chunk_start"]
+                gt_masks = inference_state["gt_masks"][local_idx].to(device=storage_device, non_blocking=True)
                 gt_masks = gt_masks.to(torch.float32)
 
                 loss_before = compute_loss(pred_masks, gt_masks, inference_state)
 
         if agent_act or generate_rl_samples:
-            state, action_frame_map = prepare_rl_state(
+            state, bank_frame_keys = prepare_rl_state(
                 current_vision_feats,
                 current_vision_pos_embeds,
                 output_dict,
@@ -1620,18 +1784,29 @@ class SAM2VideoPredictor(SAM2Base):
                 training=train_agent
             )
 
+            memory_bank_size = inference_state['rl_config']['memory_bank_size']
             bank_size = len(output_dict["non_cond_frame_outputs"])
-            bank_full = (bank_size >= inference_state['rl_config']['memory_bank_size'])
-            valid_actions = [1] if bank_full else [0, 1]
-            valid_actions.extend(list(action_frame_map.keys()))
-            with torch.no_grad():
-                action_out = self.agent.select_action(
-                    state,
-                    valid_actions=torch.tensor(valid_actions),
-                    num_samples=6,
-                    bank_is_full=bank_full,
-                    training=train_agent,
-                ) # ask agent
+            bank_full = (bank_size >= memory_bank_size)
+            agent_act_every = max(inference_state['rl_config'].get("agent_act_every", 1), 1)
+            is_decision_frame = (frame_idx % agent_act_every == 0)
+            if bank_full and is_decision_frame:
+                # Action layout: 0 = no-op (reject), 1..M = swap(incoming frame, bank
+                # slot j), j = action - 1. GRPO runs without the global pool, so the
+                # incoming frame is the only candidate ever on offer.
+                valid_actions = [0] + [1 + j for j in range(memory_bank_size)]
+                with torch.no_grad():
+                    action_out = self.agent.select_action(
+                        state,
+                        valid_actions=torch.tensor(valid_actions),
+                        num_samples=6,
+                        training=train_agent,
+                    ) # ask agent
+            else:
+                # Either filling up the bank (nothing to evict) or between agent steps
+                # (bank frozen): the incoming frame's fate is decided without consulting
+                # the policy -- see sam2_video_predictor.agent_update_first_stage for the
+                # same design.
+                action_out = {"main_action": None, "action": [], "log_probs": []}
 
             # state.offload_to_cpu()
 
@@ -1649,22 +1824,17 @@ class SAM2VideoPredictor(SAM2Base):
 
                 drop_frame = None
                 storage_key = "non_cond_frame_outputs"
-                valid = True
                 if action == 0:
-                    # Add
-                    reward = 0.0
-                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-                elif action == 1:
-                    # Skip (equivalent to adding then drop the same frame)
+                    # No-op: reject the incoming frame.
                     reward = inference_state['rl_config']['lazy_penalty']
                 else:
-                    # Add the new frame and skip a specific frame
-                    drop_frame = action_frame_map[action]
+                    # Evict bank slot j = action - 1 and admit the incoming frame.
+                    drop_frame = bank_frame_keys[action - 1]
                     temp_output_dict[storage_key].pop(drop_frame)
                     temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
                 # print(action, reward)
-                if action != 1:
+                if action != 0:
                     with torch.no_grad():
                         output_before = self.track_step(
                             frame_idx=frame_idx,
@@ -1712,26 +1882,48 @@ class SAM2VideoPredictor(SAM2Base):
         if agent_act:
             drop_frame = None
             reward = 0.0
-            action = action_out['main_action']
-            prev_frames = list(output_dict["non_cond_frame_outputs"].keys()) + [frame_idx-1]
-            if action == 0:
-                # Add
+            if not bank_full:
+                # Force insert: no decision to make, matches agent_update_first_stage.
+                action = None
                 output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            elif action == 1:
-                # Skip (equivalent to adding then drop the same frame)
-                drop_frame = frame_idx - 1
-                reward = -0.0
+            elif not is_decision_frame:
+                # Between agent steps: bank frozen, matches agent_update_first_stage.
+                action = None
             else:
-                # Add the new frame and skip a specific frame
-                drop_frame = action_frame_map[action]
-                output_dict["non_cond_frame_outputs"].pop(drop_frame)
-                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                action = action_out['main_action']
+                if action == 0:
+                    # No-op: reject the incoming frame.
+                    drop_frame = frame_idx - 1
+                    reward = -0.0
+                else:
+                    # Evict bank slot j = action - 1 and admit the incoming frame.
+                    drop_frame = bank_frame_keys[action - 1]
+                    output_dict["non_cond_frame_outputs"].pop(drop_frame)
+                    output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
 
             if not train_agent:
                 print(f"[Q] frame {frame_idx-1} "
                     f"action {action} "
                     f"drop_frame {drop_frame} "
                     f"bank_size {bank_size} ")
+
+    @staticmethod
+    def _sort_memory_bank(output_dict):
+        """Reorder the memory bank by frame index, oldest first.
+
+        SAM2 reads temporal position straight off iteration order
+        (`t_pos = t + 1` in _prepare_memory_conditioned_features), and the agent's
+        recency prior is indexed by slot rank, so both silently assume dict order is
+        chronological order. That held while the only insertion was the incoming frame,
+        which is always the newest. A recalled pool entry is older than everything already
+        in the bank, and appending it would label the oldest memory as the most recent one
+        -- inverting the temporal encoding for that slot. Sorting in place (rather than
+        rebinding) keeps the identity of the dict that callers already hold.
+        """
+        bank = output_dict["non_cond_frame_outputs"]
+        items = sorted(bank.items())
+        bank.clear()
+        bank.update(items)
 
     def agent_update_first_stage(
         self,
@@ -1742,6 +1934,7 @@ class SAM2VideoPredictor(SAM2Base):
         current_vision_pos_embeds,
         output_dict,
         train_agent,
+        log_reward=False,
         **kwargs
     ):
         def measure_loss():
@@ -1763,112 +1956,216 @@ class SAM2VideoPredictor(SAM2Base):
                     **kwargs
                 )
             pred_masks = output["pred_masks"].to(storage_device, non_blocking=True).to(torch.float32)
-            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
+            # `frame_idx` is volume-global; `gt_masks` only holds the current chunk.
+            local_idx = frame_idx - inference_state["chunk_start"]
+            gt_masks = inference_state["gt_masks"][local_idx].to(device=storage_device, non_blocking=True)
             return compute_loss(pred_masks, gt_masks.to(torch.float32), inference_state)
 
-        loss_before = measure_loss() if train_agent else None
+        rl_config = inference_state["rl_config"]
+        memory_bank_size = rl_config["memory_bank_size"]
+        global_pool = inference_state.get("global_pool")
+        storage_key = "non_cond_frame_outputs"
 
-        state, action_frame_map = prepare_rl_state(
+        # log_reward computes the same before/after counterfactual as train_agent, but
+        # only to log it (see below) -- for validation, where the policy runs greedily
+        # and nothing should be pushed into the live replay buffer/trajectory.
+        compute_reward = train_agent or log_reward
+        loss_before = measure_loss() if compute_reward else None
+
+        # Current state
+        state, bank_frame_keys = prepare_rl_state(
             current_vision_feats,
             current_vision_pos_embeds,
             output_dict,
             frame_idx,
-            num_maskmem=inference_state['rl_config']['memory_bank_size'],
+            num_maskmem=memory_bank_size,
             num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=True,
-            training=train_agent
+            training=train_agent,
+            global_pool=global_pool,
         )
-
-        bank_size = len(output_dict["non_cond_frame_outputs"])
-        bank_full = (bank_size >= inference_state['rl_config']['memory_bank_size'])
-        valid_actions = [1] if bank_full else [0, 1]
-        valid_actions.extend(list(action_frame_map.keys()))
-        with torch.no_grad():
-            action_out = self.agent.select_action(
-                state,
-                valid_actions=torch.tensor(valid_actions),
-                bank_is_full=bank_full,
-                training=train_agent
-            ) # ask agent
-
-        action = action_out["action"]
         state.offload_to_cpu()
 
-        reward = 0.
-        drop_frame = None
-        storage_key = "non_cond_frame_outputs"
-        if action == 0:
-            # Add
-            # reward = 0.001
-            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-        elif action == 1:
-            # Skip (equivalent to adding then drop the same frame)
-            reward = 0
-            drop_frame = frame_idx - 1
-        else:
-            # Add the new frame and drop a specific frame
-            drop_frame = action_frame_map[action]
-            output_dict[storage_key].pop(drop_frame)
-            output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+        bank = output_dict[storage_key]
+        bank_size = len(bank)
+        bank_full = (bank_size >= memory_bank_size)
 
-        if not train_agent:
+        # Action layout, matching BasePolicyNetwork's query order [noop, candidates,
+        # bank slots]:
+        #   0                     no-op: reject the incoming frame, bank untouched
+        #   1 .. M                swap(incoming frame, bank slot j), j = action - 1
+        #   M+1 .. (1+P)*M        swap(pool entry p, bank slot j), where
+        #                         c, j = divmod(action - 1, M) and p = c - 1
+        # M = memory_bank_size, P = pool capacity (0 when the pool is disabled). Fixed
+        # size regardless of how many pool entries are actually on offer this frame --
+        # unavailable ones are masked out below.
+        candidate_key = frame_idx - 1
+        candidate_out = output_dict["await_outputs"][candidate_key]
+
+        pool_capacity = (
+            global_pool.capacity
+            if global_pool is not None and global_pool.enabled
+            else 0
+        )
+        n_actions = 1 + (1 + pool_capacity) * memory_bank_size
+        agent_act_every = max(rl_config.get("agent_act_every", 1), 1)
+        is_decision_frame = (frame_idx % agent_act_every == 0)
+
+        if not bank_full:
+            # Filling up the bank: there is nothing to evict and no slot to trade away,
+            # so the incoming frame is inserted directly without consulting the policy.
+            # Still records a well-formed, weight-0 transition so the critic trains on
+            # the state. Not gated by agent_act_every: an empty bank needs filling
+            # regardless of the decision cadence.
+            bank[candidate_key] = candidate_out
+            action = 0
+            drop_frame = None
+            mutated = True
+            action_mask = torch.zeros(n_actions, dtype=torch.bool)
+            action_mask[0] = True
+            action_out = {
+                "action": 0,
+                "log_probs": 0.0,
+                "action_mask": action_mask,
+                "policy_weight": 0.0,
+            }
+        elif not is_decision_frame:
+            # Between agent steps: the bank is frozen -- a forced no-op, not a decision
+            # the policy is scored or credited for. Bounded to the fixed action-mask
+            # size like the other bypasses above, so replay-buffer batching still sees
+            # a uniform shape regardless of which bypass produced the transition.
+            action = 0
+            drop_frame = None
+            mutated = False
+            action_mask = torch.zeros(n_actions, dtype=torch.bool)
+            action_mask[0] = True
+            action_out = {
+                "action": 0,
+                "log_probs": 0.0,
+                "action_mask": action_mask,
+                "policy_weight": 0.0,
+            }
+        else:
+            # Which pool entries are on offer as a candidate this frame: entries already
+            # resident in the bank (or identical to the incoming frame) are excluded --
+            # recalling them would be a no-op that duplicates a slot.
+            pool_view = []
+            valid_cand = [0]
+            if global_pool is not None and global_pool.enabled:
+                pool_view = global_pool.local_view()
+                if frame_idx % max(rl_config.get("recall_every", 1), 1) == 0:
+                    valid_cand += [
+                        1 + p
+                        for p, (pooled_key, _) in enumerate(pool_view)
+                        if pooled_key not in bank and pooled_key != candidate_key
+                    ]
+
+            valid_actions = [0] + [
+                1 + c * memory_bank_size + j
+                for c in valid_cand
+                for j in range(memory_bank_size)
+            ]
+            with torch.no_grad():
+                action_out = self.agent.select_action(
+                    state,
+                    valid_actions=torch.tensor(valid_actions),
+                    training=train_agent,
+                ) # ask agent
+
+            action = action_out["action"]
+            drop_frame = None
+            mutated = action != 0
+            if mutated:
+                c, j = divmod(action - 1, memory_bank_size)
+                if c > 0:
+                    # Recalled from the pool: older than everything already in the bank,
+                    # so insertion order stops being chronological order; see
+                    # _sort_memory_bank.
+                    candidate_key, candidate_out = pool_view[c - 1]
+                drop_frame = bank_frame_keys[j]
+                bank.pop(drop_frame)
+                bank[candidate_key] = candidate_out
+
+        if mutated:
+            self._sort_memory_bank(output_dict)
+
+        if not train_agent and is_decision_frame:
             print(
-                f"[Q] frame {frame_idx-1} "
-                f"action {action} "
-                f" drop_frame {drop_frame} "
-                f" bank_size {bank_size} "
-                f" penalty {reward} "
+                f"[Q] frame {frame_idx}"
+                f" action {action}"
+                f" candidate_key {candidate_key}"
+                f" drop_frame {drop_frame}"
+                f" bank_size {bank_size}"
             )
 
-        if train_agent:
+        if compute_reward:
             # The other half of the counterfactual: same frame, same dropout-free path,
             # only the bank has changed. Measuring it here rather than reading the next
             # frame's await_outputs is the point of the whole restructure -- await_outputs
             # comes from the stochastic training pass, so differencing against it left
-            # dropout noise in every reward, including "skip", which cannot move the bank
+            # dropout noise in every reward, including no-op, which cannot move the bank
             # at all and must therefore score exactly 0.
-            if action == 1:
-                # Skip leaves output_dict untouched, so the bank feeding this frame is
-                # bit-for-bit the one loss_before was measured on. With dropout silenced
-                # the second pass is provably identical -- take the shortcut and get an
-                # exact 0 instead of paying for a forward that can only return the same
-                # number.
+            if not mutated:
+                # A no-op leaves the bank feeding this frame bit-for-bit the one
+                # loss_before was measured on. With dropout silenced the second pass is
+                # provably identical -- take the shortcut and get an exact 0 instead of
+                # paying for a forward that can only return the same number.
                 loss_after = loss_before
             else:
                 loss_after = measure_loss()
-            reward = reward + (loss_before - loss_after).item()
+            reward = (loss_before - loss_after).item()
 
+        if train_agent:
             replay_instance_info = {
                 "frame_idx": frame_idx,
                 "state": state,
                 "loss_before": loss_before.detach().cpu(),
                 "loss_after": loss_after.detach().cpu(),
                 "reward": reward,
+                "action": action,
+                "action_mask": action_out["action_mask"],
+                "log_probs": action_out["log_probs"],
+                # 0 for a forced transition (bank still filling, or between agent
+                # steps): it still trains the critic but must not enter the policy loss.
+                "policy_weight": action_out["policy_weight"],
             }
-            replay_instance_info.update(action_out)
 
             # Opening closes the transition pending from the previous frame, handing it
             # this state as its successor.
             self.agent.init_new_replay_instance(**replay_instance_info)
+        elif log_reward:
+            # Validation: same reward signal, but logged as a standalone stat instead
+            # of a transition -- the replay buffer/trajectory bookkeeping is reserved
+            # for real training and must not see validation frames.
+            self.agent.record_val_reward(reward)
 
     def forward(
         self,
         imgs_tensor, masks_tensor, support_masks_tensor,
         train_state, obj_id,
-        train_agent=False, agent_act=True, generate_rl_samples=False, 
+        train_agent=False, agent_act=True, generate_rl_samples=False,
         start_trajectory=False, end_trajectory=False,
         random_drop=False,
+        log_reward=False,
+        add_support=True,
         device="cpu"
     ):
-        for frame_idx in range(support_masks_tensor.shape[0]):
-            mask = support_masks_tensor[frame_idx]
-            _, _, _ = self.train_add_new_mask(
-                inference_state=train_state,
-                frame_idx=frame_idx,
-                obj_id=obj_id,
-                mask=mask.to(device=device),
-            )
+        # The support frames are prompted once per volume, on the chunk that created the
+        # state. Later chunks reuse the conditioning frames those prompts produced, which
+        # are still sitting in `output_dict["cond_frame_outputs"]`.
+        if add_support:
+            for frame_idx in range(support_masks_tensor.shape[0]):
+                mask = support_masks_tensor[frame_idx]
+                _, _, _ = self.train_add_new_mask(
+                    inference_state=train_state,
+                    frame_idx=frame_idx,
+                    obj_id=obj_id,
+                    mask=mask.to(device=device),
+                )
 
+        # Frame indices coming back from the tracker are volume-global; the image/label
+        # tensors passed in only cover this chunk.
+        chunk_start = train_state["chunk_start"]
         video_segments = {}  # video_segments contains the per-frame segmentation results
         propagate_kwargs = {
             "agent_act": agent_act,
@@ -1876,11 +2173,13 @@ class SAM2VideoPredictor(SAM2Base):
             "generate_rl_samples": generate_rl_samples,
             "start_trajectory": start_trajectory,
             "end_trajectory": end_trajectory,
-            "random_drop": random_drop
+            "random_drop": random_drop,
+            "log_reward": log_reward,
         }
         for out_frame_idx, out_obj_ids, ious, object_score_logits, out_mask_logits, gating_score_dict in self.train_propagate_in_video(train_state, **propagate_kwargs):
+            local_idx = out_frame_idx - chunk_start
             video_segments[out_frame_idx] = {
-                out_obj_id: {"image_tensor": imgs_tensor[out_frame_idx], "image_label" : masks_tensor[out_frame_idx],
+                out_obj_id: {"image_tensor": imgs_tensor[local_idx], "image_label" : masks_tensor[local_idx],
                 "pred_mask": out_mask_logits[i], "iou": ious[i], "object_score_logits": object_score_logits[i],
                 "gating_score_dict": gating_score_dict}
                 for i, out_obj_id in enumerate(out_obj_ids)

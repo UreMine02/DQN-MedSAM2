@@ -21,7 +21,9 @@ class PPOAgent(BasePOAgent):
         epsilon=0.2,
         lr_T_max=1000,
         min_lr=0.0,
-        sam2_dim={}
+        sam2_dim={},
+        n_layers=2,
+        target_kl=None,
     ):
         super().__init__(
             num_maskmem=num_maskmem,
@@ -36,7 +38,9 @@ class PPOAgent(BasePOAgent):
             entropy_weight=entropy_weight,
             lr_T_max=lr_T_max,
             min_lr=min_lr,
-            sam2_dim=sam2_dim
+            sam2_dim=sam2_dim,
+            n_layers=n_layers,
+            target_kl=target_kl,
         )
         self.epsilon = epsilon
         

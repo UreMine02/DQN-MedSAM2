@@ -13,7 +13,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+ppo+long_horizon+no_augment
+EXP=msd_task02+icl+ppo+global_pool+every1+long_horizon+stop_sam2_at40+pool_stride1
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -29,10 +29,14 @@ python train_3d.py \
     -val_freq 1 \
     -ep 1000 \
     -warmup_ep 0 \
-    -stop_sam2_ep 1000 \
-    -q_updates_per_step 4 \
+    -stop_sam2_ep 80 \
+    -q_updates_per_step 8 \
     -lazy_penalty 0.0 \
     -invalid_penalty 0.0 \
     -num_support 5 \
     -memory_bank_size 6 \
+    -pool_size 8 \
+    -pool_stride 1 \
+    -recall_every 1 \
+    -agent_act_every 1 \
     -wandb_enabled \

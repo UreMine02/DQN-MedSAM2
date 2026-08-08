@@ -202,20 +202,25 @@ class SpatialSummarizer(nn.Module):
         self.down_scale = down_scale
         self.n_query = n_query
         self.n_layers = n_layers
-        
+
         self.qformer = nn.ModuleList(
             [PerceiverResampler(hidden_dim=spatial_dim, num_heads=n_heads, dropout=dropout) for _ in range(n_layers)]
         )
         scale = spatial_dim ** -0.5
         self.spatial_query = nn.Parameter(scale * torch.rand(1, n_query, spatial_dim))
         self.spatial_dim = spatial_dim
-        
+        # The qformer stack (and hence its cost) runs at spatial_dim; this projects back
+        # to query_dim only when a caller asks the stack to run narrower than its output
+        # is expected to be (see BaseFeatureSummarizer's image_down_proj). Identity when
+        # they match, so the common case stays parameter-for-parameter what it was.
+        self.out_proj = nn.Identity() if query_dim == spatial_dim else nn.Linear(spatial_dim, query_dim)
+
         self.initialize_parameters()
-        
+
     def forward(self, x):
         """x: [B,C,H,W]"""
         B, C, H, W = x.shape
-        
+
         x = x.reshape(B, C, -1).permute(0, 2, 1) # [B,L,D]
         spatial_query = self.spatial_query.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device)
 
@@ -224,8 +229,8 @@ class SpatialSummarizer(nn.Module):
                 x_f=x,
                 x=spatial_query,
             )
-            
-        return spatial_query
+
+        return self.out_proj(spatial_query)
     
     def initialize_parameters(self):
         nn.init.normal_(self.spatial_query, std=0.02)

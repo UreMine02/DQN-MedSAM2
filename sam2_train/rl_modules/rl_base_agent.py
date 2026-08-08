@@ -49,11 +49,12 @@ class BaseAgent:
         self.replay_buffer.append(instance.get())
 
     def set_await_done(self):
-        """Terminate the pending transition at the end of a chunk.
+        """Terminate the pending transition at the end of a volume.
 
-        Every chunk runs on a fresh inference_state, so its last frame is a real
-        terminal: the next chunk rebuilds the memory bank from scratch and nothing the
-        agent did here can reach it.
+        The tracking state now spans every chunk of a volume, so a chunk boundary is not
+        a terminal -- the memory bank the agent leaves behind is the one the next chunk
+        starts from, and that transition is closed by the next chunk's first decision.
+        Only the last frame of the volume ends the episode.
         """
         self.close_await_replay_instance(done=True)
 

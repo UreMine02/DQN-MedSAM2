@@ -75,9 +75,9 @@ class GRPOActor(nn.Module):
         self.policy_net = policy_net
 
     def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
-        # curr_feats ends with the padding masks, which policy_net takes positionally.
         curr_feats = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        policy_probs = self.policy_net(*curr_feats)
+        # GRPO runs without the global pool, so the incoming frame is the only candidate.
+        policy_probs = self.policy_net(**curr_feats)
         return policy_probs
 
 class GRPOAgent(BasePOAgent):
@@ -97,7 +97,8 @@ class GRPOAgent(BasePOAgent):
         epsilon=0.2,
         lr_T_max=1000,
         min_lr=0.0,
-        sam2_dim={}
+        sam2_dim={},
+        n_layers=2,
     ):
         super().__init__(
             num_maskmem=num_maskmem,
@@ -112,13 +113,17 @@ class GRPOAgent(BasePOAgent):
             entropy_weight=entropy_weight,
             lr_T_max=lr_T_max,
             min_lr=min_lr,
-            sam2_dim=sam2_dim
+            sam2_dim=sam2_dim,
+            n_layers=n_layers,
         )
         self.epsilon = epsilon
         self.range = range
 
-        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        # Discards the feat_summarizer/policy_net super().__init__ just built (pre-existing
+        # behavior, not introduced here) -- GRPO runs its own actor over fresh instances
+        # instead, wrapped below.
+        feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=n_layers)
+        policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=n_layers)
         self.value_net = None
         self.actor = GRPOActor(feat_summarizer, policy_net)
 
@@ -157,7 +162,9 @@ class GRPOAgent(BasePOAgent):
         self.replay_buffer.extend(new_normalized_instances)
     
     @torch.no_grad()
-    def select_action(self, state, valid_actions, bank_is_full=True, num_samples=1, training=False):
+    def select_action(self, state, valid_actions, num_samples=1, training=False):
+        """Only called once the bank is full; the caller (generate_rl_steps) inserts the
+        incoming frame directly without a decision while the bank is filling."""
         self.actor.eval()
 
         image_feat = state.next_image_feat.detach().to(torch.float32)
@@ -165,7 +172,7 @@ class GRPOAgent(BasePOAgent):
         memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(torch.float32)
         bank_feat = state.prev_memory_bank["mem_feat"].detach().to(torch.float32)
         bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(torch.float32)
-        
+
         action_logits = self.actor(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr).squeeze(0)
         action_logits = action_logits.detach().cpu()
         action_probs = Categorical(logits=action_logits)
@@ -173,13 +180,12 @@ class GRPOAgent(BasePOAgent):
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
-        
+
         if not training:
             print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
 
         if training:
-            main_action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-            # main_action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
+            main_action_idx = torch.multinomial(valid_probs, num_samples=1)
             action_idx = torch.multinomial(valid_probs.squeeze(), min(len(valid_actions), num_samples))
             return {
                 "main_action": valid_actions[main_action_idx].item(),
@@ -187,8 +193,7 @@ class GRPOAgent(BasePOAgent):
                 "log_probs": action_probs.log_prob(valid_actions[action_idx]).tolist()
             }
         else:
-            # action_idx = torch.multinomial(valid_probs, num_samples=1) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True) 
-            action_idx = torch.argmax(valid_probs) if bank_is_full else (valid_actions == 0).nonzero(as_tuple=True)
+            action_idx = torch.argmax(valid_probs)
             return {
                 "main_action": valid_actions[action_idx].item(),
             }
@@ -271,7 +276,7 @@ class GRPOAgent(BasePOAgent):
 
         return {
             "actor_loss": total_policy_loss / num_update,
-            "actor_gradnorm": total_policy_gradnorm / num_update,
+            "policy_gradnorm": total_policy_gradnorm / num_update,
             "agent_lr": current_lr,
         }
 

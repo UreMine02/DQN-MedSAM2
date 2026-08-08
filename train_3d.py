@@ -101,7 +101,7 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.stop_sam2_ep//10, eta_min=args.lr/20)
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.stop_sam2_ep, eta_min=args.lr/10)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
@@ -171,22 +171,16 @@ def train(rank=0, world_size=0):
             'train/mae_loss': mae_loss,
             'train/bce_loss': bce_loss,
             'train/aux_loss': aux_loss,
-            "train/actor_loss": agent_loss["actor_loss"],
-            "train/critic_loss": agent_loss["critic_loss"],
-            "train/lr": optimizer.param_groups[0]['lr'] if train_sam2 else 0.0,
+            'train/lr': optimizer.param_groups[0]['lr'] if train_sam2 else 0.0,
         }
-        # PPO training diagnostics (only present when the agent's update() produced
-        # them, e.g. not yet warmed up, or not applicable to the current PO agent).
-        ppo_metric_keys = (
-            "episodic_return_mean", "episodic_return_std",
-            "policy_entropy",
-            "ratio_mean", "ratio_std", "clip_fraction",
-            "explained_variance",
-            "adv_mean", "adv_std",
-        )
-        for key in ppo_metric_keys:
-            if key in agent_loss:
-                loss_dict[f"train/{key}"] = agent_loss[key]
+        # RL diagnostics: whatever the agent's update() returned this epoch (actor/critic
+        # loss, PPO ratio/entropy/KL/explained-variance/advantage stats, episodic return
+        # stats, ...), logged under rl/* rather than train/* since they're not SAM2
+        # training signals. agent_loss is empty when the agent never ran an update this
+        # epoch (still warming up, or the replay buffer hasn't filled) -- skip logging
+        # entirely rather than log a stale/flat 0 under rl/*.
+        if agent_loss:
+            loss_dict.update({f"rl/{key}": value for key, value in agent_loss.items()})
         # No point annealing an LR that no longer drives any update.
         if train_sam2:
             scheduler.step()

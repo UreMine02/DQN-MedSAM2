@@ -3,19 +3,32 @@ agent:
   num_maskmem: 6
   policy_lr: 1e-4
   value_lr: 1e-4
-  gamma: 0.9
+  gamma: 0.99
   beta: 0.99
-  buffer_size: 2048
+  buffer_size: 1024
   batch_size: 128
-  entropy_weight: 0.001
+  entropy_weight: 0.01
   epsilon: 0.2
   tau: 0.9
   # Cosine LR annealing: one step per agent update, so lr_T_max is the expected
   # number of agent updates over the whole run.
   lr_T_max: 1000
   min_lr: 1e-5
+  # Depth of the feature summarizer / policy / value transformer stacks. Was hardcoded
+  # to 4; 2 cuts total agent params roughly in half with the same width.
+  n_layers: 2
+  # null disables early stopping (update() always runs all q_updates_per_step epochs).
+  # Set to e.g. 0.02-0.05 to cut an update() call short once a minibatch's approx_kl
+  # exceeds it -- the usual PPO guard against the ratio drifting too far from 1 over
+  # repeated epochs on the same batch of old_log_probs.
+  target_kl: 0.02
   sam2_dim:
-    n_query: 32
+    n_query: 16
     image_dim: 256
     memory_dim: 64
     obj_ptr_dim: 256
+    # image_spatial_summary cross-attends to the raw 256-channel SAM2 image features,
+    # so its cost is quadratic in this width -- running it at 128 instead of image_dim
+    # cuts that block roughly 4x. Projected back up to image_dim afterward, so nothing
+    # downstream sees the difference.
+    image_summary_dim: 128

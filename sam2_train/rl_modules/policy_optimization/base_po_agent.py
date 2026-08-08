@@ -11,7 +11,10 @@ import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributions import Categorical
 
-from sam2_train.rl_modules.rl_components import RLStates, RLReplayInstance
+from sam2_train.rl_modules.rl_components import (
+    RLStates,
+    RLReplayInstance,
+)
 from sam2_train.rl_modules.rl_blocks import (
     QFormerBlock,
     SpatialSummarizer,
@@ -22,19 +25,54 @@ from sam2_train.rl_modules.rl_blocks import (
     PerceiverResampler
 )
 from sam2_train.rl_modules.rl_base_agent import BaseAgent
+from sam2_train.modeling.sam2_utils import get_1d_sine_pe, MLP
+
+
+def stack_state_feats(states, device=None):
+    """Batch a list of RLStates into the kwargs the feature summarizer takes.
+
+    Three call sites used to inline this (trajectory GAE, minibatch training, action
+    selection) and they had to agree exactly on field order; with the pool and age tensors
+    added, keeping three copies in sync is how a silent misalignment gets in.
+    """
+    def cat(pick, dtype=torch.float32):
+        return torch.cat([pick(s) for s in states]).detach().to(
+            device=device, dtype=dtype, non_blocking=True
+        )
+
+    feats = {
+        "image_feat": cat(lambda s: s.next_image_feat),
+        "memory_feat": cat(lambda s: s.curr_memory_feat["mem_feat"]),
+        "memory_ptr": cat(lambda s: s.curr_memory_feat["obj_ptr"]),
+        "bank_feat": cat(lambda s: s.prev_memory_bank["mem_feat"]),
+        "bank_ptr": cat(lambda s: s.prev_memory_bank["obj_ptr"]),
+    }
+
+    if states[0].global_pool is not None:
+        feats.update({
+            "cand_age": cat(lambda s: s.cand_age),
+            "bank_age": cat(lambda s: s.bank_age),
+            "pool_feat": cat(lambda s: s.global_pool["mem_feat"]),
+            "pool_ptr": cat(lambda s: s.global_pool["obj_ptr"]),
+            "pool_age": cat(lambda s: s.global_pool["age"]),
+            "pool_valid": cat(lambda s: s.global_pool["valid"], dtype=torch.bool),
+        })
+
+    return feats
+
 
 def compute_gae(values: torch.Tensor, next_value: torch.Tensor, rewards: torch.Tensor, dones: torch.Tensor, gamma: float, tau: float):
     """Compute the TD(lambda) return, i.e. GAE advantage + value.
 
-    A trajectory here spans several chunks of the same volume, and every chunk boundary
-    is a real terminal (the memory bank is rebuilt from scratch by the next chunk), so
-    `dones` carries 1s in the middle of the sequence, not just at the end. Two places
-    have to respect that:
-      - the bootstrap in `delta`, via the (1 - dones) factor, and
-      - the (gamma*tau)^(j-i) accumulation, which must not carry delta from a later
+    A trajectory spans a whole volume, which is one episode: the memory bank now survives
+    chunk boundaries, so `dones` is normally a single 1 on the last step. The segmentation
+    below is kept anyway, so this stays correct if a trajectory ever carries more than one
+    episode. It does two things a plain GAE does not:
+      - the bootstrap in `delta` is killed at a terminal, via the (1 - dones) factor, and
+      - the (gamma*tau)^(j-i) accumulation is prevented from carrying delta from a later
         episode segment back into an earlier one.
-    The second is what `coef` masking below does; without it the terminals would only
-    zero one bootstrap term and credit would still leak across the reset.
+    The second is what `coef` masking below does; without it a terminal would only zero
+    one bootstrap term and credit would still leak past it.
     """
     L = values.shape[0]
     device = values.device
@@ -122,14 +160,15 @@ class POReplayInstance(RLReplayInstance):
         advantage=None,
         return_=None,
         action_mask=None,
-        policy_weight=1.0
+        policy_weight=1.0,
     ):
         super().__init__(frame_idx, state, action, next_state, loss_before, loss_after, reward, eps)
+        # log-prob of the single joint (candidate, evicted-slot) decision, or of no-op.
         self.log_probs = log_probs
         self.advantage = advantage
         self.return_ = return_
-        # Support the action was sampled from, so the update can renormalize over
-        # the same actions instead of the full action space.
+        # Support the action was sampled from, so the update can renormalize over the
+        # same actions instead of the full action space.
         self.action_mask = action_mask
         # 0 for transitions whose action was forced by the environment (bank not full
         # yet): they still train the critic but must not enter the policy loss.
@@ -151,7 +190,7 @@ class POReplayInstance(RLReplayInstance):
             self.return_,
             self.advantage,
             self.action_mask,
-            self.policy_weight
+            self.policy_weight,
         ))
 
     def set_return_advantage(self, return_, advantage):
@@ -171,36 +210,27 @@ class Trajectory:
             raise RuntimeError(
                 f"transitions {missing} have no next_state; every transition must be "
                 "closed by close_await_replay_instance, either by the next "
-                "init_new_replay_instance or by set_await_done at a chunk boundary"
+                "init_new_replay_instance or by set_await_done at the end of the volume"
             )
 
         transitions = [trans.get() for trans in self.transitions]
         states, log_probs, actions, rewards, next_states, dones = zip(*transitions)
 
-        image_feat = torch.cat([state.next_image_feat for state in states]).to(device=device, non_blocking=True)
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).to(device=device, non_blocking=True)
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).to(device=device, non_blocking=True)
-
-        next_image_feat = torch.cat([state.next_image_feat for state in next_states]).to(device=device, non_blocking=True)
-        next_memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in next_states]).to(device=device, non_blocking=True)
-        next_memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in next_states]).to(device=device, non_blocking=True)
-        next_bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in next_states]).to(device=device, non_blocking=True)
-        next_bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in next_states]).to(device=device, non_blocking=True)
+        curr_feats = stack_state_feats(states, device=device)
+        next_feats = stack_state_feats(next_states, device=device)
 
         actions = torch.LongTensor(actions).unsqueeze(1).to(device=device, non_blocking=True)
         rewards = torch.FloatTensor(rewards).unsqueeze(1).to(device=device, non_blocking=True)
         log_probs = torch.FloatTensor(log_probs).unsqueeze(1).to(device=device, non_blocking=True)
         dones = torch.FloatTensor(dones).unsqueeze(1).to(device=device, non_blocking=True)
 
-        curr_feats = (image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        next_feats = (next_image_feat, next_memory_feat, next_memory_ptr, next_bank_feat, next_bank_ptr)
-
         return log_probs, actions, rewards, dones, curr_feats, next_feats
 
 class BaseFeatureSummarizer(nn.Module):
-    def __init__(self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256, n_layers=4):
+    def __init__(
+        self, num_maskmem, n_query=16, image_dim=256, memory_dim=64, obj_ptr_dim=256,
+        n_layers=4, image_summary_dim=None,
+    ):
         super().__init__()
 
         self.num_maskmem = num_maskmem
@@ -209,14 +239,27 @@ class BaseFeatureSummarizer(nn.Module):
         memory_num_head = memory_dim // 64
         self.hidden_dim = image_dim
 
+        # image_spatial_summary cross-attends to the raw [image_dim,H,W] SAM2 features,
+        # so its qformer stack costs O(image_dim^2) per layer -- by far the biggest line
+        # item in this module (see base_po_agent parameter-count discussion). Running it
+        # at a narrower image_summary_dim instead cuts that quadratically; image_down_proj
+        # is the one-time cost of getting there, and SpatialSummarizer's out_proj (see
+        # rl_blocks) projects back up to hidden_dim so nothing downstream has to know the
+        # summary ran narrower. None (the default) means no reduction, i.e. bit-identical
+        # to before this option existed.
+        image_summary_dim = image_summary_dim or image_dim
+        self.image_down_proj = (
+            nn.Identity() if image_summary_dim == image_dim
+            else nn.Conv2d(image_dim, image_summary_dim, kernel_size=1)
+        )
         self.image_spatial_summary = SpatialSummarizer(
             n_query=n_query,
             query_dim=self.hidden_dim,
-            spatial_dim=image_dim,
+            spatial_dim=image_summary_dim,
             n_heads=1,
-            d_heads=image_dim,
+            d_heads=image_summary_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
         self.memory_spatial_summary = SpatialSummarizer(
             n_query=n_query,
@@ -225,7 +268,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_heads=1,
             d_heads=memory_dim,
             n_layers=n_layers,
-            dropout=0.1
+            dropout=0.0
         )
 
         self.cond_mem_proj = nn.Linear(memory_dim, image_dim)
@@ -245,6 +288,25 @@ class BaseFeatureSummarizer(nn.Module):
         )
         nn.init.trunc_normal_(self.slot_tpos_prior, std=0.02)
         self.slot_tpos_proj = nn.Linear(memory_dim, image_dim)
+
+        # Absolute age, in frames, of the candidate / each bank slot / each pool entry.
+        # slot_tpos_prior above encodes recency *rank*, which was sufficient while the bank
+        # only ever held the last few frames: rank and distance were the same thing. Once a
+        # memory can be recalled from the global pool, rank 0 may be 2 frames back or 200,
+        # and the policy has no way to tell those apart without this.
+        self.age_dim = memory_dim
+        self.age_proj = nn.Linear(memory_dim, image_dim)
+        # Zero-init so the age term contributes exactly nothing until trained. A checkpoint
+        # from before the pool therefore reproduces its old behaviour on load instead of
+        # having a randomly-initialised bias injected into every memory token.
+        nn.init.zeros_(self.age_proj.weight)
+        nn.init.zeros_(self.age_proj.bias)
+
+        # Marks a token as "archived in the pool" rather than "resident in the bank". The
+        # two share non_cond_proj on purpose -- both are encoded past frames, and the only
+        # differences that matter are this flag and the age above.
+        self.pool_type_embed = nn.Parameter(torch.zeros(image_dim))
+        nn.init.trunc_normal_(self.pool_type_embed, std=0.02)
 
     @torch.no_grad()
     def load_sam2_temporal_prior(self, maskmem_tpos_enc, sam2_num_maskmem):
@@ -270,8 +332,23 @@ class BaseFeatureSummarizer(nn.Module):
             )
         self.slot_tpos_prior.copy_(prior[rows].to(self.slot_tpos_prior.dtype))
 
-    def forward(self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr):
+    def _age_embed(self, age):
+        """[B,N] ages in frames -> [B,N,image_dim] additive embedding.
+
+        get_1d_sine_pe is plain elementwise arithmetic, so autocast leaves its output in
+        the input's dtype; the agent is run in bfloat16 (train_3d casts it), and matching
+        the projection's dtype here keeps this working with autocast off as well.
+        """
+        pe = get_1d_sine_pe(age.float(), dim=self.age_dim)
+        return self.age_proj(pe.to(self.age_proj.weight.dtype))
+
+    def forward(
+        self, image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr,
+        cand_age=None, bank_age=None,
+        pool_feat=None, pool_ptr=None, pool_age=None, pool_valid=None,
+    ):
         B, T, C, H, W = bank_feat.shape
+        n_pool = 0 if pool_feat is None else pool_feat.shape[1]
 
         # prepare_rl_state zero-fills unoccupied slots. Read occupancy off the raw bank,
         # before the projections below give those slots a non-zero bias.
@@ -280,17 +357,32 @@ class BaseFeatureSummarizer(nn.Module):
             occupied, (self.num_maskmem,), dim=1
         )
 
-        combined_mem_feat = torch.cat([bank_feat, memory_feat.unsqueeze(1)], dim=1)
-        combined_mem_feat = combined_mem_feat.reshape(B * (T+1), C, H, W)
+        # Pool slots carry an explicit validity mask rather than reusing the all-zero test
+        # above: an archived memory is arbitrary tensor content, and inferring "empty" from
+        # it would be a guess where the pool already knows the answer.
+        # Appended last so the existing split indices keep their meaning.
+        mem_parts = [bank_feat, memory_feat.unsqueeze(1)]
+        if n_pool:
+            mem_parts.append(pool_feat)
+        combined_mem_feat = torch.cat(mem_parts, dim=1)
+        n_mem = T + 1 + n_pool
+        combined_mem_feat = combined_mem_feat.reshape(B * n_mem, C, H, W)
         memory_spatial_query = self.memory_spatial_summary(combined_mem_feat)
-        image_spatial_query = self.image_spatial_summary(image_feat)
+        image_spatial_query = self.image_spatial_summary(self.image_down_proj(image_feat))
 
-        memory_spatial_query = memory_spatial_query.reshape(B, (T+1), self.n_query, self.memory_dim)
+        memory_spatial_query = memory_spatial_query.reshape(
+            B, n_mem, self.n_query, self.memory_dim
+        )
         (
             non_cond_bank_feat,
             cond_bank_feat,
-            curr_mem_feat
-        ) = torch.tensor_split(memory_spatial_query, indices=(self.num_maskmem, -1), dim=1)
+            curr_mem_feat,
+            pool_mem_feat,
+        ) = torch.tensor_split(
+            memory_spatial_query,
+            indices=(self.num_maskmem, T, T + 1),
+            dim=1,
+        )
         non_cond_obj_ptr, cond_obj_ptr = torch.tensor_split(bank_ptr, indices=(self.num_maskmem,), dim=1)
 
         non_cond_bank_feat = non_cond_bank_feat.flatten(2)
@@ -314,22 +406,61 @@ class BaseFeatureSummarizer(nn.Module):
         )
         curr_mem_feat = self.non_cond_proj(curr_mem_feat)
 
+        if bank_age is not None:
+            non_cond_bank_feat = non_cond_bank_feat + self._age_embed(bank_age)
+        if cand_age is not None:
+            curr_mem_feat = curr_mem_feat + self._age_embed(cand_age)
+
+        pool_query = None
+        if n_pool:
+            pool_mem_feat = torch.cat([pool_mem_feat.flatten(2), pool_ptr], dim=-1)
+            pool_query = self.non_cond_proj(pool_mem_feat) + self.pool_type_embed
+            if pool_age is not None:
+                pool_query = pool_query + self._age_embed(pool_age)
+
         # cond_bank_feat is laid out [frame-major mem queries | one obj_ptr per frame],
         # so the per-frame validity expands the same way.
         cond_valid_tokens = torch.cat(
             [cond_valid.repeat_interleave(self.n_query, dim=1), cond_valid], dim=1
         )
-        pad_masks = {"non_cond": non_cond_valid, "cond": cond_valid_tokens}
+        pad_masks = {
+            "non_cond": non_cond_valid,
+            "cond": cond_valid_tokens,
+            "pool": pool_valid,
+        }
 
-        return image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, pad_masks
+        # A dict, not a tuple: the heads consume different subsets of this.
+        return {
+            "image_spatial_query": image_spatial_query,
+            "non_cond_bank_feat": non_cond_bank_feat,
+            "cond_bank_feat": cond_bank_feat,
+            "curr_mem_feat": curr_mem_feat,
+            "pool_query": pool_query,
+            "pad_masks": pad_masks,
+        }
 
 class BasePolicyNetwork(nn.Module):
-    """Pointer head: one query token per candidate, one logit per query token.
+    """Factored swap head: one query token per candidate and per bank slot, scored
+    pairwise instead of independently.
 
-    Queries are [non_drop, incoming memory, bank slots], which fixes the action
-    indices: 0 = add without dropping, 1 = skip the incoming frame, 2+ = evict bank
-    slot k-2. This must stay in sync with action_frame_map in rl_utils.prepare_rl_state.
-    Context is the conditioning frames plus the incoming image.
+    Query tokens are [noop, candidate memory (incoming frame, pool entries...), bank
+    slots], refined through the same cross-/self-attention stack as before (candidates
+    attend to conditioning frames + image, and to each other). That fixes the action
+    indices: 0 = no-op (reject everything), 1..n_cand*M = swap(c, j) -- admit candidate
+    c into bank slot j -- flattened candidate-major, action = 1 + c*M + j. Candidate 0
+    is always the incoming frame; candidates 1.. are pool entries, in the order
+    `pool_query` was built. This must stay in sync with sam2_video_predictor's
+    agent_update_first_stage.
+
+    The swap logit is a factored score rather than one more independent projection:
+
+        logit_swap(c, j) = f_in(e_c) + f_out(e_bj) + g(e_c, e_bj)
+
+    f_in/f_out score a candidate/slot in isolation (how good is this memory to admit /
+    how good is this slot to give up, regardless of what it's paired with); g scores the
+    specific pairing. This lets the head express an n_cand x M action grid from O(n_cand
+    + M) refined embeddings instead of scoring each of the n_cand*M outcomes as its own
+    independent query token.
     """
 
     def __init__(
@@ -343,21 +474,21 @@ class BasePolicyNetwork(nn.Module):
         self.n_layers = n_layers
         self.n_heads = n_heads
 
-        self.non_drop_embed = nn.Parameter(torch.zeros(hidden_dim))
-        nn.init.trunc_normal_(self.non_drop_embed, std=0.02)
+        self.noop_embed = nn.Parameter(torch.zeros(hidden_dim))
+        nn.init.trunc_normal_(self.noop_embed, std=0.02)
         # QFormerBlock keeps the query self-attention in its own softmax, so candidates
         # can be compared against each other instead of competing with every context
         # token for attention mass. d_heads is the PER-HEAD width: CrossAttention builds
         # inner_dim = d_heads * n_heads, so this must be hidden_dim // n_heads.
         self.action_decoder = nn.ModuleList([
-            QFormerBlock(hidden_dim, hidden_dim, n_heads, hidden_dim // n_heads, dropout=0.1)
+            QFormerBlock(hidden_dim, hidden_dim, n_heads, hidden_dim // n_heads, dropout=0.0)
             for _ in range(n_layers)
         ])
 
-        self.action_proj = nn.Sequential(
-            nn.LayerNorm(self.hidden_dim),
-            nn.Linear(self.hidden_dim, 1)
-        )
+        self.noop_head = MLP(hidden_dim, hidden_dim, 1, num_layers=2, activation=QuickGELU)
+        self.f_in = MLP(hidden_dim, hidden_dim, 1, num_layers=2, activation=QuickGELU)
+        self.f_out = MLP(hidden_dim, hidden_dim, 1, num_layers=2, activation=QuickGELU)
+        self.g = MLP(2 * hidden_dim, hidden_dim, 1, num_layers=2, activation=QuickGELU)
 
         self.initialize_parameters()
 
@@ -374,26 +505,32 @@ class BasePolicyNetwork(nn.Module):
             nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
 
     def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat,
-                pad_masks=None):
+                pool_query=None, pad_masks=None):
         B = image_spatial_query.shape[0]
+        M = non_cond_bank_feat.shape[1]
+        n_cand = 1 if pool_query is None else 1 + pool_query.shape[1]
         dtype = image_spatial_query.dtype
         device = image_spatial_query.device
-        non_drop_embed = self.non_drop_embed.to(dtype) + torch.zeros(B, 1, self.hidden_dim, dtype=dtype, device=device)
+        noop_embed = self.noop_embed.to(dtype) + torch.zeros(B, 1, self.hidden_dim, dtype=dtype, device=device)
 
-        action_query = torch.cat([non_drop_embed, curr_mem_feat, non_cond_bank_feat], dim=1)
+        cand_query = curr_mem_feat if pool_query is None else torch.cat([curr_mem_feat, pool_query], dim=1)
+        action_query = torch.cat([noop_embed, cand_query, non_cond_bank_feat], dim=1)
         action_context = torch.cat([cond_bank_feat, image_spatial_query], dim=1)
 
         context_mask, self_mask = None, None
         if pad_masks is not None:
-            # Image tokens are always real; the leading two query tokens always exist.
+            # Image tokens are always real; noop and the incoming-frame candidate always exist.
             context_mask = torch.cat([
                 pad_masks["cond"],
                 torch.ones(B, image_spatial_query.shape[1], dtype=torch.bool, device=device),
             ], dim=1)
-            self_mask = torch.cat([
+            self_mask = [
                 torch.ones(B, 1 + curr_mem_feat.shape[1], dtype=torch.bool, device=device),
-                pad_masks["non_cond"],
-            ], dim=1)
+            ]
+            if pool_query is not None:
+                self_mask.append(pad_masks["pool"])
+            self_mask.append(pad_masks["non_cond"])
+            self_mask = torch.cat(self_mask, dim=1)
 
         for layer in self.action_decoder:
             action_query = layer(
@@ -401,9 +538,19 @@ class BasePolicyNetwork(nn.Module):
                 context_mask=context_mask, self_mask=self_mask,
             )
 
-        actions_logits = self.action_proj(action_query)
+        e_noop, e_cand, e_bank = torch.split(action_query, (1, n_cand, M), dim=1)
 
-        return actions_logits.squeeze(-1)
+        noop_logit = self.noop_head(e_noop).squeeze(-1)  # [B,1]
+        f_in = self.f_in(e_cand).squeeze(-1)  # [B,n_cand]
+        f_out = self.f_out(e_bank).squeeze(-1)  # [B,M]
+
+        pair = torch.cat([
+            e_cand.unsqueeze(2).expand(B, n_cand, M, self.hidden_dim),
+            e_bank.unsqueeze(1).expand(B, n_cand, M, self.hidden_dim),
+        ], dim=-1)  # [B,n_cand,M,2D]
+        logit_swap = f_in.unsqueeze(-1) + f_out.unsqueeze(1) + self.g(pair).squeeze(-1)  # [B,n_cand,M]
+
+        return torch.cat([noop_logit, logit_swap.flatten(1)], dim=1)  # [B, 1+n_cand*M]
 
 class BaseValueNetwork(nn.Module):
     def __init__(
@@ -418,7 +565,7 @@ class BaseValueNetwork(nn.Module):
         self.value_query = nn.Parameter(torch.zeros(1, 1, self.hidden_dim))
         nn.init.trunc_normal_(self.value_query, std=0.02)
         self.value_decoder = nn.ModuleList(
-            [PerceiverResampler(self.hidden_dim, 1, dropout=0.1) for _ in range(n_layers)]
+            [PerceiverResampler(self.hidden_dim, 1, dropout=0.0) for _ in range(n_layers)]
         )
 
         self.value_proj = nn.Sequential(
@@ -434,21 +581,29 @@ class BaseValueNetwork(nn.Module):
         nn.init.zeros_(self.value_proj[1].weight)
         nn.init.zeros_(self.value_proj[1].bias)
 
-    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat, pad_masks=None):
+    def forward(self, image_spatial_query, non_cond_bank_feat, cond_bank_feat, curr_mem_feat,
+                pool_query=None, pad_masks=None):
+        """V(s) for the state at the START of the timestep, before the swap decision."""
         B = image_spatial_query.shape[0]
         device = image_spatial_query.device
         value_query = self.value_query.expand(B, 1, self.hidden_dim)
 
-        tokens = torch.cat([curr_mem_feat, non_cond_bank_feat, cond_bank_feat, image_spatial_query], dim=1)
+        tokens = [curr_mem_feat, non_cond_bank_feat, cond_bank_feat, image_spatial_query]
+        if pool_query is not None:
+            tokens.append(pool_query)
+        tokens = torch.cat(tokens, dim=1)
 
         context_mask = None
         if pad_masks is not None:
-            context_mask = torch.cat([
+            context_mask = [
                 torch.ones(B, curr_mem_feat.shape[1], dtype=torch.bool, device=device),
                 pad_masks["non_cond"],
                 pad_masks["cond"],
                 torch.ones(B, image_spatial_query.shape[1], dtype=torch.bool, device=device),
-            ], dim=1)
+            ]
+            if pool_query is not None:
+                context_mask.append(pad_masks["pool"])
+            context_mask = torch.cat(context_mask, dim=1)
 
         for layer in self.value_decoder:
             value_query = layer(x_f=tokens, x=value_query, context_mask=context_mask)
@@ -471,12 +626,14 @@ class BasePOAgent(BaseAgent):
         entropy_weight=0.1,
         lr_T_max=1000,
         min_lr=0.0,
-        sam2_dim={}
+        sam2_dim={},
+        n_layers=2,
+        target_kl=None,
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=4)
-        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
-        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=4)
+        self.feat_summarizer = BaseFeatureSummarizer(num_maskmem, **sam2_dim, n_layers=n_layers)
+        self.policy_net = BasePolicyNetwork(self.feat_summarizer.hidden_dim, n_layers=n_layers)
+        self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=n_layers)
 
         self.optimizer = optim.AdamW([
             {"params": self.policy_net.parameters(),      "lr": policy_lr},
@@ -504,6 +661,13 @@ class BasePOAgent(BaseAgent):
 
         self.tau = tau
         self.entropy_weight= entropy_weight
+        # None (default) disables early stopping entirely -- update() always runs the
+        # full num_ep epochs, exactly as before this option existed. When set, a
+        # minibatch whose approx_kl exceeds this cuts the rest of that update() call
+        # short: the ratio has moved far enough that further epochs on the same batch
+        # of old_log_probs would be optimizing against a stale importance-sampling
+        # estimate. Typical values are 0.01-0.05.
+        self.target_kl = target_kl
 
         # For distributed training
         self.rank = 0
@@ -512,6 +676,15 @@ class BasePOAgent(BaseAgent):
         # Episodic returns accumulated between calls to `pop_episode_return_stats`,
         # used to log mean/std of episodic return to wandb once per epoch.
         self.episode_returns = []
+
+        # Validation-time diagnostics, accumulated between calls to `pop_val_stats`.
+        # Separate from episode_returns/replay_buffer on purpose: validation runs the
+        # policy greedily and must never feed the training replay buffer or trajectory
+        # bookkeeping, but the reward its decisions produce -- and what it actually
+        # decided -- is exactly what tells you whether the policy generalizes.
+        self.val_rewards = []
+        self.val_actions = []
+        self.val_action_entropies = []
 
         # Keeps the critic's targets at unit scale; see RunningReturnScale.
         self.return_scale = RunningReturnScale()
@@ -531,9 +704,9 @@ class BasePOAgent(BaseAgent):
         """Close out a volume: compute GAE over every chunk collected for it, push the
         transitions to the replay buffer.
 
-        The trajectory spans all chunks of one (volume, obj_id); the chunk boundaries
-        are marked done by `set_await_done`, and compute_gae segments on those so no
-        credit crosses a memory-bank reset.
+        The trajectory spans all chunks of one (volume, obj_id) as a single episode --
+        the memory bank is carried across chunk boundaries, so the only terminal is the
+        last frame of the volume, marked by `set_await_done`.
         """
         if self.await_trajectory is None or len(self.await_trajectory.transitions) == 0:
             self.await_trajectory = None
@@ -541,11 +714,11 @@ class BasePOAgent(BaseAgent):
 
         log_probs, action, reward, done, curr_state, next_state = self.await_trajectory.get_transitions(self.device)
 
-        # Episodic return: total (undiscounted) RAW reward per episode, i.e. per chunk,
-        # not per volume — a volume holds as many episodes as it has chunks, and their
-        # count varies with volume length, so summing the whole trajectory would make
-        # the metric track volume size instead of policy quality. Taken before scaling
-        # so the logged number stays in dice-loss units and is comparable across runs.
+        # Episodic return: total (undiscounted) RAW reward per episode, which is now one
+        # whole volume. It therefore scales with volume length — compare it across runs on
+        # the same dataset, not across datasets. Taken before scaling so the logged number
+        # stays in dice-loss units. The loop over segments still handles a multi-episode
+        # trajectory, should one ever be produced.
         segment_ends = done.reshape(-1).nonzero(as_tuple=True)[0].tolist()
         if not segment_ends or segment_ends[-1] != len(done) - 1:
             segment_ends.append(len(done) - 1)
@@ -557,10 +730,10 @@ class BasePOAgent(BaseAgent):
         # Refresh the scale from this trajectory's raw discounted return, then scale.
         # compute_gae with values=0 and tau=1 is exactly the Monte-Carlo discounted
         # return, segmented at the same terminals.
-        # zeros = torch.zeros_like(reward)
-        # mc_return = compute_gae(zeros, zeros, reward, done, self.gamma, 1.0)
-        # self.return_scale.update(mc_return)
-        # reward = reward / self.return_scale.std
+        zeros = torch.zeros_like(reward)
+        mc_return = compute_gae(zeros, zeros, reward, done, self.gamma, 1.0)
+        self.return_scale.update(mc_return)
+        reward = reward / self.return_scale.std
 
         # These are value *targets*: they must be computed with dropout off. update()
         # leaves the modules in train mode, so do not rely on the last select_action.
@@ -568,10 +741,10 @@ class BasePOAgent(BaseAgent):
         self.value_net.eval()
 
         with torch.no_grad():
-            curr_feat = self.feat_summarizer(*curr_state)
-            curr_value = self.value_net(*curr_feat)
-            next_feat = self.feat_summarizer(*next_state)
-            next_value = self.value_net(*next_feat)
+            curr_feat = self.feat_summarizer(**curr_state)
+            curr_value = self.value_net(**curr_feat)
+            next_feat = self.feat_summarizer(**next_state)
+            next_value = self.value_net(**next_feat)
 
             # V was trained on scaled returns, so it already lives in the scaled space;
             # feeding it scaled rewards keeps every term of the GAE recursion consistent.
@@ -606,6 +779,36 @@ class BasePOAgent(BaseAgent):
         self.episode_returns = []
         return stats
 
+    def record_val_reward(self, reward):
+        """Log-only counterpart to init_new_replay_instance: same reward signal, but
+        for a greedy validation rollout, which must not touch the replay buffer."""
+        self.val_rewards.append(reward)
+
+    def record_val_action(self, action, entropy):
+        """What the policy actually did on a greedy (validation) decision, and how
+        confident it was. Called from select_action's non-training branch."""
+        self.val_actions.append(action)
+        self.val_action_entropies.append(entropy)
+
+    def pop_val_stats(self):
+        """Validation-time diagnostics accumulated since the last call, then clear.
+        Empty dict if no validation decisions were recorded since the last call."""
+        stats = {}
+        if self.val_rewards:
+            rewards = torch.tensor(self.val_rewards, dtype=torch.float32)
+            stats["val_reward_mean"] = rewards.mean().item()
+            stats["val_reward_std"] = rewards.std().item() if rewards.numel() > 1 else 0.0
+            self.val_rewards = []
+        if self.val_actions:
+            actions = torch.tensor(self.val_actions, dtype=torch.float32)
+            entropies = torch.tensor(self.val_action_entropies, dtype=torch.float32)
+            # Action 0 is always no-op, regardless of pool size; see BasePolicyNetwork.
+            stats["val_noop_frac"] = (actions == 0).float().mean().item()
+            stats["val_action_entropy_mean"] = entropies.mean().item()
+            self.val_actions = []
+            self.val_action_entropies = []
+        return stats
+
     def init_new_replay_instance(self, **instance_info):
         self.close_await_replay_instance(next_state=instance_info.get("state"))
         self.await_replay_instance = POReplayInstance(**instance_info)
@@ -616,23 +819,24 @@ class BasePOAgent(BaseAgent):
         self.await_trajectory.add_transition(instance)
 
     @torch.no_grad()
-    def select_action(self, state: RLStates, valid_actions, bank_is_full, training=False):
+    def select_action(self, state: RLStates, valid_actions, training=False):
+        """Sample the swap/no-op action for this timestep.
+
+        Only meaningful once the bank is full -- while it's still filling there is
+        nothing to evict, so the caller inserts the incoming frame directly without
+        going through the policy at all (see sam2_video_predictor.agent_update_first_stage).
+        """
         self.feat_summarizer.eval()
         self.policy_net.eval()
         self.value_net.eval()
-        
+
         device = next(self.feat_summarizer.parameters()).device
 
-        image_feat = state.next_image_feat.detach().to(device=device, dtype=torch.float32)
-        memory_feat = state.curr_memory_feat["mem_feat"].detach().to(device=device, dtype=torch.float32)
-        memory_ptr = state.curr_memory_feat["obj_ptr"].detach().to(device=device, dtype=torch.float32)
-        bank_feat = state.prev_memory_bank["mem_feat"].detach().to(device=device, dtype=torch.float32)
-        bank_ptr = state.prev_memory_bank["obj_ptr"].detach().to(device=device, dtype=torch.float32)
+        feats = stack_state_feats([state], device=device)
 
-        state = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-        action_logits = self.policy_net(*state).squeeze(0)
+        summary = self.feat_summarizer(**feats)
+        action_logits = self.policy_net(**summary).squeeze(0)
         action_logits = action_logits.detach().cpu()
-        action_dist = Categorical(logits=action_logits)
 
         valid_actions = torch.Tensor(valid_actions).to(torch.int64)
         action_mask = torch.zeros_like(action_logits, dtype=torch.bool)
@@ -641,31 +845,29 @@ class BasePOAgent(BaseAgent):
         valid_dist = Categorical(logits=action_logits.gather(0, valid_actions))
         valid_probs = valid_dist.probs
 
-        if not training:
-            print({a:p for a, p in zip(valid_actions.tolist(), valid_probs.tolist())})
-
-        if not bank_is_full:
-            # Filling up the bank: the action is imposed by the environment, not picked
-            # by the policy, so it carries no policy gradient signal.
-            action_idx = (valid_actions == 0).nonzero(as_tuple=True)
-            policy_weight = 0.0
-        elif training:
+        if training:
             # Sample from the policy: the stored log prob must be the distribution the
             # action actually came from, otherwise the importance ratio is meaningless.
             # Exploration comes from this sampling plus the entropy bonus.
             action_idx = torch.multinomial(valid_probs, num_samples=1, replacement=False)
-            policy_weight = 1.0
         else:
             action_idx = torch.argmax(valid_probs, keepdim=True)
-            policy_weight = 1.0
+
+        action = valid_actions[action_idx].item()
+
+        if not training:
+            # Greedy decisions only happen outside training (validation, or any other
+            # inference-only rollout) -- track what the policy actually does and how
+            # confident it is, for pop_val_stats.
+            self.record_val_action(action, valid_dist.entropy().item())
 
         return {
-            "action": valid_actions[action_idx].item(),
+            "action": action,
             # Scalar, not a 1-element list: a list makes old_log_probs [B,1,1] in
             # train_step and the PPO ratio broadcasts into a [B,B,1] outer product.
             "log_probs": valid_probs.log()[action_idx].item(),
             "action_mask": action_mask,
-            "policy_weight": policy_weight,
+            "policy_weight": 1.0,
         }
 
     def to(self, device, non_blocking=False):
@@ -696,12 +898,12 @@ class BasePOAgent(BaseAgent):
         self.policy_net.train()
         self.value_net.train()
 
-        total_policy_loss, total_value_loss, total_actor_gradnorm, total_critic_gradnorm = 0, 0, 0, 0
+        total_policy_loss, total_value_loss, total_policy_gradnorm, total_value_gradnorm, total_summ_gradnorm = 0, 0, 0, 0, 0
         num_update = 0
-        critic_num_update = 0
         metric_sums, metric_counts = {}, {}
+        stopped_early, stopped_ep = False, num_ep - 1
 
-        for _ in range(num_ep):
+        for ep in range(num_ep):
             # Full pass over the replay buffer, shuffled and split into batch_size minibatches.
             shuffle_indice = np.random.permutation(buffer_size)
 
@@ -709,21 +911,35 @@ class BasePOAgent(BaseAgent):
                 batch_indice = shuffle_indice[start:start + self.batch_size]
                 batch = [self.replay_buffer[idx] for idx in batch_indice]
 
-                update_value = True
-                value_loss, policy_loss, actor_gradnorm, critic_gradnorm, metrics = self.train_step(batch, update_value=update_value)
+                (
+                    value_loss, policy_loss, 
+                    policy_gradnorm, value_gradnorm, summ_gradnorm,
+                    metrics
+                ) = self.train_step(batch)
 
                 total_policy_loss += policy_loss
-                total_actor_gradnorm += actor_gradnorm
+                total_policy_gradnorm += policy_gradnorm
+                total_value_loss += value_loss
+                total_value_gradnorm += value_gradnorm
+                total_summ_gradnorm += summ_gradnorm
                 num_update += 1
-
-                if update_value:
-                    total_value_loss += value_loss
-                    total_critic_gradnorm += critic_gradnorm
-                    critic_num_update += 1
 
                 for k, v in metrics.items():
                     metric_sums[k] = metric_sums.get(k, 0.0) + v
                     metric_counts[k] = metric_counts.get(k, 0) + 1
+
+                if self.target_kl is not None and metrics["approx_kl"] > self.target_kl:
+                    print(
+                        f"Early stopping at epoch {ep} after {num_update} minibatch "
+                        f"updates: approx_kl {metrics['approx_kl']:.4f} > "
+                        f"target_kl {self.target_kl}"
+                    )
+                    stopped_early = True
+                    break
+
+            if stopped_early:
+                stopped_ep = ep
+                break
 
         # Logged before stepping so the value matches the LR the minibatches above ran at.
         current_lr = self.optimizer.param_groups[0]["lr"]
@@ -731,13 +947,15 @@ class BasePOAgent(BaseAgent):
 
         out = {
             "actor_loss": total_policy_loss / num_update,
-            "critic_loss": total_value_loss / critic_num_update,
-            "actor_gradnorm": total_actor_gradnorm / num_update,
-            "critic_gradnorm": total_critic_gradnorm / critic_num_update,
+            "critic_loss": total_value_loss / num_update,
+            "policy_gradnorm": total_policy_gradnorm / num_update,
+            "value_gradnorm": total_value_gradnorm / num_update,
+            "summ_gradnorm": total_summ_gradnorm / num_update,
             "agent_lr": current_lr,
             # Raw dice-loss units per unit of scaled return; multiply episodic_return_*
             # by this to compare against an unscaled run.
             "return_scale": self.return_scale.std,
+            "stopped_ep": stopped_ep
         }
         for k, total in metric_sums.items():
             out[k] = total / metric_counts[k]
@@ -746,7 +964,7 @@ class BasePOAgent(BaseAgent):
 
         return out
 
-    def train_step(self, batch, update_value=True):
+    def train_step(self, batch):
         device = self.device
 
         (
@@ -762,11 +980,7 @@ class BasePOAgent(BaseAgent):
             policy_weights,
         ) = zip(*batch)
 
-        image_feat = torch.cat([state.next_image_feat for state in states]).detach()
-        memory_feat = torch.cat([state.curr_memory_feat["mem_feat"] for state in states]).detach()
-        memory_ptr = torch.cat([state.curr_memory_feat["obj_ptr"] for state in states]).detach()
-        bank_feat = torch.cat([state.prev_memory_bank["mem_feat"] for state in states]).detach()
-        bank_ptr = torch.cat([state.prev_memory_bank["obj_ptr"] for state in states]).detach()
+        feats = stack_state_feats(states, device=device)
 
         actions = torch.LongTensor(actions).unsqueeze(1)
         rewards = torch.FloatTensor(rewards).unsqueeze(1)
@@ -776,12 +990,6 @@ class BasePOAgent(BaseAgent):
         returns = torch.FloatTensor(returns).unsqueeze(1)
         action_masks = torch.stack(action_masks)
         policy_weights = torch.FloatTensor(policy_weights).unsqueeze(1)
-
-        image_feat = image_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_feat = memory_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        memory_ptr = memory_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_feat = bank_feat.to(device=device, dtype=torch.float32, non_blocking=True)
-        bank_ptr = bank_ptr.to(device=device, dtype=torch.float32, non_blocking=True)
 
         actions = actions.to(device=device, non_blocking=True)
         rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
@@ -793,9 +1001,9 @@ class BasePOAgent(BaseAgent):
         policy_weights = policy_weights.to(device=device, dtype=torch.float32, non_blocking=True)
 
         # Normalize over exactly the transitions that enter the policy loss. The forced
-        # bank-filling steps carry weight 0 and there are memory_bank_size of them per
-        # chunk (6 out of ~15 at video_length=16), so folding them in would rescale the
-        # real decisions by a mean/std they never contribute a gradient to.
+        # bank-filling steps carry weight 0 -- memory_bank_size of them, once per volume
+        # now that the bank is not rebuilt per chunk -- so folding them in would rescale
+        # the real decisions by a mean/std they never contribute a gradient to.
         weight_sum = policy_weights.sum()
         if weight_sum > 0:
             adv_mean = (advantages * policy_weights).sum(dim=0, keepdim=True) / weight_sum
@@ -809,33 +1017,28 @@ class BasePOAgent(BaseAgent):
             adv_std = torch.zeros_like(weight_sum).reshape(1, 1)
         weight_sum = weight_sum.clamp(min=1.0)
 
-        with torch.enable_grad():
-            (
-                image_spatial_query,
-                non_cond_bank_feat,
-                cond_bank_feat,
-                curr_mem_feat,
-                pad_masks
-            ) = self.feat_summarizer(image_feat, memory_feat, memory_ptr, bank_feat, bank_ptr)
-
-            policy_logits = self.policy_net(
-                image_spatial_query,
-                non_cond_bank_feat,
-                cond_bank_feat,
-                curr_mem_feat,
-                pad_masks=pad_masks
-            )
-            # Renormalize over exactly the actions that were selectable when the
-            # transition was collected, matching the distribution select_action sampled
-            # from. Without this the ratio against old_log_probs is biased and the
-            # entropy bonus pushes mass onto actions that can never be taken.
-            policy_logits = policy_logits.masked_fill(~action_masks, float("-inf"))
-            log_probs = torch.log_softmax(policy_logits, dim=1)
-            policy_probs = log_probs.exp() # exactly 0 on masked actions
-            log_action_probs = log_probs.gather(1, actions)
-            policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
+        def masked_readout(logits, mask, taken):
+            """Log-prob of the action taken, and -H, renormalized over exactly the support
+            it was sampled from -- otherwise the ratio against old_log_probs is biased and
+            the entropy bonus pushes mass onto unreachable actions. A support of size 1
+            falls out as log-prob 0 and entropy 0.
+            """
+            logits = logits.masked_fill(~mask, float("-inf"))
+            log_probs = torch.log_softmax(logits, dim=1)
+            probs = log_probs.exp()  # exactly 0 on masked actions
             # nan_to_num avoids the 0 * -inf = nan on masked actions
-            minus_entropy = (policy_probs * torch.nan_to_num(log_probs, neginf=0.0)).sum(dim=1, keepdim=True)
+            minus_entropy = (probs * torch.nan_to_num(log_probs, neginf=0.0)).sum(dim=1, keepdim=True)
+            return log_probs.gather(1, taken), minus_entropy
+
+        with torch.enable_grad():
+            summary = self.feat_summarizer(**feats)
+            action_logits = self.policy_net(**summary)
+
+            log_action_probs, minus_entropy = masked_readout(
+                action_logits, action_masks, actions
+            )
+
+            policy_loss = self.compute_policy_loss(log_action_probs, advantages, old_log_probs)
             policy_loss = policy_loss + minus_entropy * self.entropy_weight # entropy regularization
             # Forced (bank-filling) transitions carry weight 0
             policy_loss = (policy_loss * policy_weights).sum() / weight_sum
@@ -845,15 +1048,23 @@ class BasePOAgent(BaseAgent):
                 # excluded (weight 0) from these stats just like from the loss above.
                 policy_entropy = (-minus_entropy * policy_weights).sum() / weight_sum
 
-                ratio = (log_action_probs - old_log_probs).exp()
+                log_ratio = log_action_probs - old_log_probs
+                ratio = log_ratio.exp()
                 ratio_mean = (ratio * policy_weights).sum() / weight_sum
                 ratio_var = (((ratio - ratio_mean) ** 2) * policy_weights).sum() / weight_sum
                 ratio_std = ratio_var.clamp(min=0).sqrt()
+
+                # Schulman's k3 estimator (http://joschu.net/blog/kl-approx.html):
+                # unbiased and always >=0 in expectation, unlike the naive -log_ratio
+                # mean, which can go negative on a single minibatch from sampling noise
+                # alone and makes a poor early-stopping trigger.
+                approx_kl = (((ratio - 1) - log_ratio) * policy_weights).sum() / weight_sum
 
                 metrics = {
                     "policy_entropy": policy_entropy.item(),
                     "ratio_mean": ratio_mean.item(),
                     "ratio_std": ratio_std.item(),
+                    "approx_kl": approx_kl.item(),
                     "adv_mean": adv_mean.item(),
                     "adv_std": adv_std.item(),
                 }
@@ -861,48 +1072,8 @@ class BasePOAgent(BaseAgent):
                     clipped = (ratio < 1.0 - self.epsilon) | (ratio > 1.0 + self.epsilon)
                     metrics["clip_fraction"] = (clipped.float() * policy_weights).sum().item() / weight_sum.item()
 
-            # self.policy_optimizer.zero_grad()
-            # policy_loss.backward()
-            # actor_gradnorm = nn.utils.clip_grad_norm_(
-            #     list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-            #     max_norm=0.5
-            # )
-            # self.policy_optimizer.step()
-
-            # if update_value:
-            #     image_spatial_query = image_spatial_query.detach()
-            #     non_cond_bank_feat = non_cond_bank_feat.detach()
-            #     cond_bank_feat = cond_bank_feat.detach()
-            #     curr_mem_feat = curr_mem_feat.detach()
-
-            #     pred_value = self.value_net(
-            #         image_spatial_query,
-            #         non_cond_bank_feat,
-            #         cond_bank_feat,
-            #         curr_mem_feat
-            #     )
-
-            #     value_loss = F.mse_loss(pred_value, returns)
-            #     self.value_optimizer.zero_grad()
-            #     value_loss.backward()
-            #     critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=0.5)
-            #     self.value_optimizer.step()
-
-            #     with torch.no_grad():
-            #         return_var = returns.var(unbiased=False)
-            #         explained_variance = 1.0 - (returns - pred_value).var(unbiased=False) / return_var.clamp(min=1e-8)
-            #         metrics["explained_variance"] = explained_variance.item()
-            # else:
-            #     value_loss = torch.Tensor([0])
-            #     critic_gradnorm = torch.Tensor([0])
-
-            pred_value = self.value_net(
-                image_spatial_query,
-                non_cond_bank_feat,
-                cond_bank_feat,
-                curr_mem_feat,
-                pad_masks=pad_masks
-            )
+            # Same encode as the policy.
+            pred_value = self.value_net(**summary)
             value_loss = F.mse_loss(pred_value, returns)
             
             with torch.no_grad():
@@ -910,18 +1081,20 @@ class BasePOAgent(BaseAgent):
                 explained_variance = 1.0 - (returns - pred_value).var(unbiased=False) / return_var.clamp(min=1e-8)
                 metrics["explained_variance"] = explained_variance.item()
 
-            total_loss = policy_loss + value_loss
+            total_loss = policy_loss + 0.5 * value_loss
             
             self.optimizer.zero_grad()
             total_loss.backward()
-            actor_gradnorm = nn.utils.clip_grad_norm_(
-                list(self.feat_summarizer.parameters()) + list(self.policy_net.parameters()),
-                max_norm=0.5
-            )
-            critic_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=0.5)
+            policy_gradnorm = nn.utils.clip_grad_norm_(self.policy_net.parameters(), max_norm=0.5)
+            summ_gradnorm = nn.utils.clip_grad_norm_(self.feat_summarizer.parameters(), max_norm=0.5)
+            value_gradnorm = nn.utils.clip_grad_norm_(self.value_net.parameters(), max_norm=0.5)
             self.optimizer.step()
 
-        return value_loss.detach(), policy_loss.detach(), actor_gradnorm, critic_gradnorm, metrics
+        return (
+            value_loss.detach(), policy_loss.detach(), 
+            policy_gradnorm, value_gradnorm, summ_gradnorm, 
+            metrics
+        )
 
     def compute_policy_loss(self, log_prob, advantage, old_log_prob):
         return -(advantage * log_prob)
