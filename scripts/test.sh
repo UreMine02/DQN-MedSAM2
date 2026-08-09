@@ -24,7 +24,9 @@ declare -a ckpt=(
     # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
     # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
     # output/msd_task02+icl+ppo+penalty0.001+raw_dice+long_horizon+no_augment/2026-05-09-20-01-30/best.pth
-    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-07-27-19-40-02/best.pth
+    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-07-27-19-40-02/best.pth
+    # output/msd_task02+icl+no_agent/2026-08-08-19-37-19/best.pth
+    output/msd_task02+icl+no_agent/2026-08-08-19-37-19/epoch_50_dice0.8557.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -41,7 +43,7 @@ do
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
-            # -no_agent \
+            -no_agent \
             # -random_drop
     done
 done
