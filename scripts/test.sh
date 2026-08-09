@@ -25,7 +25,7 @@ declare -a ckpts=(
     # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/best.pth
 
     # MSD Heart
-    output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
+    output/msd_task02+icl+no_agent/2026-08-08-19-37-19/best.pth
     # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
     # output/msd_task02+icl+grpo+raw_dice+long_horizon+no_augment/2026-05-06-10-30-25/best.pth
     # output/msd_task02+icl+grpo+penalty0.0+long_horizon+no_augment/2026-05-05-23-37-41/best.pth
