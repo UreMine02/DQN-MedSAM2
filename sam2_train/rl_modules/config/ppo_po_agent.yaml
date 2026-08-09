@@ -1,8 +1,8 @@
 agent:
   _target_: sam2_train.rl_modules.policy_optimization.ppo_agent.PPOAgent
   num_maskmem: 6
-  policy_lr: 1e-4
-  value_lr: 1e-4
+  policy_lr: 3e-4
+  value_lr: 3e-4
   gamma: 0.99
   beta: 0.99
   buffer_size: 1024
@@ -21,7 +21,7 @@ agent:
   # Set to e.g. 0.02-0.05 to cut an update() call short once a minibatch's approx_kl
   # exceeds it -- the usual PPO guard against the ratio drifting too far from 1 over
   # repeated epochs on the same batch of old_log_probs.
-  target_kl: 0.02
+  target_kl: 0.05
   sam2_dim:
     n_query: 16
     image_dim: 256

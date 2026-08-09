@@ -174,7 +174,7 @@ class MSD(Dataset):
                 image_3d = image_3d[..., start:end]
                 data_seg_3d = data_seg_3d[..., start:end]
             elif slice_selection == 'random':
-                n_slice = max_slices if self.mode != 'train' else np.random.randint(1, max_slices + 1)
+                n_slice = max_slices# if self.mode != 'train' else np.random.randint(1, max_slices + 1)
                 slice_indices = np.random.choice(image_3d.shape[-1], size=n_slice, replace=False)
                 image_3d = image_3d[..., slice_indices]
                 data_seg_3d = data_seg_3d[..., slice_indices]
