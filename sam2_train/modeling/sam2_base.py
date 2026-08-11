@@ -3,7 +3,7 @@
 
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
-
+import math
 import torch
 import torch.distributed
 import torch.nn.functional as F
@@ -207,45 +207,67 @@ class SAM2Base(torch.nn.Module):
         self.obj_ptr_gating = obj_ptr_gating
         self.highres_gating = highres_gating
 
-        if self.gating_dimension == "cw":
-            self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
-            self.ctx_gating_mem_proj = nn.Linear(64,64)
+        # `cw` modulates the memory *values* channel-wise; `tw` biases the memory
+        # *keys'* attention logits. They are independent mechanisms, so "both" builds
+        # both sets of projections rather than sharing one.
+        self.gating_modulates_values = self.gating_dimension in ("cw", "both")
+        self.gating_biases_attention = self.gating_dimension in ("tw", "both")
 
-            nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
-            nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
+        if self.gating_modulates_values:
+            self.cw_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
+            self.cw_gating_mem_proj = nn.Linear(64,64)
+            # Ramp: gate is applied as mem * (1 - a*(1 - g)), so a=0 is exactly the
+            # ungated baseline. sigmoid(-3)=0.047 keeps the projections receiving
+            # gradient instead of stalling at a hard zero.
+            self.cw_gate_alpha = nn.Parameter(torch.tensor(-3.0))
 
-        elif self.gating_dimension == "tw":
-            self.ctx_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4)
-            self.ctx_gating_mem_proj = nn.Linear(64,64)
-            self.gating_logit_scale = nn.Parameter(torch.Tensor([1]))
+            nn.init.xavier_uniform_(self.cw_gating_ptr_proj.weight)
+            nn.init.xavier_uniform_(self.cw_gating_mem_proj.weight)
+            # The two logits are summed, so only one branch carries the offset.
+            nn.init.constant_(self.cw_gating_ptr_proj.bias, 0.0)
+            nn.init.constant_(self.cw_gating_mem_proj.bias, 0.0)
 
-            nn.init.xavier_uniform_(self.ctx_gating_ptr_proj.weight)
-            nn.init.xavier_uniform_(self.ctx_gating_mem_proj.weight)
+        if self.gating_biases_attention:
+            # No bias on these: their outputs are L2-normalized, and a constant
+            # offset inside the normalizer collapses the cosine's dynamic range.
+            self.tw_gating_ptr_proj = nn.Conv1d(in_channels=64, out_channels=64, kernel_size=4, bias=False)
+            self.tw_gating_mem_proj = nn.Linear(64,64, bias=False)
+            self.gating_logit_scale = nn.Parameter(torch.tensor(math.log(1 / 0.07)))
+            self.gating_logit_bias  = nn.Parameter(torch.tensor(0.0))
+            # Applied as attn_bias = a * log(g), so a=0 is exactly the ungated baseline.
+            self.tw_gate_alpha = nn.Parameter(torch.tensor(-3.0))
+
+            nn.init.xavier_uniform_(self.tw_gating_ptr_proj.weight)
+            nn.init.xavier_uniform_(self.tw_gating_mem_proj.weight)
 
         if self.obj_ptr_gating:
             self.obj_ptr_filtering_proj = nn.Linear(256,256)
             nn.init.xavier_uniform_(self.obj_ptr_filtering_proj.weight)
+            nn.init.constant_(self.obj_ptr_filtering_proj.bias, 3.0)
 
         if self.highres_gating == "by_lowres":
-            # self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.low2high_gating_proj = nn.ModuleList([nn.Conv2d(256,32,kernel_size=1), nn.Conv2d(256,64,kernel_size=1)])
             self.high2low_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
-            # self.high2ptr_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+            
             for layer in self.low2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
-            # for layer in self.ptr2high_gating_proj:
-            #     nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 3.0)
+            
             for layer in self.high2low_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
-            # for layer in self.high2ptr_gating_proj:
-            #     nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 3.0)
+
         elif self.highres_gating == "by_ptr":
             self.ptr2high_gating_proj = nn.ModuleList([nn.Linear(64,32), nn.Linear(64,64)])
             self.high2high_gating_proj = nn.ModuleList([nn.Conv2d(32,32,kernel_size=1), nn.Conv2d(64,64,kernel_size=1)])
+            
             for layer in self.ptr2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 3.0)
+                
             for layer in self.high2high_gating_proj:
                 nn.init.xavier_uniform_(layer.weight)
+                nn.init.constant_(layer.bias, 3.0)
 
     @property
     def device(self):
@@ -571,6 +593,22 @@ class SAM2Base(torch.nn.Module):
 
         return backbone_out, vision_feats, vision_pos_embeds, feat_sizes
 
+    def _apply_gating_softness(self, gating_logits):
+        """Turn gate logits into gate scores under the configured hardness."""
+        if self.gating_softness == "threshold":
+            gating_score = torch.sigmoid(gating_logits)
+            gating_score = (gating_score > 0.5).to(torch.bfloat16)
+        elif self.gating_softness == "gumbel":
+            # NOTE: GUMBEL SIGMOID
+            temperature = 0.1
+            eps = 1e-12
+            u = torch.rand_like(gating_logits)
+            g = torch.log(u + eps) - torch.log(1 - u + eps)
+            gating_score = torch.sigmoid((gating_logits + g) / temperature)
+        else:
+            gating_score = torch.sigmoid(gating_logits)
+        return gating_score
+
     def _prepare_memory_conditioned_features(
         self,
         frame_idx,
@@ -598,7 +636,6 @@ class SAM2Base(torch.nn.Module):
             return pix_feat
 
         num_obj_ptr_tokens = 0
-        memory_pos = []
         # Step 1: condition the visual features of the current frame on previous memories
         if not is_init_cond_frame:
             # Retrieve the memories encoded with the maskmem backbone
@@ -650,17 +687,8 @@ class SAM2Base(torch.nn.Module):
                         # If an unselected conditioning frame is among the last (self.num_maskmem - 1)
                         # frames, we still attend to it as if it's a non-conditioning frame.
                         out = unselected_cond_outputs.get(prev_frame_idx, None)
-                    if out is not None:
-                        memory_pos.append(prev_frame_idx)
                     t_pos_and_prevs.append((t_pos, out))
-
-                # print("FIFO:", frame_idx, memory_pos)
             else:
-                # if agent_act:
-                #     print("AFS:", output_dict["non_cond_frame_outputs"].keys())
-                # elif random_drop:
-                #     print("Random:", output_dict["non_cond_frame_outputs"].keys())
-                    
                 t_pos_and_prevs.extend(
                     [(t+1, out) for t, out in enumerate(output_dict["non_cond_frame_outputs"].values())]
                 )
@@ -818,80 +846,63 @@ class SAM2Base(torch.nn.Module):
             high_res_features = highres_vision_feats
 
         # NOTE: TEST GATING
-        gated_indices = None
         gating_score_dict = {
             "cond_frames": {},
             "non_cond_frames": {}
         }
+        # `memory` is the key source and is never gated -- suppressing a key by
+        # shrinking its norm pulls its attention logit toward 0 (the middle of the
+        # logit distribution), not toward -inf, so it does not mean "ignore this
+        # memory". Selection is expressed as an additive bias on the attention
+        # logits instead; modulation is expressed on the values only.
+        memory_v = None       # cw: channel-wise modulation of the memory values
+        memory_attn_bias = None  # tw: token-wise selection over the memory keys
+
         if self.gating_dimension != "no" and num_obj_ptr_tokens > 0:
             m = num_obj_ptr_tokens // 4
             b, d = memory.shape[1], memory.shape[-1]
 
             # memory & obj_ptrs shape [L,B,D]
             mem, ptr = memory.tensor_split(indices=(-num_obj_ptr_tokens,), dim=0)
-            mem_ = mem.transpose(0,1)
-            ptr_ = ptr.transpose(0,1)
+            mem_ = mem.transpose(0,1).reshape(b, m, -1, d) # [1,m,4096,64]
+            ptr_ = ptr.transpose(0,1).reshape(b*m, -1, d).permute(0,2,1) # [1*m,64,4]
 
-            if self.gating_dimension == "cw":
-                # CW GATING
-                mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
-                ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+            if self.gating_modulates_values:
+                # CW GATING -- per (frame, location, channel), applied to values
+                mem_gating_logits = self.cw_gating_mem_proj(mem_) # [1,m,4096,64]
+                ptr_gating_logits = self.cw_gating_ptr_proj(ptr_) # [1*m,64,1]
 
-                mem_ = self.ctx_gating_mem_proj(mem_)
-                ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
+                ptr_gating_logits = ptr_gating_logits.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
+                gating_logits = mem_gating_logits + ptr_gating_logits # [1,m,4096,64]
+                gating_score = self._apply_gating_softness(gating_logits)
 
-                ptr_ = ptr_.reshape(b, m, -1, 1).transpose(2,3) # [1,m,1,64]
-                gating_logits = mem_ + ptr_# + self.ctx_gating_bias # [1,m,4096,64]
-
-                if self.gating_softness == "threshold":
-                    gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
-                elif self.gating_softness == "gumbel":
-                    # NOTE: GUMBEL SOFTMAX
-                    temperature = 0.1
-                    eps = 1e-12
-                    u = torch.rand_like(gating_logits)
-                    g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    gating_score = torch.sigmoid((gating_logits + g) / temperature)
-                else:
-                    gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-
-                gated_mem = mem_ * gating_score
+                # mem * (1 - a*(1 - g)): a=0 recovers the ungated memory exactly.
+                alpha = torch.sigmoid(self.cw_gate_alpha)
+                gated_mem = mem_ * (1 - alpha * (1 - gating_score))
                 gated_mem = gated_mem.reshape(b, -1, d).transpose(0,1)
 
-                memory = torch.cat([gated_mem, ptr], dim=0)
+                memory_v = torch.cat([gated_mem, ptr], dim=0)
 
-            elif self.gating_dimension == "tw":
-                # TW GATING
-                mem_ = mem_.reshape(b, m, -1, d) # [1,m,4096,64]
-                ptr_ = ptr_.reshape(b*m, -1, d).permute(0,2,1) # [1,m,64,4]
+            if self.gating_biases_attention:
+                # TW GATING -- one scalar per memory token, applied to attention logits
+                mem_gating_logits = self.tw_gating_mem_proj(mem_) # [1,m,4096,64]
+                ptr_gating_logits = self.tw_gating_ptr_proj(ptr_).reshape(b, m, -1, 1) # [1,m,64,1]
+                mem_gating_logits = F.normalize(mem_gating_logits, p=2, dim=-1)
+                ptr_gating_logits = F.normalize(ptr_gating_logits, p=2, dim=-2)
 
-                mem_ = self.ctx_gating_mem_proj(mem_) # [1,m,4096,64]
-                ptr_ = self.ctx_gating_ptr_proj(ptr_) # [1*m,64,1]
-                ptr_ = ptr_.reshape(1, m, -1, 1)
-                mem_ = F.normalize(mem_, p=2, dim=-1)
-                ptr_ = F.normalize(ptr_, p=2, dim=-2)
+                logit_scale = self.gating_logit_scale.exp().clamp(max=100)
+                gating_logits = logit_scale * mem_gating_logits @ ptr_gating_logits + self.gating_logit_bias # [1,m,4096,1]
+                gating_score = self._apply_gating_softness(gating_logits)
 
-                gating_logits = self.gating_logit_scale * mem_ @ ptr_# + self.ctx_gating_bias # [1,m,4096,64] @ [1,m,64,1]
-
-                if self.gating_softness == "threshold":
-                    gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-                    gating_score = (gating_score > 0.5).to(torch.bfloat16)
-                elif self.gating_softness == "gumbel":
-                    # NOTE: GUMBEL SOFTMAX
-                    temperature = 0.1
-                    eps = 1e-12
-                    u = torch.rand_like(gating_logits)
-                    g = torch.log(u + eps) - torch.log(1 - u + eps)
-                    gating_score = torch.sigmoid((gating_logits + g) / temperature)
-                else:
-                    gating_score = torch.sigmoid(gating_logits) # [1,m,4096,1]
-
-                gated_mem = mem_ * gating_score
-                gated_mem = gated_mem.reshape(b, -1, d)
-                gated_mem = gated_mem.transpose(0,1)
-
-                memory = torch.cat([gated_mem, ptr], dim=0)
+                # Adding log(g) to a key's logit multiplies its softmax numerator by
+                # g, i.e. reweights how much the query attends to that memory token.
+                # clamp_min keeps the bias finite; a=0 recovers plain attention.
+                alpha = torch.sigmoid(self.tw_gate_alpha)
+                log_gate = alpha * torch.log(gating_score.clamp_min(1e-6))
+                memory_attn_bias = F.pad(
+                    log_gate.reshape(b, -1),        # [B, n_mem_tokens]
+                    (0, num_obj_ptr_tokens),        # object pointers are not selected over
+                )[:, None, None, :]                 # [B, 1, 1, n_keys]
 
                 # return gating score for auxiliary loss
                 gating_score = gating_score.reshape(b, -1, 64, 64)
@@ -899,20 +910,20 @@ class SAM2Base(torch.nn.Module):
                 gating_score_dict["cond_frames"] = gating_score[:, :n_support]
                 for idx, prev_frame_idx in enumerate(output_dict["non_cond_frame_outputs"].keys()):
                     gating_score_dict["non_cond_frames"][prev_frame_idx] = gating_score[:, idx + n_support]
-        
-        pix_feat_with_mem, cross_attns = self.memory_attention(
+
+        pix_feat_with_mem = self.memory_attention(
             curr=current_vision_feats,
             curr_pos=current_vision_pos_embeds,
             memory=memory,
             memory_pos=memory_pos_embed,
             num_obj_ptr_tokens=num_obj_ptr_tokens,
-            gated_indices=gated_indices,
-            need_weights=False
+            memory_v=memory_v,
+            attn_bias=memory_attn_bias,
         )
-        
+
         # reshape the output (HW)BC => BCHW
         pix_feat_with_mem = pix_feat_with_mem.permute(1, 2, 0).view(B, C, H, W)
-        return pix_feat_with_mem, gating_score_dict, high_res_features, obj_ptrs
+        return pix_feat_with_mem, gating_score_dict, high_res_features
 
     def _encode_new_memory(
         self,
@@ -997,7 +1008,7 @@ class SAM2Base(torch.nn.Module):
             )
         else:
             # fused the visual feature with previous memory features in the memory bank
-            pix_feat_with_mem, gating_score_dict, _, mem_obj_ptrs = self._prepare_memory_conditioned_features(
+            pix_feat_with_mem, gating_score_dict, _ = self._prepare_memory_conditioned_features(
                 frame_idx=frame_idx,
                 is_init_cond_frame=is_init_cond_frame,
                 current_vision_feats=current_vision_feats[-1:],
@@ -1022,23 +1033,16 @@ class SAM2Base(torch.nn.Module):
                     high_res_features,
                     self.low2high_gating_proj,
                     self.high2low_gating_proj,
-                    # self.high2ptr_gating_proj,
-                    # self.ptr2high_gating_proj
                 )
-                for highres, low2high_proj, high2low_proj in layers:#, high2ptr_proj, ptr2high_proj in layers:
+                for highres, low2high_proj, high2low_proj in layers:
                     scale = highres.shape[-1] // pix_feat_with_mem.shape[-1]
 
                     upscaled_lowres = pix_feat_with_mem.repeat_interleave(scale, dim=2).repeat_interleave(scale, dim=3)
-                    # upscaled_lowres = F.interpolate(pix_feat_with_mem, size=highres.shape[-2:], mode="bilinear")
 
-                    # ptr_ = ptr2high_proj(mem_obj_ptrs).sum(dim=0, keepdim=True).permute(1,2,0).unsqueeze(-1) # [B,64,1,1]
                     low_ = low2high_proj(upscaled_lowres)
                     high2low = high2low_proj(highres)
-                    # high2ptr = high2ptr_proj(highres)
-                    # gating_score = low_ + high_# + ptr_
                     gating_by_lowres_logits = low_ + high2low
-                    # gating_by_ptr_logits = ptr_ + high2ptr
-                    gating_score = torch.sigmoid(gating_by_lowres_logits)# * torch.sigmoid(gating_by_ptr_logits)
+                    gating_score = torch.sigmoid(gating_by_lowres_logits)
                     highres = highres * gating_score
 
                     gated_high_res_features.append(highres)

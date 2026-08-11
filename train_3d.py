@@ -24,7 +24,7 @@ import torch.multiprocessing as mp
 import torch.optim as torch_optim
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import ExponentialLR
 
 import wandb # NOTE: WANDB
 
@@ -101,7 +101,7 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.stop_sam2_ep, eta_min=args.lr/10)
+    scheduler = ExponentialLR(optimizer, gamma=0.95)
     torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:

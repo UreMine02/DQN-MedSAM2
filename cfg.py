@@ -47,7 +47,7 @@ def parse_args():
     parser.add_argument('-pool_stride', type=int, default=4, help="Archive every Nth frame into the global pool (doubles when the pool overflows)")
     parser.add_argument('-recall_every', type=int, default=1, help="Offer the agent a pool-recall decision every N frames")
     parser.add_argument('-agent_act_every', type=int, default=1, help="Let the agent make a swap/no-op decision every N frames; the bank is frozen (forced no-op, no policy gradient) on the frames in between")
-    parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "no"], default="no", help="Compute and multiply gating score along which dimension ")
+    parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "both", "no"], default="no", help="Memory gating: 'cw' modulates memory values channel-wise, 'tw' biases memory keys' attention logits (selection), 'both' applies both")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")
     parser.add_argument('-highres_gating', type=str, choices=["no", "by_lowres", "by_ptr"], default="no", help="Whether gating highres visual features")

@@ -13,8 +13,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task02+icl+ppo+global_pool+every1+long_horizon+stop_sam2_at40+pool_stride1
-export CUDA_VISIBLE_DEVICES=1
+EXP=msd_task02+icl+ppo+global_pool+long_horizon+stop_sam2_at80+cw_gating
+export CUDA_VISIBLE_DEVICES=0
 
 python train_3d.py \
     -exp_name $EXP \
@@ -39,4 +39,6 @@ python train_3d.py \
     -pool_stride 1 \
     -recall_every 1 \
     -agent_act_every 1 \
+    -gating_dimension cw \
+    -gating_softness soft \
     -wandb_enabled \

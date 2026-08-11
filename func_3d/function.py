@@ -283,24 +283,6 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                     # metric_logger.update(lr=optimizer.param_groups[0]["lr"])
                     # metric_logger.update(grad_norm=grad_total_norm)
 
-                    if not args.distributed:
-                        agent = getattr(net, "agent", None)
-                    else:
-                        agent = getattr(net.module, "agent", None)
-
-                    if agent is not None and epoch >= args.warmup_ep:
-                        q_updates_per_step = getattr(args, "q_updates_per_step", 0)
-                        agent_step_loss = agent.update(q_updates_per_step)
-                        if agent_step_loss is not None:
-                            # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
-                            # metric_logger.update(policy_gradnorm=agent_step_loss["policy_gradnorm"].item())
-                            for metric_name, metric_value in agent_step_loss.items():
-                                if hasattr(metric_value, "item"):
-                                    metric_value = metric_value.item()
-                                agent_metric_sums[metric_name] = agent_metric_sums.get(metric_name, 0.0) + metric_value
-                                agent_metric_counts[metric_name] = agent_metric_counts.get(metric_name, 0) + 1
-                            agent_step += 1
-
                     # Add the loss of the class to the instance
                     update_loss(
                         instance_loss,
@@ -310,6 +292,24 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                         class_loss["bce_loss"].item(),
                     )
                     instance_loss["num_step"] += 1
+                
+                if not args.distributed:
+                    agent = getattr(net, "agent", None)
+                else:
+                    agent = getattr(net.module, "agent", None)
+
+                if agent is not None and epoch >= args.warmup_ep:
+                    q_updates_per_step = getattr(args, "q_updates_per_step", 0)
+                    agent_step_loss = agent.update(q_updates_per_step)
+                    if agent_step_loss is not None:
+                        # metric_logger.update(actor_loss=agent_step_loss["actor_loss"].item())
+                        # metric_logger.update(policy_gradnorm=agent_step_loss["policy_gradnorm"].item())
+                        for metric_name, metric_value in agent_step_loss.items():
+                            if hasattr(metric_value, "item"):
+                                metric_value = metric_value.item()
+                            agent_metric_sums[metric_name] = agent_metric_sums.get(metric_name, 0.0) + metric_value
+                            agent_metric_counts[metric_name] = agent_metric_counts.get(metric_name, 0) + 1
+                        agent_step += 1
 
             average_loss(instance_loss)
 

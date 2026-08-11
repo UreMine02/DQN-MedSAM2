@@ -7,7 +7,7 @@
 import math
 import warnings
 from functools import partial
-from typing import Tuple, Type, Optional
+from typing import Optional, Tuple, Type
 
 import torch
 import torch.nn.functional as F
@@ -288,7 +288,7 @@ class RoPEAttention(Attention):
 
     def forward(
         self, q: Tensor, k: Tensor, v: Tensor, num_k_exclude_rope: int = 0,
-        gated_indices: Optional[Tensor] = None, need_weights: bool = False
+        attn_bias: Optional[Tensor] = None,
     ) -> Tensor:
         # Input projections
         q = self.q_proj(q)
@@ -314,38 +314,14 @@ class RoPEAttention(Attention):
             freqs_cis=self.freqs_cis,
             repeat_freqs_k=self.rope_k_repeat,
         )
-        
-        # if gated_indices is not None:
-        #     k = k[:, :, gated_indices]
 
         dropout_p = self.dropout_p if self.training else 0.0
-        out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        
-        # L, S = q.size(-2), k.size(-2)
-        # scale_factor = 1 / math.sqrt(q.size(-1))
-        # attn_bias = torch.zeros(L, S, dtype=q.dtype, device=q.device)
+        if attn_bias is not None:
+            # SDPA requires the additive mask to match the query dtype (bf16 under autocast).
+            attn_bias = attn_bias.to(q.dtype)
+        out = F.scaled_dot_product_attention(q, k, v, attn_mask=attn_bias, dropout_p=dropout_p)
 
-        # attn_weight = q @ k.transpose(-2, -1) * scale_factor
-        # attn_weight += attn_bias
-        # attn_weight = torch.softmax(attn_weight, dim=-1)
-        
-        # return_weights = None
-        # if need_weights:
-        #     return_weights = attn_weight.clone().detach()
-        
-        # attn_weight = torch.dropout(attn_weight, dropout_p, train=True)
-        # out = attn_weight @ v
-        
-        # # Attention
-        # with torch.backends.cuda.sdp_kernel(
-        #     enable_flash=USE_FLASH_ATTN,
-        #     # if Flash attention kernel is off, then math kernel needs to be enabled
-        #     enable_math=(OLD_GPU and dropout_p > 0.0) or MATH_KERNEL_ON,
-        #     enable_mem_efficient=OLD_GPU,
-        # ):
-        #     out = F.scaled_dot_product_attention(q, k, v, dropout_p=dropout_p)
-        
         out = self._recombine_heads(out)
         out = self.out_proj(out)
 
-        return out, None
+        return out

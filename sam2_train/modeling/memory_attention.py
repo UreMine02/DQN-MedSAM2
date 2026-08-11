@@ -55,31 +55,36 @@ class MemoryAttentionLayer(nn.Module):
         self.pos_enc_at_cross_attn_queries = pos_enc_at_cross_attn_queries
         self.pos_enc_at_cross_attn_keys = pos_enc_at_cross_attn_keys
 
-    def _forward_sa(self, tgt, query_pos, need_weights=False):
+    def _forward_sa(self, tgt, query_pos):
 
         # Self-Attention
         tgt2 = self.norm1(tgt)
         q = k = tgt2 + query_pos if self.pos_enc_at_attn else tgt2
-        tgt2, attn_weights = self.self_attn(q, k, v=tgt2, need_weights=need_weights)
+        tgt2 = self.self_attn(q, k, v=tgt2)
         tgt = tgt + self.dropout1(tgt2)
-        return tgt, attn_weights
+        return tgt
 
-    def _forward_ca(self, tgt, memory, query_pos, pos, num_k_exclude_rope=0, gated_indices=None, need_weights=False):
+    def _forward_ca(self, tgt, memory, query_pos, pos, num_k_exclude_rope=0,
+                    memory_v=None, attn_bias=None):
         kwds = {}
         if num_k_exclude_rope > 0:
             assert isinstance(self.cross_attn_image, RoPEAttention)
-            kwds = {"num_k_exclude_rope": num_k_exclude_rope, "gated_indices": gated_indices, "need_weights":need_weights}
+            kwds["num_k_exclude_rope"] = num_k_exclude_rope
+        if attn_bias is not None:
+            assert isinstance(self.cross_attn_image, RoPEAttention)
+            kwds["attn_bias"] = attn_bias
 
-        # Cross-Attention
+        # Cross-Attention. `memory` is the key source; `memory_v`, when given, is a
+        # separately gated value source, so modulating values leaves keys untouched.
         tgt2 = self.norm2(tgt)
-        tgt2, attn_weights = self.cross_attn_image(
+        tgt2 = self.cross_attn_image(
             q=tgt2 + query_pos if self.pos_enc_at_cross_attn_queries else tgt2,
             k=memory + pos if self.pos_enc_at_cross_attn_keys else memory,
-            v=memory,
+            v=memory if memory_v is None else memory_v,
             **kwds,
         )
         tgt = tgt + self.dropout2(tgt2)
-        return tgt, attn_weights
+        return tgt
 
     def forward(
         self,
@@ -88,20 +93,19 @@ class MemoryAttentionLayer(nn.Module):
         pos: Optional[Tensor] = None,
         query_pos: Optional[Tensor] = None,
         num_k_exclude_rope: int = 0,
-        gated_indices: Optional[Tensor] = None,
-        need_weights = False
+        memory_v: Optional[Tensor] = None,
+        attn_bias: Optional[Tensor] = None,
     ) -> torch.Tensor:
 
         # Self-Attn, Cross-Attn
-        # tgt = self._forward_sa(tgt, query_pos)
-        # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
-        tgt, self_attn = checkpoint(self._forward_sa, tgt, query_pos, need_weights, use_reentrant=False)
-        tgt, cross_attn = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, need_weights, use_reentrant=False)
+        tgt = checkpoint(self._forward_sa, tgt, query_pos, use_reentrant=False)
+        tgt = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope,
+                         memory_v, attn_bias, use_reentrant=False)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))
         tgt = tgt + self.dropout3(tgt2)
-        return tgt, self_attn, cross_attn
+        return tgt
 
 
 class MemoryAttention(nn.Module):
@@ -128,8 +132,8 @@ class MemoryAttention(nn.Module):
         curr_pos: Optional[Tensor] = None,  # pos_enc for self-attention inputs
         memory_pos: Optional[Tensor] = None,  # pos_enc for cross-attention inputs
         num_obj_ptr_tokens: int = 0,  # number of object pointer *tokens*
-        gated_indices: Optional[Tensor] = None,
-        need_weights: bool = False
+        memory_v: Optional[Tensor] = None,  # gated value source (defaults to `memory`)
+        attn_bias: Optional[Tensor] = None,  # additive bias on the memory keys' logits
     ):
         if isinstance(curr, list):
             assert isinstance(curr_pos, list)
@@ -153,47 +157,23 @@ class MemoryAttention(nn.Module):
             curr_pos = curr_pos.transpose(0, 1)
             memory = memory.transpose(0, 1)
             memory_pos = memory_pos.transpose(0, 1)
+            if memory_v is not None:
+                memory_v = memory_v.transpose(0, 1)
 
-        cross_attns = []
         for layer in self.layers:
             kwds = {}
             if isinstance(layer.cross_attn_image, RoPEAttention):
                 kwds = {"num_k_exclude_rope": num_obj_ptr_tokens}
-            output, self_attn, cross_attn = layer(
+            output = layer(
                 tgt=output,
                 memory=memory,
                 pos=memory_pos,
                 query_pos=curr_pos,
-                gated_indices=gated_indices,
-                need_weights=need_weights,
+                memory_v=memory_v,
+                attn_bias=attn_bias,
                 **kwds,
             )
 
-            if cross_attn is not None:
-                spatial_tokens_attn, obj_ptr_attn = torch.tensor_split(
-                    cross_attn.squeeze(1).squeeze(0), indices=(-num_obj_ptr_tokens,), dim=-1)
-                
-                spatial_tokens_attn = spatial_tokens_attn.transpose(0,1).reshape(-1, 4096, 4096).flatten(1)
-                obj_ptr_attn = obj_ptr_attn.transpose(0,1).reshape(-1, 4, 4096).flatten(1)
-                
-                cross_attns.append(torch.cat([spatial_tokens_attn, obj_ptr_attn], dim=-1))
-            
-            # print(cross_attn.shape, num_obj_ptr_tokens, (cross_attn.shape[-1] - num_obj_ptr_tokens) / 4096)
-            # output, self_attn, cross_attn = checkpoint(layer,
-            #     tgt=output,
-            #     memory=memory,
-            #     pos=memory_pos,
-            #     query_pos=curr_pos,
-            #     return_attn=return_attn,
-            #     **kwds,
-            #     use_reentrant=False
-            # )
-        
-        if len(cross_attns) > 0:
-            cross_attns = torch.cat(cross_attns, dim=-1).mean(dim=-1).min()
-        else:
-            cross_attns = None
-        
         normed_output = self.norm(output)
 
         if self.batch_first:
@@ -201,4 +181,4 @@ class MemoryAttention(nn.Module):
             normed_output = normed_output.transpose(0, 1)
             curr_pos = curr_pos.transpose(0, 1)
 
-        return normed_output, cross_attns
+        return normed_output
