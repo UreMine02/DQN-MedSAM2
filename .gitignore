@@ -11,3 +11,4 @@ rlsam2.sh
 *.log
 *ablation.csv
 assets/
+*.pdf

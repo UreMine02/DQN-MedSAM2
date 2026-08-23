@@ -29,14 +29,10 @@ from sam2_train.rl_modules.rl_components import GlobalMemoryPool
 
 import wandb
 
-args = cfg.parse_args()
-
-GPUdevice = torch.device('cuda', args.gpu_device)
 paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
-seed = torch.randint(1,11,(1,7))
 
 torch.backends.cudnn.benchmark = True
-# scaler = torch.cuda.amp.GradScaler()
+
 max_iterations = settings.EPOCH
 dice_val_best = 0.0
 global_step_best = 0

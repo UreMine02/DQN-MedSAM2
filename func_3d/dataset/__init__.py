@@ -8,110 +8,83 @@ from torch.utils.data import DataLoader, DistributedSampler
 from torch.utils.data import Subset
 
 
-def get_dataloader(args, rank=None, world_size=None):
-    if args.dataset == 'combined': #nii
-        combined_train_dataset = Combined(args, mode='train')
-        combined_test_dataset = Combined(args, mode='test')
-        
-        if args.distributed:
-            train_sampler = DistributedSampler(combined_train_dataset, num_replicas=world_size, rank=rank)
-            test_sampler = DistributedSampler(combined_test_dataset, num_replicas=world_size, rank=rank)
+def _build_loader(dataset, shuffle, num_workers, rank=None, world_size=None, distributed=False):
+    if distributed:
+        # No drop_last on the eval splits: dropping the tail would silently score the
+        # model on fewer volumes than the split contains.
+        sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=shuffle)
+        return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=num_workers,
+                          pin_memory=True, sampler=sampler)
 
-            nice_train_loader = DataLoader(combined_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(combined_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
-        else:
-            nice_train_loader = DataLoader(combined_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
-            nice_test_loader = DataLoader(combined_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
-        '''end'''
+    return DataLoader(dataset, batch_size=1, shuffle=shuffle, num_workers=num_workers, pin_memory=True)
+
+
+def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "test")):
+    """Return (train, val, test) loaders; any split not named in `splits` comes back None.
+
+    `val` is carved out of the training manifest by patient group, following the fold
+    assignment split_fold.py committed under data/splits (see
+    func_3d/dataset/splits.py), and is what model selection should use; `test` is the
+    held-out manifest. `val` is None when -fold < 0, which trains on the whole training
+    manifest and leaves nothing to select on.
+
+    `splits` is what keeps the test set out of a training run: train_3d.py asks for
+    ("train", "val") only, so the *Ts.csv manifests are never even opened while
+    training. Scoring the test split is eval_3d.py's job alone.
+    """
+    unknown = set(splits) - {"train", "val", "test"}
+    if unknown:
+        raise ValueError(f"unknown split(s) {sorted(unknown)}; expected any of 'train', 'val', 'test'")
+
+    want_train = "train" in splits
+    want_val = "val" in splits and args.fold >= 0
+    want_test = "test" in splits
+
+    if args.dataset == 'combined': #nii
+        build = lambda mode: Combined(args, mode=mode)
+        workers = (4, 4)
     elif args.dataset == 'amos':
         '''amos data'''
-        amos_train_dataset = AMOS(args, args.data_path, transform = None, transform_msk= None, mode = 'Training', prompt=args.prompt)
-        amos_test_dataset = AMOS(args, args.data_path, transform = None, transform_msk= None, mode = 'Test', prompt=args.prompt)
-
-        nice_train_loader = DataLoader(amos_train_dataset, batch_size=1, shuffle=True, num_workers=8, pin_memory=True)
-        nice_test_loader = DataLoader(amos_test_dataset, batch_size=1, shuffle=False, num_workers=1, pin_memory=True)
+        # AMOS predates the manifest CSVs and has no grouped split yet, so it has no
+        # val fold to hold out -- an -eval_split val run on it has nothing to score.
+        amos_kwargs = dict(transform=None, transform_msk=None, prompt=args.prompt)
+        nice_train_loader = DataLoader(
+            AMOS(args, args.data_path, mode='Training', **amos_kwargs),
+            batch_size=1, shuffle=True, num_workers=8, pin_memory=True,
+        ) if want_train else None
+        nice_test_loader = DataLoader(
+            AMOS(args, args.data_path, mode='Test', **amos_kwargs),
+            batch_size=1, shuffle=False, num_workers=1, pin_memory=True,
+        ) if want_test else None
+        return nice_train_loader, None, nice_test_loader
         '''end'''
     elif args.dataset == 'sarcoma':
-        sarcom_train_dataset = Sarcoma(args, subset="train")
-        sarcom_test_dataset = Sarcoma(args, subset="test")
-        
-        if args.distributed:
-            train_sampler = DistributedSampler(sarcom_train_dataset, num_replicas=world_size, rank=rank)
-            test_sampler = DistributedSampler(sarcom_test_dataset, num_replicas=world_size, rank=rank)
-
-            nice_train_loader = DataLoader(sarcom_train_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=train_sampler)
-            nice_test_loader = DataLoader(sarcom_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True, sampler=test_sampler)
-        else:
-            train_sampler = None
-            test_sampler = None
-            
-            nice_train_loader = DataLoader(sarcom_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
-            nice_test_loader = DataLoader(sarcom_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
-        '''end'''
+        build = lambda mode: Sarcoma(args, subset=mode)
+        workers = (4, 4)
     elif args.dataset == 'msd':
-        msd_train_dataset = MSD(args, mode="train")
-        msd_test_dataset = MSD(args, mode="test")
-        
-        if args.distributed:
-            train_sampler = DistributedSampler(msd_train_dataset, num_replicas=world_size, rank=rank, drop_last=True)
-            test_sampler = DistributedSampler(msd_test_dataset, num_replicas=world_size, rank=rank, drop_last=True)
-
-            nice_train_loader = DataLoader(
-                msd_train_dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=4,
-                pin_memory=True,
-                sampler=train_sampler
-            )
-            nice_test_loader = DataLoader(
-                msd_test_dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=2,
-                pin_memory=True,
-                sampler=test_sampler
-            )
-        else:
-            train_sampler = None
-            test_sampler = None
-            
-            nice_train_loader = DataLoader(msd_train_dataset, batch_size=1, shuffle=True, num_workers=4, pin_memory=True)
-            nice_test_loader = DataLoader(msd_test_dataset, batch_size=1, shuffle=False, num_workers=4, pin_memory=True)
-        '''end'''
+        build = lambda mode: MSD(args, mode=mode)
+        workers = (4, 2)
     elif args.dataset == 'btcv': #png
         '''btcv data'''
-        btcv_train_dataset = BTCV(args, subset='train')
-        btcv_test_dataset = BTCV(args, subset='test')
-        
-        if args.distributed:
-            train_sampler = DistributedSampler(btcv_train_dataset, num_replicas=world_size, rank=rank)
-            test_sampler = DistributedSampler(btcv_test_dataset, num_replicas=world_size, rank=rank)
-
-            nice_train_loader = DataLoader(
-                btcv_train_dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=2,
-                pin_memory=True,
-                sampler=train_sampler
-            )
-            nice_test_loader = DataLoader(
-                btcv_test_dataset,
-                batch_size=1,
-                shuffle=False,
-                num_workers=4,
-                pin_memory=True,
-                sampler=test_sampler
-            )
-        else:
-            train_sampler = None
-            test_sampler = None
-            
-            nice_train_loader = DataLoader(btcv_train_dataset, batch_size=1, shuffle=True, num_workers=2, pin_memory=True)
-            nice_test_loader = DataLoader(btcv_test_dataset, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
-        '''end'''
+        build = lambda mode: BTCV(args, subset=mode)
+        workers = (2, 2)
     else:
         raise ValueError(f"the dataset {args.dataset} is not supported now!!!")
-        
-    return nice_train_loader, nice_test_loader
+
+    train_workers, eval_workers = workers
+    loader_kwargs = dict(rank=rank, world_size=world_size, distributed=args.distributed)
+
+    nice_train_loader = (
+        _build_loader(build("train"), shuffle=True, num_workers=train_workers, **loader_kwargs)
+        if want_train else None
+    )
+    nice_val_loader = (
+        _build_loader(build("val"), shuffle=False, num_workers=eval_workers, **loader_kwargs)
+        if want_val else None
+    )
+    nice_test_loader = (
+        _build_loader(build("test"), shuffle=False, num_workers=eval_workers, **loader_kwargs)
+        if want_test else None
+    )
+
+    return nice_train_loader, nice_val_loader, nice_test_loader

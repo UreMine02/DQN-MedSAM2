@@ -109,13 +109,29 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
+    # Training only ever sees the training folds and the held-out validation fold, both
+    # carved out of the training manifest by patient group. The test manifest is not
+    # requested here and so is never even read: eval_3d.py is the only thing that scores
+    # it, once, against a checkpoint this run selected on val alone.
+    nice_train_loader, nice_val_loader, _ = get_dataloader(
+        args, rank=rank, world_size=world_size, splits=("train", "val"),
+    )
+    if nice_val_loader is None and rank == 0:
+        print("WARNING: -fold < 0 leaves no validation split; nothing is evaluated during "
+              "this run and best.pth will not be written -- only per-epoch checkpoints")
 
     '''checkpoint path and tensorboard'''
     #create checkpoint folder to save model
     root_path = args.checkpoint_path
     current_time = datetime.now(pytz.timezone("Australia/Adelaide")).strftime("%Y-%m-%d-%H-%M-%S")
     checkpoint_path = os.path.join(root_path, current_time)
+    if args.distributed:
+        # Every rank timestamps itself, so without this the ranks disagree on the
+        # directory and only rank 0's exists -- the path rank 0 prints would then not be
+        # the one another rank means, and eval_3d.py would be pointed at nothing.
+        shared = [checkpoint_path]
+        dist.broadcast_object_list(shared, src=0)
+        checkpoint_path = shared[0]
     if not os.path.exists(checkpoint_path) and args.save_ckpt and rank == 0:
         os.makedirs(checkpoint_path)
         print(f"checkpoint saved in {checkpoint_path}")
@@ -145,11 +161,6 @@ def train(rank=0, world_size=0):
         net.train() if train_sam2 else net.eval()
         if args.distributed:
             nice_train_loader.sampler.set_epoch(epoch)
-        #     net.module.image_encoder.eval()
-        #     net.module.sam_prompt_encoder.eval()
-        # else:
-        #     net.image_encoder.eval()
-        #     net.sam_prompt_encoder.eval()
 
         if agent is not None:
             agent.set_epoch(epoch, distributed=args.distributed)
@@ -195,72 +206,75 @@ def train(rank=0, world_size=0):
 
         net.eval()
         new_best = False
-        if epoch % args.val_freq == 0 or epoch == args.ep-1:
-            iou, dice = function.validation_sam(args, nice_test_loader, epoch, net, rank=rank)
-            # iou, dice = net(args, nice_test_loader, epoch, net, rank=rank, training=False)
-
-            if args.distributed:
-                dist.all_reduce(iou), dist.all_reduce(dice)
-                iou, dice = iou.item(), dice.item()
-                iou, dice = iou/world_size, dice/world_size
-                if rank == 0:
-                    print(f"val/IOU: {iou}, val/dice : {dice}")
-            else:
-                iou, dice = iou.item(), dice.item()
+        val_dice = None
+        if nice_val_loader is not None and (epoch % args.val_freq == 0 or epoch == args.ep-1):
+            iou, dice = evaluate(args, nice_val_loader, epoch, net, rank, world_size)
+            val_dice = dice
+            if rank == 0:
                 print(f"val/IOU: {iou}, val/dice : {dice}")
 
             if dice > best_dice and rank==0:
                 print(f"Achieve best Dice: {dice:4f} > {best_dice:4f}")
                 best_dice = dice
                 new_best = True
-            
+
             # NOTE: WANDB
             if args.wandb_enabled:
                 wandb.log({'val/IOU' : iou, 'val/dice' : dice}, step=epoch)
-            
-        if args.save_ckpt:
-            if args.distributed and rank == 0:
-                ckpt = {
-                    'dice': dice,
-                    'epoch': epoch,
-                    'model': net.module.state_dict(),
-                }
-                if not args.no_agent:
-                    ckpt['agent'] = net.module.agent.state_dict()
-                torch.save(ckpt, os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
 
-                if new_best:
-                    torch.save(ckpt, os.path.join(checkpoint_path, f"best.pth"))
-
-            elif not args.distributed:
-                ckpt = {
-                    'dice': dice,
-                    'epoch': epoch,
-                    'model': net.state_dict(),
-                }
-                if not args.no_agent:
-                    ckpt['agent'] = net.agent.state_dict()
-
-                torch.save(ckpt, os.path.join(checkpoint_path, f"epoch_{epoch}_dice{dice:.4f}.pth"))
-
-                if new_best:
-                    torch.save(ckpt, os.path.join(checkpoint_path, f"best.pth"))
+        if args.save_ckpt and rank == 0:
+            # Only tag the filename with a score from this epoch -- on non-val epochs the
+            # previous fix reused a stale dice from up to val_freq epochs earlier.
+            tag = f"dice{val_dice:.4f}" if val_dice is not None else "noval"
+            save_checkpoint(args, net, epoch, val_dice, os.path.join(checkpoint_path, f"epoch_{epoch}_{tag}.pth"))
+            if new_best:
+                save_checkpoint(args, net, epoch, val_dice, os.path.join(checkpoint_path, "best.pth"))
 
         if args.distributed:
             torch.distributed.barrier()
 
+    # Training ends here. The test split is deliberately not scored: run eval_3d.py
+    # against the checkpoint below, with the same -fold/-n_folds/-split_seed/-fold_csv,
+    # so the test number is read exactly once and never steers a training decision.
+    if rank == 0:
+        best_ckpt = os.path.join(checkpoint_path, "best.pth")
+        if args.save_ckpt and os.path.exists(best_ckpt):
+            print(f"Best val dice {best_dice:.4f}; selected checkpoint: {best_ckpt}")
+        else:
+            print(f"Best val dice {best_dice:.4f}; no best.pth written "
+                  f"(checkpoints in {checkpoint_path})")
+        if args.wandb_enabled:
+            wandb.summary['val/best_dice'] = best_dice
+
     if args.distributed:
         cleanup()
 
+
+def evaluate(args, loader, epoch, net, rank, world_size):
+    """Run validation_sam and average the metrics across ranks."""
+    iou, dice = function.validation_sam(args, loader, epoch, net, rank=rank)
+    if args.distributed:
+        dist.all_reduce(iou), dist.all_reduce(dice)
+        return iou.item() / world_size, dice.item() / world_size
+    return iou.item(), dice.item()
+
+
+def save_checkpoint(args, net, epoch, dice, path):
+    target = net.module if args.distributed else net
+    ckpt = {'dice': dice, 'epoch': epoch, 'model': target.state_dict()}
+    if not args.no_agent:
+        ckpt['agent'] = target.agent.state_dict()
+    torch.save(ckpt, path)
+
 def main():
-    seed = 0
+    args = cfg.parse_args()
+    seed = args.seed
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = False
-    args = cfg.parse_args()
 
     if args.distributed:
         world_size = torch.cuda.device_count()

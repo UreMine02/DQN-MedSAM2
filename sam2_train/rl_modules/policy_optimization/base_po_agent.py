@@ -256,7 +256,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_query=n_query,
             query_dim=self.hidden_dim,
             spatial_dim=image_summary_dim,
-            n_heads=1,
+            n_heads=4,
             d_heads=image_summary_dim,
             n_layers=n_layers,
             dropout=0.0
@@ -265,7 +265,7 @@ class BaseFeatureSummarizer(nn.Module):
             n_query=n_query,
             query_dim=memory_dim,
             spatial_dim=memory_dim,
-            n_heads=1,
+            n_heads=2,
             d_heads=memory_dim,
             n_layers=n_layers,
             dropout=0.0
@@ -636,8 +636,8 @@ class BasePOAgent(BaseAgent):
         self.value_net = BaseValueNetwork(self.feat_summarizer.hidden_dim, n_layers=n_layers)
 
         self.optimizer = optim.AdamW([
-            {"params": self.policy_net.parameters(),      "lr": policy_lr},
-            {"params": self.value_net.parameters(),       "lr": value_lr },
+            {"params": self.policy_net.parameters(),      "lr": policy_lr               },
+            {"params": self.value_net.parameters(),       "lr": value_lr                },
             {"params": self.feat_summarizer.parameters(), "lr": max(policy_lr, value_lr)},
         ])
         
@@ -646,18 +646,8 @@ class BasePOAgent(BaseAgent):
         self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
             self.optimizer,
             T_max=lr_T_max,
-            eta_min=min_lr,
+            eta_min=min_lr
         )
-
-        # self.policy_optimizer = optim.AdamW(
-        #     list(self.policy_net.parameters()) + 
-        #     list(self.feat_summarizer.parameters()),
-        #     lr=policy_lr,
-        # )
-        # self.value_optimizer = optim.AdamW(
-        #     list(self.value_net.parameters()),
-        #     lr=value_lr,
-        # )
 
         self.tau = tau
         self.entropy_weight= entropy_weight

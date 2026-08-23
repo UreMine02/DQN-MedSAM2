@@ -68,18 +68,27 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader = get_dataloader(args)
-    
+    # This is the only place the held-out test manifest is ever scored -- train_3d.py
+    # never loads it. Supports for the queries are drawn from the training fold, so pass
+    # the same -fold/-n_folds/-split_seed/-fold_csv the checkpoint was trained with, or
+    # the support pool will not be the data the model saw.
+    _, nice_val_loader, nice_test_loader = get_dataloader(
+        args, rank=rank, world_size=world_size, splits=(args.eval_split,),
+    )
+
     net.eval()
 
-    iou, dice = function.validation_sam(args, nice_test_loader, 0, net, rank=rank)
-          
+    loader = nice_val_loader if args.eval_split == "val" else nice_test_loader
+    if loader is None:
+        raise ValueError("-eval_split val requires -fold >= 0")
+
+    iou, dice = function.validation_sam(args, loader, 0, net, rank=rank)
+
     if args.distributed:
         dist.all_reduce(iou), dist.all_reduce(dice)
         iou, dice = iou/world_size, dice/world_size
-        print(f"val/IOU: {iou}, val/dice : {dice}")
-    else:
-        print(f"val/IOU: {iou}, val/dice : {dice}")
+
+    print(f"{args.eval_split}/IOU: {iou}, {args.eval_split}/dice : {dice}")
             
     if args.distributed:
         cleanup()         

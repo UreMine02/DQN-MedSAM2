@@ -111,7 +111,7 @@ def train(rank=0, world_size=0):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    nice_train_loader, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
+    nice_train_loader, _, nice_test_loader = get_dataloader(args, rank=rank, world_size=world_size)
     
     net.train()
     net.image_encoder.eval()

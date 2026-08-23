@@ -14,6 +14,8 @@ from torchvision.transforms import v2
 from torchvision import tv_tensors
 from monai import transforms
 
+from .splits import check_support_coverage, group_key, read_manifest, resolve_split, sample_support_index
+
 
 def scaling(image, scale=1, eps=1e-6):
     image_min = image.min()
@@ -28,25 +30,32 @@ def remove_negative_samples(image, mask):
 
 class MSD(Dataset):
     def __init__(self, args, mode="train"):
-        assert mode in ["train", "test"], f"mode must be either 'train' or 'test', got {mode}"
-        self.subset = "Tr" if mode == 'train' else 'Ts'
         self.root = args.data_path
         self.mode = mode
-        df = []
 
         csv_root = "./data/MSD"
-        for csv_path in os.listdir(csv_root):
-            if not csv_path.startswith(args.task) or not csv_path.endswith(f"{self.subset}.csv"):
-                continue
+        query_df, support_df = resolve_split(
+            read_manifest(csv_root, "Tr", task_prefix=args.task),
+            lambda: read_manifest(csv_root, "Ts", task_prefix=args.task),
+            mode, args,
+        )
+        check_support_coverage(query_df, support_df, args.num_support, mode, label=f"MSD {args.task or 'all'} {mode}")
 
-            df.append(pd.read_csv(os.path.join(csv_root, csv_path), index_col=0))
+        self.gt_path = np.asarray(query_df["gt_path"])
+        self.task = np.asarray(query_df["task"])
+        self.obj_id = np.asarray(query_df["obj_id"])
+        self.n_pos = np.asarray(query_df["n_pos"])
+        self.fold = np.asarray(query_df["fold"]) if mode != "test" else None
 
-        df = pd.concat(df)
-        self.gt_path = np.asarray(df["gt_path"])
-        self.task = np.asarray(df["task"])
-        self.obj_id = np.asarray(df["obj_id"])
-        self.n_pos = np.asarray(df["n_pos"])
+        # Supports always come from the train fold, so val/test never condition on
+        # labels they are being scored against.
+        self.sup_gt_path = np.asarray(support_df["gt_path"])
+        self.sup_task = np.asarray(support_df["task"])
+        self.sup_obj_id = np.asarray(support_df["obj_id"])
+        self.sup_n_pos = np.asarray(support_df["n_pos"])
+        self.sup_fold = np.asarray(support_df["fold"])
 
+        self.split_seed = args.split_seed
         self.image_size = args.image_size
         self.num_support = args.num_support
         self.max_slices = args.video_length
@@ -67,16 +76,12 @@ class MSD(Dataset):
     def __getitem__(self, index):
         task = self.task[index]
         obj_id = self.obj_id[index]
-        support_list = (self.task == self.task[index]) & \
-                        (self.obj_id == self.obj_id[index]) & \
-                        (self.n_pos >= self.num_support)
-        support_list = [i for i in np.argwhere(support_list).squeeze() if i != index]
-        support_index = np.random.choice(support_list, size=1)[0]
+        support_index = sample_support_index(self, index, task, obj_id)
 
         label_path = os.path.join(self.root, self.gt_path[index])
         image_path = os.path.join(self.root, label_path.replace("label", "image"))
 
-        support_label_path = os.path.join(self.root, self.gt_path[support_index])
+        support_label_path = os.path.join(self.root, self.sup_gt_path[support_index])
         support_image_path = os.path.join(self.root, support_label_path.replace("label", "image"))
 
         (
