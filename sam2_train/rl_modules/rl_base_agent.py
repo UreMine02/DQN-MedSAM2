@@ -1,4 +1,7 @@
+import contextlib
 from collections import deque
+
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from sam2_train.rl_modules.rl_components import RLReplayInstance, RLStates
 
@@ -77,3 +80,25 @@ class BaseAgent:
         
     def set_epoch(self, epoch, distributed=False):
         self.epoch = epoch
+
+    @contextlib.contextmanager
+    def unwrapped_modules(self):
+        """Expose the raw sub-modules hiding behind any DDP wrappers, for the duration
+        of the block.
+
+        Validation runs on one rank only, and DDP's forward broadcasts buffers across
+        every rank before it runs the wrapped module -- so a single rank calling a
+        DDP-wrapped policy would block forever waiting on ranks that are sitting at a
+        later barrier. The wrapped attributes are whatever `to_distributed` replaced
+        (actor, or feat_summarizer/policy_net/value_net), found by type rather than by
+        name so both agent hierarchies are covered; they are restored on the way out
+        even if the body raises, since training after validation still needs them.
+        """
+        wrapped = {name: mod for name, mod in vars(self).items() if isinstance(mod, DDP)}
+        for name, mod in wrapped.items():
+            setattr(self, name, mod.module)
+        try:
+            yield self
+        finally:
+            for name, mod in wrapped.items():
+                setattr(self, name, mod)

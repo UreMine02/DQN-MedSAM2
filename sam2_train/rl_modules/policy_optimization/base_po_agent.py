@@ -161,6 +161,8 @@ class POReplayInstance(RLReplayInstance):
         return_=None,
         action_mask=None,
         policy_weight=1.0,
+        extra_samples=None,
+        extra_weight=1.0,
     ):
         super().__init__(frame_idx, state, action, next_state, loss_before, loss_after, reward, eps)
         # log-prob of the single joint (candidate, evicted-slot) decision, or of no-op.
@@ -173,6 +175,15 @@ class POReplayInstance(RLReplayInstance):
         # 0 for transitions whose action was forced by the environment (bank not full
         # yet): they still train the critic but must not enter the policy loss.
         self.policy_weight = policy_weight
+        # Actions the environment scored at this same state but did not take, as
+        # {"action", "log_probs", "reward"}; see get_side_sample. Each also gets a
+        # "next_value" once the following frame can build its successor state.
+        self.extra_samples = extra_samples or []
+        self.extra_weight = extra_weight
+        # V(s') for the successor the taken action actually produced, estimated the same
+        # way as the branches' so the difference between them is meaningful. None on the
+        # terminal transition, which has no continuation to compare.
+        self.next_value = None
 
     def get(self):
         # Call tuple to create a copy
@@ -191,6 +202,40 @@ class POReplayInstance(RLReplayInstance):
             self.advantage,
             self.action_mask,
             self.policy_weight,
+            # Real, on-trajectory transition: the only kind the critic may fit.
+            1.0,
+        ))
+
+    def get_side_sample(self, extra, return_, advantage):
+        """One counterfactual action, in the same tuple layout as get_updated.
+
+        It shares this transition's state and support -- only the action, its log-prob
+        under the behaviour policy, and the immediate reward differ. Its return and
+        advantage are handed in by final_trajectory, which offsets this transition's own
+        by the full one-step Q difference (reward *and* bootstrapped continuation), so
+        the two land on one scale without the branch inheriting a future it would not
+        have had.
+
+        `next_state` is this transition's, which is not the branch's successor -- the
+        buffer keeps it only for shape, since train_step reads returns and advantages
+        that are already computed.
+
+        Value weight is 0: the critic estimates V(s) under the policy, and s already
+        appears once with the on-trajectory return. Letting the branches in would train
+        it towards the mean over sampled actions instead, which is not V.
+        """
+        return tuple((
+            self.state,
+            extra["log_probs"],
+            extra["action"],
+            extra["reward"],
+            self.next_state,
+            self.done,
+            return_,
+            advantage,
+            self.action_mask,
+            self.policy_weight * self.extra_weight,
+            0.0,
         ))
 
     def set_return_advantage(self, return_, advantage):
@@ -612,6 +657,11 @@ class BaseValueNetwork(nn.Module):
 
 
 class BasePOAgent(BaseAgent):
+    # The environment may ask select_action for more than one action per decision and
+    # score them all; final_trajectory knows how to fold the extras into the buffer.
+    # BaseAgent's other subclasses (the Q hierarchy) take no such argument.
+    supports_action_resampling = True
+
     def __init__(
         self,
         num_maskmem,
@@ -742,9 +792,43 @@ class BasePOAgent(BaseAgent):
             return_ = return_.squeeze(-1)
             advantage = return_ - curr_value.squeeze(-1)
 
+        scale = self.return_scale.std
         for i, ins in enumerate(self.await_trajectory.transitions):
             ins.set_return_advantage(return_[i].cpu(), advantage[i].cpu())
             self.replay_buffer.append(ins.get_updated())
+
+            # Counterfactual actions scored at this same state (see select_action's
+            # num_extra). A branch is never rolled out, so its multi-step return cannot
+            # be measured -- but the difference between two actions at the same state is
+            # exactly Q(s,a') - Q(s,a), and both halves of that are available: the
+            # measured immediate reward, plus the critic's value of the successor each
+            # action produces (attached one frame later by set_pending_branch_values).
+            #
+            #   A(s,a') = A_GAE(s,a) + [r' + g*V(s'_a')] - [r + g*V(s'_a)]
+            #
+            # so a branch inherits the taken action's full multi-step credit and then
+            # departs from it by the whole one-step Q difference, long-horizon term
+            # included -- not by the immediate reward alone, which would rank actions
+            # myopically and hide exactly what a memory bank is for. It lands on the
+            # same scale as the real advantage by construction, being that advantage
+            # plus a difference of two quantities in the same (scaled) space, and it
+            # collapses back to the reward difference when the critic sees no difference
+            # between the successors, or at a terminal where there is no continuation.
+            if not ins.extra_samples:
+                continue
+            terminal = float(done[i].item())
+            for extra in ins.extra_samples:
+                q_diff = (extra["reward"] - ins.reward) / scale
+                extra_value, taken_value = extra.get("next_value"), ins.next_value
+                if extra_value is not None and taken_value is not None:
+                    # V is already in the scaled-return space the critic was trained in,
+                    # matching the scaled reward difference above.
+                    q_diff += self.gamma * (1.0 - terminal) * (extra_value - taken_value)
+                self.replay_buffer.append(ins.get_side_sample(
+                    extra,
+                    return_[i].cpu() + q_diff,
+                    advantage[i].cpu() + q_diff,
+                ))
 
         self.await_trajectory = None
 
@@ -799,6 +883,38 @@ class BasePOAgent(BaseAgent):
             self.val_action_entropies = []
         return stats
 
+    @torch.no_grad()
+    def estimate_values(self, states):
+        """V for each state, as plain floats, under the current critic.
+
+        Used by the environment to value the successors of counterfactual actions while
+        the volume is still being tracked. That is the same critic `final_trajectory`
+        will use minutes later -- the agent only updates between volumes -- and in any
+        case only differences between these numbers are read, so they are consistent
+        with each other by construction.
+        """
+        if not states:
+            return []
+        self.feat_summarizer.eval()
+        self.value_net.eval()
+        device = next(self.feat_summarizer.parameters()).device
+        feats = stack_state_feats(states, device=device)
+        values = self.value_net(**self.feat_summarizer(**feats))
+        return values.reshape(-1).float().cpu().tolist()
+
+    def set_pending_branch_values(self, taken_value, extra_values):
+        """Attach the continuation estimates for the transition still awaiting closure.
+
+        Called one frame after the decision, which is the earliest its successors can be
+        built; the transition is still open at that point, so this reaches the right one.
+        """
+        instance = self.await_replay_instance
+        if instance is None or not getattr(instance, "extra_samples", None):
+            return
+        instance.next_value = taken_value
+        for extra, value in zip(instance.extra_samples, extra_values):
+            extra["next_value"] = value
+
     def init_new_replay_instance(self, **instance_info):
         self.close_await_replay_instance(next_state=instance_info.get("state"))
         self.await_replay_instance = POReplayInstance(**instance_info)
@@ -809,12 +925,20 @@ class BasePOAgent(BaseAgent):
         self.await_trajectory.add_transition(instance)
 
     @torch.no_grad()
-    def select_action(self, state: RLStates, valid_actions, training=False):
+    def select_action(self, state: RLStates, valid_actions, training=False, num_extra=0):
         """Sample the swap/no-op action for this timestep.
 
         Only meaningful once the bank is full -- while it's still filling there is
         nothing to evict, so the caller inserts the incoming frame directly without
         going through the policy at all (see sam2_video_predictor.agent_update_first_stage).
+
+        `num_extra` additionally draws that many *other* actions from the same
+        distribution and returns them alongside. They are not executed: the caller scores
+        each with the same counterfactual it uses for the taken action, and they come back
+        as extra policy-gradient samples on this state. One decision otherwise yields one
+        sample no matter how expensive the state was to reach, and this environment is
+        expensive -- a frame's state costs a full tracking step, whereas scoring one more
+        action costs a single forward.
         """
         self.feat_summarizer.eval()
         self.policy_net.eval()
@@ -844,6 +968,21 @@ class BasePOAgent(BaseAgent):
             action_idx = torch.argmax(valid_probs, keepdim=True)
 
         action = valid_actions[action_idx].item()
+        valid_log_probs = valid_probs.log()
+
+        # Without replacement and excluding the action taken: each extra action costs the
+        # caller a full SAM2 forward to score, and a duplicate would buy nothing. Their
+        # log-probs are read off the same (full valid-support) distribution as the taken
+        # action's, so the PPO ratio means the same thing for all of them.
+        extra_actions, extra_log_probs = [], []
+        if training and num_extra > 0 and valid_actions.numel() > 1:
+            residual = valid_probs.clone()
+            residual[action_idx] = 0.0
+            k = min(int(num_extra), int((residual > 0).sum().item()))
+            if k > 0:
+                extra_idx = torch.multinomial(residual, num_samples=k, replacement=False)
+                extra_actions = valid_actions[extra_idx].tolist()
+                extra_log_probs = valid_log_probs[extra_idx].tolist()
 
         if not training:
             # Greedy decisions only happen outside training (validation, or any other
@@ -855,9 +994,13 @@ class BasePOAgent(BaseAgent):
             "action": action,
             # Scalar, not a 1-element list: a list makes old_log_probs [B,1,1] in
             # train_step and the PPO ratio broadcasts into a [B,B,1] outer product.
-            "log_probs": valid_probs.log()[action_idx].item(),
+            "log_probs": valid_log_probs[action_idx].item(),
             "action_mask": action_mask,
             "policy_weight": 1.0,
+            # Empty unless num_extra was asked for; the caller scores these and hands
+            # them back through init_new_replay_instance's `extra_samples`.
+            "extra_actions": extra_actions,
+            "extra_log_probs": extra_log_probs,
         }
 
     def to(self, device, non_blocking=False):
@@ -968,6 +1111,7 @@ class BasePOAgent(BaseAgent):
             advantages,
             action_masks,
             policy_weights,
+            value_weights,
         ) = zip(*batch)
 
         feats = stack_state_feats(states, device=device)
@@ -980,6 +1124,10 @@ class BasePOAgent(BaseAgent):
         returns = torch.FloatTensor(returns).unsqueeze(1)
         action_masks = torch.stack(action_masks)
         policy_weights = torch.FloatTensor(policy_weights).unsqueeze(1)
+        # 0 for the counterfactual branches: they share a state with the transition they
+        # were sampled next to, so fitting the critic to their returns as well would pull
+        # V(s) towards the mean over sampled actions instead of V under the policy.
+        value_weights = torch.FloatTensor(value_weights).unsqueeze(1)
 
         actions = actions.to(device=device, non_blocking=True)
         rewards = rewards.to(device=device, dtype=torch.float32, non_blocking=True)
@@ -989,6 +1137,7 @@ class BasePOAgent(BaseAgent):
         returns = returns.to(device=device, dtype=torch.float32, non_blocking=True)
         action_masks = action_masks.to(device=device, non_blocking=True)
         policy_weights = policy_weights.to(device=device, dtype=torch.float32, non_blocking=True)
+        value_weights = value_weights.to(device=device, dtype=torch.float32, non_blocking=True)
 
         # Normalize over exactly the transitions that enter the policy loss. The forced
         # bank-filling steps carry weight 0 -- memory_bank_size of them, once per volume
@@ -1064,12 +1213,25 @@ class BasePOAgent(BaseAgent):
 
             # Same encode as the policy.
             pred_value = self.value_net(**summary)
-            value_loss = F.mse_loss(pred_value, returns)
-            
+            value_weight_sum = value_weights.sum().clamp(min=1.0)
+            value_loss = (
+                ((pred_value - returns) ** 2) * value_weights
+            ).sum() / value_weight_sum
+
             with torch.no_grad():
-                return_var = returns.var(unbiased=False)
-                explained_variance = 1.0 - (returns - pred_value).var(unbiased=False) / return_var.clamp(min=1e-8)
-                metrics["explained_variance"] = explained_variance.item()
+                # Explained variance over the same rows the loss above fits: a branch's
+                # return is the real one shifted by a reward difference, so folding them
+                # in would inflate the target variance the critic is scored against.
+                fitted = value_weights.reshape(-1) > 0
+                if fitted.any():
+                    fitted_returns = returns[fitted]
+                    fitted_pred = pred_value[fitted]
+                    return_var = fitted_returns.var(unbiased=False)
+                    explained_variance = 1.0 - (fitted_returns - fitted_pred).var(unbiased=False) / return_var.clamp(min=1e-8)
+                    metrics["explained_variance"] = explained_variance.item()
+                # Share of this minibatch that came from extra sampled actions rather
+                # than from steps actually taken.
+                metrics["side_sample_frac"] = (1.0 - value_weights).mean().item()
 
             total_loss = policy_loss + 0.5 * value_loss
             

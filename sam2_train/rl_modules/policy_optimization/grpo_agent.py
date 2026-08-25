@@ -81,6 +81,10 @@ class GRPOActor(nn.Module):
         return policy_probs
 
 class GRPOAgent(BasePOAgent):
+    # Its select_action has its own group-sampling signature and it collects groups
+    # through generate_rl_steps, not agent_update_first_stage's extra samples.
+    supports_action_resampling = False
+
     def __init__(
         self,
         num_maskmem,

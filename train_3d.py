@@ -7,9 +7,10 @@
 
 import os
 import time
+import random
 import pytz
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import partial
 
 import cfg
@@ -28,24 +29,60 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 import wandb # NOTE: WANDB
 
-def setup(rank, world_size):
-    os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12348'
-    dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
+def setup(args, rank, world_size):
+    os.environ['MASTER_ADDR'] = args.master_addr
+    os.environ['MASTER_PORT'] = str(args.master_port)
+    # Pin this process to its GPU before the process group is built. Without it every
+    # rank's NCCL collectives and any device-less .cuda() default to device 0, which
+    # either serialises the run onto one GPU or deadlocks.
+    torch.cuda.set_device(rank)
+    # The default 30-minute collective timeout is too tight here: on validation epochs
+    # every other rank sits in evaluate()'s broadcast for as long as rank 0 takes to score
+    # the entire split by itself, and rank 0 then writes checkpoints while they wait at the
+    # end-of-epoch barrier.
+    dist.init_process_group(
+        backend="nccl", rank=rank, world_size=world_size,
+        timeout=timedelta(hours=6),
+    )
 
 def cleanup():
     dist.destroy_process_group()
 
-def train(rank=0, world_size=0):
+def is_main(rank):
+    return rank == 0
+
+def reduce_mean(values, device, world_size):
+    """Average a list of python scalars across every rank.
+
+    All ranks must call this with the same-length list, which is why it is only used for
+    the SAM2 losses -- those keys exist every epoch. The agent's metric dict does not:
+    a rank whose replay buffer has not filled returns nothing, so reducing it key-by-key
+    would deadlock on the ranks that do have keys.
+    """
+    reduced = torch.tensor(values, dtype=torch.float64, device=device)
+    dist.all_reduce(reduced, op=dist.ReduceOp.SUM)
+    return (reduced / world_size).tolist()
+
+def train(rank=0, world_size=1):
     args = cfg.parse_args()
 
     if args.distributed:
-        setup(rank, world_size)
+        setup(args, rank, world_size)
         GPUdevice = torch.device('cuda', rank)
     else:
+        rank, world_size = 0, 1
         GPUdevice = torch.device('cuda', args.gpu_device)
-        
-    # NOTE: WANDB
+        torch.cuda.set_device(GPUdevice)
+
+    # mp.spawn re-imports this module in each child, so main()'s seeding never reached
+    # them. Seed here instead, offset by rank so the ranks draw different augmentations
+    # and chunk offsets rather than all replaying rank 0's stream. Model init still
+    # matches across ranks: DDP broadcasts rank 0's parameters at construction.
+    set_seed(args.seed + rank)
+
+    # NOTE: WANDB -- one run per job, owned by rank 0. Every other rank turns the flag
+    # off for itself, which also silences the wandb.log calls inside func_3d.function.
+    args.wandb_enabled = args.wandb_enabled and is_main(rank)
     if args.wandb_enabled:
         wandb.init(
             project="dqn-medsam2",
@@ -63,7 +100,8 @@ def train(rank=0, world_size=0):
         wandb.watch(net)
         
     if args.pretrain:
-        print(args.pretrain)
+        if is_main(rank):
+            print(args.pretrain)
         weights = torch.load(args.pretrain, map_location=GPUdevice)
         net.load_state_dict(weights["model"], strict=False)
         if "agent" in weights.keys() and not args.no_agent:
@@ -82,22 +120,34 @@ def train(rank=0, world_size=0):
         agent_n_params = agent.num_parameters()
 
     n_parameters_tot = sum(p.numel() for p in net.parameters())
-    print(f'Number of sam2 params: {n_parameters_tot:,}')
-    print(f'Number of agent params: {agent_n_params:,}')
 
     head, fix = [], []
     for k, v in net.named_parameters():
         (head if v.requires_grad else fix).append(v)
 
-    print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params:,}')
-    print(f'Parameters fixed: {sum(p.numel() for p in fix):,}')
+    if is_main(rank):
+        print(f'Number of sam2 params: {n_parameters_tot:,}')
+        print(f'Number of agent params: {agent_n_params:,}')
+        print(f'Trainable parameters: {sum(p.numel() for p in head) + agent_n_params:,}')
+        print(f'Parameters fixed: {sum(p.numel() for p in fix):,}')
+        if args.distributed:
+            print(f'Distributed over {world_size} GPU(s); evaluation runs on rank 0 alone')
 
     if args.distributed:
-        net = DDP(net, device_ids=[rank], output_device=rank, find_unused_parameters=True)
+        # device_ids=None on purpose. With device_ids set, DDP scatters its forward inputs,
+        # and scatter rebuilds every dict it is handed -- so the SAM2 tracking state would
+        # arrive inside the module as a *copy*. Each chunk's registered objects and memory
+        # bank would then be written to that copy and thrown away, and the next chunk would
+        # come back with an empty object registry (KeyError on obj_id in the loss loop).
+        # With device_ids=None DDP skips the scatter and passes the state through by
+        # reference, exactly as the single-GPU path does; the caller already moves every
+        # tensor to this rank's device, and torch.cuda.set_device above makes it the default.
+        net = DDP(net, device_ids=None, output_device=None, find_unused_parameters=True)
         # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
-            print("Wrapped agent for distributed training")
+            if is_main(rank):
+                print("Wrapped agent for distributed training")
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
@@ -175,6 +225,12 @@ def train(rank=0, world_size=0):
             aux_loss,
             agent_loss
         ) = function.train_sam(args, net, optimizer, nice_train_loader, epoch, rank=rank, train_sam2=train_sam2)
+        # Each rank only saw its own shard of the epoch, so its losses describe a subset
+        # of the data. Average them so the logged curve is the epoch's, not rank 0's.
+        if args.distributed:
+            loss, dice_loss, focal_loss, mae_loss, bce_loss, aux_loss = reduce_mean(
+                [loss, dice_loss, focal_loss, mae_loss, bce_loss, aux_loss], GPUdevice, world_size,
+            )
         loss_dict = {
             'train/loss': loss,
             'train/dice loss': dice_loss,
@@ -201,8 +257,9 @@ def train(rank=0, world_size=0):
             wandb.log(loss_dict, step=epoch)
             
         time_end = time.time()
-        print(loss_dict)
-        print('time_for_training ', time_end - time_start)
+        if is_main(rank):
+            print(loss_dict)
+            print('time_for_training ', time_end - time_start)
 
         net.eval()
         new_best = False
@@ -251,12 +308,30 @@ def train(rank=0, world_size=0):
 
 
 def evaluate(args, loader, epoch, net, rank, world_size):
-    """Run validation_sam and average the metrics across ranks."""
-    iou, dice = function.validation_sam(args, loader, epoch, net, rank=rank)
-    if args.distributed:
-        dist.all_reduce(iou), dist.all_reduce(dice)
-        return iou.item() / world_size, dice.item() / world_size
-    return iou.item(), dice.item()
+    """Score the whole validation split on one GPU and hand the result to every rank.
+
+    Evaluation is not sharded. Splitting it across ranks gives each one a different set
+    of (task, obj_id) classes to average over, and DistributedSampler pads the tail by
+    repeating volumes, so the mean-of-means the old all_reduce computed drifted from the
+    single-GPU number and drifted differently for every world size -- which is exactly
+    what makes checkpoints picked by one run incomparable to another's. Rank 0 runs the
+    full split against its (unwrapped) replica, which is parameter-identical to the
+    others, and broadcasts the scores so the ranks stay in step for the barrier and the
+    best-checkpoint decision below.
+    """
+    if not args.distributed:
+        iou, dice = function.validation_sam(args, loader, epoch, net, rank=rank)
+        return iou.item(), dice.item()
+
+    scores = torch.zeros(2, dtype=torch.float32, device=torch.device('cuda', rank))
+    if is_main(rank):
+        iou, dice = function.validation_sam(
+            args, loader, epoch, function.unwrap(net),
+            rank=rank, device=torch.device('cuda', rank),
+        )
+        scores[0], scores[1] = iou, dice
+    dist.broadcast(scores, src=0)
+    return scores[0].item(), scores[1].item()
 
 
 def save_checkpoint(args, net, epoch, dice, path):
@@ -266,9 +341,8 @@ def save_checkpoint(args, net, epoch, dice, path):
         ckpt['agent'] = target.agent.state_dict()
     torch.save(ckpt, path)
 
-def main():
-    args = cfg.parse_args()
-    seed = args.seed
+def set_seed(seed):
+    random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -276,8 +350,19 @@ def main():
     torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = False
 
+
+def main():
+    args = cfg.parse_args()
+    set_seed(args.seed)
+
     if args.distributed:
         world_size = torch.cuda.device_count()
+        if world_size < 1:
+            raise RuntimeError("-distributed needs at least one visible CUDA device")
+        if world_size == 1:
+            print("WARNING: -distributed with a single visible GPU; set CUDA_VISIBLE_DEVICES "
+                  "to the GPUs you want, or drop -distributed")
+        print(f"Spawning {world_size} training rank(s) on port {args.master_port}")
         mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
     else:
         train()

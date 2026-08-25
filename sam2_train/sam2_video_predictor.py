@@ -232,6 +232,10 @@ class SAM2VideoPredictor(SAM2Base):
             "memory_bank_size": args.memory_bank_size,
             "recall_every": getattr(args, "recall_every", 1),
             "agent_act_every": getattr(args, "agent_act_every", 1),
+            # Extra actions scored per decision, and how much they count in the policy
+            # loss; see agent_update_first_stage. 0 keeps one sample per decision.
+            "extra_samples": getattr(args, "rl_extra_samples", 0),
+            "extra_weight": getattr(args, "rl_extra_weight", 1.0),
         }
         # Validation tracks a whole volume in a single pass, so `chunk_start` is 0 and
         # `train_advance_chunk` never runs; the fields exist so the two paths index
@@ -356,6 +360,10 @@ class SAM2VideoPredictor(SAM2Base):
             "memory_bank_size": args.memory_bank_size,
             "recall_every": getattr(args, "recall_every", 1),
             "agent_act_every": getattr(args, "agent_act_every", 1),
+            # Extra actions scored per decision, and how much they count in the policy
+            # loss; see agent_update_first_stage. 0 keeps one sample per decision.
+            "extra_samples": getattr(args, "rl_extra_samples", 0),
+            "extra_weight": getattr(args, "rl_extra_weight", 1.0),
         }
         # Owned by the caller and shared by every chunk of one (volume, obj_id). Keyed by
         # volume-global frame index, same as everything else now that the state itself
@@ -1920,10 +1928,90 @@ class SAM2VideoPredictor(SAM2Base):
         -- inverting the temporal encoding for that slot. Sorting in place (rather than
         rebinding) keeps the identity of the dict that callers already hold.
         """
-        bank = output_dict["non_cond_frame_outputs"]
+        SAM2VideoPredictor._sort_bank_in_place(output_dict["non_cond_frame_outputs"])
+
+    @staticmethod
+    def _sort_bank_in_place(bank):
+        """Reorder one memory bank dict chronologically, in place; see _sort_memory_bank
+        for why order is load-bearing. Split out because the counterfactual branches
+        scored in agent_update_first_stage build their own bank dicts and have to satisfy
+        the same invariant as the real one."""
         items = sorted(bank.items())
         bank.clear()
         bank.update(items)
+
+    def _compact_memory_out(self, inference_state, output):
+        """The three fields prepare_rl_state reads off a frame's tracker output.
+
+        Same normalization `_run_single_frame_inference` applies before a frame enters
+        the bank, so a counterfactual frame is described exactly like a real one.
+        """
+        return {
+            "maskmem_features": output["maskmem_features"],
+            "maskmem_pos_enc": self._get_maskmem_pos_enc(inference_state, output),
+            "obj_ptr": output["obj_ptr"],
+        }
+
+    def _resolve_branch_successors(
+        self, inference_state, frame_idx, current_vision_feats, current_vision_pos_embeds
+    ):
+        """Value the successor states the previous frame's actions would have led to.
+
+        The reward of an extra sampled action only says what that action does to *this*
+        frame. What separates a good eviction from a bad one is mostly what it costs
+        later, and the branch is never rolled out -- so the critic is asked instead:
+        V(s') for the state each candidate action would have produced. The policy then
+        ranks actions by r + gamma*V(s'), not by r alone.
+
+        Building s' needs the next frame's image feature, which is why this runs one
+        frame late: at the previous frame it would have cost a duplicate image-encoder
+        pass (`_get_image_feature` does not cache), whereas here the tracker has already
+        computed it for the frame it is about to track. Everything else was stashed by
+        the previous call -- the post-action bank (references only) and each branch's
+        own encoding of the previous frame, which came free with its reward.
+
+        The stash is left unconsumed at the end of a volume, and that is exactly right:
+        the transition it belongs to is the terminal one, whose continuation is killed
+        by `done` anyway.
+        """
+        pending = inference_state.pop("pending_branches", None)
+        if not pending:
+            return
+
+        rl_config = inference_state["rl_config"]
+        global_pool = inference_state.get("global_pool")
+
+        def successor_state(bank, frame_out):
+            # `frame_idx` is the frame about to be tracked, so its candidate is the
+            # previous frame -- the one the stashed action was taken on. Ages are read
+            # off this frame, matching the real state built below.
+            branch_dict = {
+                "cond_frame_outputs": pending["cond_frame_outputs"],
+                "non_cond_frame_outputs": bank,
+                "await_outputs": {frame_idx - 1: frame_out},
+            }
+            state, _ = prepare_rl_state(
+                current_vision_feats,
+                current_vision_pos_embeds,
+                branch_dict,
+                frame_idx,
+                num_maskmem=rl_config["memory_bank_size"],
+                num_max_prompt=inference_state["support_num_frames"],
+                offload_to_cpu=False,
+                training=False,
+                global_pool=global_pool,
+            )
+            return state
+
+        # The taken action gets a successor built the same way, rather than reusing the
+        # real next state: only the *difference* between the two is used, so building
+        # both by the same route cancels whatever this construction gets slightly wrong
+        # (its candidate memory comes from the dropout-free measurement pass, the real
+        # one's from the stochastic training pass).
+        states = [successor_state(*pending["taken"])]
+        states += [successor_state(*branch) for branch in pending["extras"]]
+        values = self.agent.estimate_values(states)
+        self.agent.set_pending_branch_values(values[0], values[1:])
 
     def agent_update_first_stage(
         self,
@@ -1937,20 +2025,44 @@ class SAM2VideoPredictor(SAM2Base):
         log_reward=False,
         **kwargs
     ):
-        def measure_loss():
+        # Before anything else: the previous frame's counterfactual successors are only
+        # now valuable (this frame's image feature is what they were missing), and the
+        # transition they belong to is still the pending one -- opening a new one below
+        # would close it out of reach.
+        if train_agent and inference_state.get("pending_branches"):
+            self._resolve_branch_successors(
+                inference_state, frame_idx, current_vision_feats, current_vision_pos_embeds
+            )
+
+        def measure_loss(bank_override=None, with_output=False):
             """Dice loss on this frame under whatever the memory bank currently holds.
+
+            `bank_override` measures a counterfactual bank instead -- one of the extra
+            actions scored below, which must not be applied to the live state. The
+            conditioning frames are shared by reference: track_step only reads
+            output_dict, so nothing downstream can mutate them.
+
+            `with_output` also returns the tracker output the loss was read off. That
+            output encodes this frame under that bank, which is exactly the candidate
+            memory the *next* frame's state would carry had the action been taken -- so
+            a branch's successor state comes free with its reward; see
+            _resolve_branch_successors.
 
             Dropout-free so the before/after pair differs only by the agent's action;
             see rl_utils.deterministic_dropout. SAM2 stays in train mode, so the memory
             encoding, obj_ptr selection and mask-decoder branches are the ones being
             trained -- only the randomness is gone.
             """
+            measured_dict = output_dict if bank_override is None else {
+                "cond_frame_outputs": output_dict["cond_frame_outputs"],
+                "non_cond_frame_outputs": bank_override,
+            }
             with torch.no_grad(), deterministic_dropout(self):
                 output = self.track_step(
                     frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
-                    output_dict=output_dict,
+                    output_dict=measured_dict,
                     agent_act=True,
                     memory_bank_size=inference_state["rl_config"]["memory_bank_size"],
                     **kwargs
@@ -1959,7 +2071,8 @@ class SAM2VideoPredictor(SAM2Base):
             # `frame_idx` is volume-global; `gt_masks` only holds the current chunk.
             local_idx = frame_idx - inference_state["chunk_start"]
             gt_masks = inference_state["gt_masks"][local_idx].to(device=storage_device, non_blocking=True)
-            return compute_loss(pred_masks, gt_masks.to(torch.float32), inference_state)
+            loss = compute_loss(pred_masks, gt_masks.to(torch.float32), inference_state)
+            return (loss, output) if with_output else loss
 
         rl_config = inference_state["rl_config"]
         memory_bank_size = rl_config["memory_bank_size"]
@@ -1970,7 +2083,21 @@ class SAM2VideoPredictor(SAM2Base):
         # only to log it (see below) -- for validation, where the policy runs greedily
         # and nothing should be pushed into the live replay buffer/trajectory.
         compute_reward = train_agent or log_reward
-        loss_before = measure_loss() if compute_reward else None
+        # Only agents that can consume extra samples are asked for them; the Q agents'
+        # select_action does not take the argument.
+        num_extra = int(rl_config.get("extra_samples", 0)) if train_agent else 0
+        if not getattr(self.agent, "supports_action_resampling", False):
+            num_extra = 0
+        # The measurement passes double as the encodings the successor states need, so
+        # keep their outputs when there will be branches to bootstrap.
+        out_before = None
+        if compute_reward:
+            if num_extra > 0:
+                loss_before, out_before = measure_loss(with_output=True)
+            else:
+                loss_before = measure_loss()
+        else:
+            loss_before = None
 
         # Current state
         state, bank_frame_keys = prepare_rl_state(
@@ -2010,6 +2137,14 @@ class SAM2VideoPredictor(SAM2Base):
         n_actions = 1 + (1 + pool_capacity) * memory_bank_size
         agent_act_every = max(rl_config.get("agent_act_every", 1), 1)
         is_decision_frame = (frame_idx % agent_act_every == 0)
+
+        # Counterfactual actions scored on top of the one actually taken, for the policy
+        # gradient only; only a real decision produces any (a forced insert or a frozen
+        # frame has no alternative to compare against).
+        extra_samples = []
+        # (post-action bank, this frame's encoding under it) per branch, handed to
+        # _resolve_branch_successors on the next frame.
+        branch_successors = []
 
         if not bank_full:
             # Filling up the bank: there is nothing to evict and no slot to trade away,
@@ -2065,26 +2200,80 @@ class SAM2VideoPredictor(SAM2Base):
                 for c in valid_cand
                 for j in range(memory_bank_size)
             ]
+            # One decision costs a full SAM2 forward to score, but the state it is
+            # scored in was already built -- so asking for a few more actions from the
+            # same distribution buys extra policy-gradient samples at the price of one
+            # forward each, instead of a whole re-tracked frame.
+            select_kwargs = {"num_extra": num_extra} if num_extra > 0 else {}
+
             with torch.no_grad():
                 action_out = self.agent.select_action(
                     state,
                     valid_actions=torch.tensor(valid_actions),
                     training=train_agent,
+                    **select_kwargs,
                 ) # ask agent
+
+            incoming_key, incoming_out = candidate_key, candidate_out
+
+            def resolve_action(candidate_action):
+                """(candidate key, candidate output, evicted bank key) an action stands
+                for. `None` for no-op, which touches nothing."""
+                if candidate_action == 0:
+                    return None, None, None
+                c, j = divmod(candidate_action - 1, memory_bank_size)
+                if c == 0:
+                    key, out = incoming_key, incoming_out
+                else:
+                    # Recalled from the pool: older than everything already in the bank,
+                    # so insertion order stops being chronological order; see
+                    # _sort_memory_bank.
+                    key, out = pool_view[c - 1]
+                return key, out, bank_frame_keys[j]
 
             action = action_out["action"]
             drop_frame = None
             mutated = action != 0
+            # Gated on what was asked for, not only on what came back: scoring a branch
+            # needs `out_before`, which is only kept when extras were requested.
+            extra_actions = action_out.get("extra_actions", []) if num_extra > 0 else []
+            extra_log_probs = action_out.get("extra_log_probs", [])
+            # Snapshot before the real action lands: every counterfactual branch has to
+            # be measured against the same bank `loss_before` was, not against the one
+            # the taken action leaves behind.
+            pre_bank = dict(bank) if extra_actions else None
             if mutated:
-                c, j = divmod(action - 1, memory_bank_size)
-                if c > 0:
-                    # Recalled from the pool: older than everything already in the bank,
-                    # so insertion order stops being chronological order; see
-                    # _sort_memory_bank.
-                    candidate_key, candidate_out = pool_view[c - 1]
-                drop_frame = bank_frame_keys[j]
+                candidate_key, candidate_out, drop_frame = resolve_action(action)
                 bank.pop(drop_frame)
                 bank[candidate_key] = candidate_out
+
+            for extra_action, extra_log_prob in zip(extra_actions, extra_log_probs):
+                branch_bank = pre_bank
+                if extra_action == 0:
+                    # A no-op cannot move the bank, so with dropout silenced its
+                    # loss_after is provably loss_before -- an exact 0 reward, no
+                    # forward needed. Same shortcut the taken action gets below. Its
+                    # successor is likewise the one the unchanged bank produces.
+                    extra_loss_after, branch_out = loss_before, out_before
+                else:
+                    cand_key, cand_out, evicted = resolve_action(extra_action)
+                    branch_bank = dict(pre_bank)
+                    branch_bank.pop(evicted)
+                    branch_bank[cand_key] = cand_out
+                    self._sort_bank_in_place(branch_bank)
+                    extra_loss_after, branch_out = measure_loss(
+                        branch_bank, with_output=True
+                    )
+                extra_samples.append({
+                    "action": extra_action,
+                    "log_probs": extra_log_prob,
+                    # This branch's own loss, differenced against the one shared
+                    # `loss_before`: the same *form* of counterfactual the taken action
+                    # is scored by, which is what makes the two comparable -- not the
+                    # same number. Two branches agree only if their banks do.
+                    "reward": (loss_before - extra_loss_after).item(),
+                })
+                branch_successors.append((dict(branch_bank), branch_out))
 
         if mutated:
             self._sort_memory_bank(output_dict)
@@ -2105,15 +2294,32 @@ class SAM2VideoPredictor(SAM2Base):
             # comes from the stochastic training pass, so differencing against it left
             # dropout noise in every reward, including no-op, which cannot move the bank
             # at all and must therefore score exactly 0.
+            out_after = out_before
             if not mutated:
                 # A no-op leaves the bank feeding this frame bit-for-bit the one
                 # loss_before was measured on. With dropout silenced the second pass is
                 # provably identical -- take the shortcut and get an exact 0 instead of
                 # paying for a forward that can only return the same number.
                 loss_after = loss_before
+            elif branch_successors:
+                loss_after, out_after = measure_loss(with_output=True)
             else:
                 loss_after = measure_loss()
             reward = (loss_before - loss_after).item()
+
+        if branch_successors:
+            # Left for the next frame, which is where the image feature that completes
+            # these states gets computed anyway; see _resolve_branch_successors. The
+            # banks are dicts of references and each output is one frame's encoding, so
+            # this is a few MB that the next call frees.
+            inference_state["pending_branches"] = {
+                "cond_frame_outputs": output_dict["cond_frame_outputs"],
+                "taken": (dict(bank), self._compact_memory_out(inference_state, out_after)),
+                "extras": [
+                    (branch_bank, self._compact_memory_out(inference_state, branch_out))
+                    for branch_bank, branch_out in branch_successors
+                ],
+            }
 
         if train_agent:
             replay_instance_info = {
@@ -2129,6 +2335,13 @@ class SAM2VideoPredictor(SAM2Base):
                 # steps): it still trains the critic but must not enter the policy loss.
                 "policy_weight": action_out["policy_weight"],
             }
+            if extra_samples:
+                # Only the PO agents accept these; nothing else ever produces a
+                # non-empty list, so the Q agents' transition shape is untouched.
+                replay_instance_info["extra_samples"] = extra_samples
+                replay_instance_info["extra_weight"] = float(
+                    rl_config.get("extra_weight", 1.0)
+                )
 
             # Opening closes the transition pending from the previous frame, handing it
             # this state as its successor.

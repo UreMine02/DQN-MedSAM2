@@ -10,8 +10,6 @@ from torch.utils.data import Subset
 
 def _build_loader(dataset, shuffle, num_workers, rank=None, world_size=None, distributed=False):
     if distributed:
-        # No drop_last on the eval splits: dropping the tail would silently score the
-        # model on fewer volumes than the split contains.
         sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=shuffle)
         return DataLoader(dataset, batch_size=1, shuffle=False, num_workers=num_workers,
                           pin_memory=True, sampler=sampler)
@@ -31,6 +29,13 @@ def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "te
     `splits` is what keeps the test set out of a training run: train_3d.py asks for
     ("train", "val") only, so the *Ts.csv manifests are never even opened while
     training. Scoring the test split is eval_3d.py's job alone.
+
+    Only the training loader is ever sharded across ranks. The val and test loaders come
+    back covering the whole split on every rank, because evaluation runs on a single GPU:
+    sharding them would give each rank a different subset of volumes -- hence a different
+    set of (task, obj_id) classes to average over -- and DistributedSampler would pad the
+    tail by repeating volumes, so the resulting dice would depend on how many GPUs the run
+    happened to use. In a DDP run only rank 0 iterates the eval loaders.
     """
     unknown = set(splits) - {"train", "val", "test"}
     if unknown:
@@ -72,18 +77,21 @@ def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "te
         raise ValueError(f"the dataset {args.dataset} is not supported now!!!")
 
     train_workers, eval_workers = workers
-    loader_kwargs = dict(rank=rank, world_size=world_size, distributed=args.distributed)
 
     nice_train_loader = (
-        _build_loader(build("train"), shuffle=True, num_workers=train_workers, **loader_kwargs)
+        _build_loader(
+            build("train"), shuffle=True, num_workers=train_workers,
+            rank=rank, world_size=world_size, distributed=args.distributed,
+        )
         if want_train else None
     )
+    # distributed=False on purpose -- see the note in the docstring.
     nice_val_loader = (
-        _build_loader(build("val"), shuffle=False, num_workers=eval_workers, **loader_kwargs)
+        _build_loader(build("val"), shuffle=False, num_workers=eval_workers)
         if want_val else None
     )
     nice_test_loader = (
-        _build_loader(build("test"), shuffle=False, num_workers=eval_workers, **loader_kwargs)
+        _build_loader(build("test"), shuffle=False, num_workers=eval_workers)
         if want_test else None
     )
 

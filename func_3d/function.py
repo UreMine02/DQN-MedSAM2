@@ -3,6 +3,7 @@
 """
 import os
 import copy
+import contextlib
 import time
 import random
 import numpy as np
@@ -13,6 +14,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 from torchvision.utils import draw_segmentation_masks, save_image
 
 from monai.losses import DiceLoss
@@ -30,6 +32,16 @@ from sam2_train.rl_modules.rl_components import GlobalMemoryPool
 import wandb
 
 paper_loss = CombinedLoss(focal_weight=20, dice_weight=1)
+
+
+def unwrap(net):
+    """The bare module behind a DDP wrapper (or `net` itself when it was never wrapped).
+
+    Lets the same code path serve a single-GPU run and one rank of a DDP run without
+    branching on args.distributed, which was getting out of step with how the caller
+    actually passed the net.
+    """
+    return net.module if isinstance(net, DDP) else net
 
 torch.backends.cudnn.benchmark = True
 
@@ -342,9 +354,33 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
         avg_agent_loss
     )
 
-def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None):
-    if args.distributed:
-        # net = net.module
+def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, clean_dir=True, rank=None, device=None):
+    """Score `val_loader` on a single GPU.
+
+    Validation is deliberately never sharded across ranks. Each rank would otherwise see
+    a different subset of volumes -- and therefore a different set of (task, obj_id)
+    classes -- so averaging the per-rank class means would not reproduce the number a
+    one-GPU run prints, and DistributedSampler would pad the tail by repeating volumes on
+    top of that. In a DDP run the caller hands this the whole split on rank 0 only.
+
+    `net` may be handed in wrapped or unwrapped; `device` defaults to the calling rank's
+    GPU.
+    """
+    net = unwrap(net)
+    agent = getattr(net, "agent", None)
+    # DDP's forward syncs buffers across every rank, so one rank calling a wrapped policy
+    # on its own would hang. Run against the raw modules for the length of the pass.
+    with agent.unwrapped_modules() if agent is not None else contextlib.nullcontext():
+        return _validation_sam(
+            args, val_loader, epoch, net, agent,
+            inferencing=inferencing, clean_dir=clean_dir, rank=rank, device=device,
+        )
+
+
+def _validation_sam(args, val_loader, epoch, net: nn.Module, agent, inferencing=False, clean_dir=True, rank=None, device=None):
+    if device is not None:
+        GPUdevice = device
+    elif args.distributed:
         GPUdevice = torch.device('cuda', rank)
     else:
         GPUdevice = torch.device('cuda', args.gpu_device)
@@ -359,7 +395,6 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
     masks = {}
     preds = {}
     agent_act = not args.no_agent
-    agent = getattr(net.module if args.distributed else net, "agent", None)
     # lossfunc = paper_loss
 
     for packs in val_loader:
@@ -422,10 +457,7 @@ def validation_sam(args, val_loader, epoch, net: nn.Module, inferencing=False, c
             #     print(f"VALIDATION: [Support] Warning: Empty support image or mask tensor for obj_id={obj_id} in {task}. Skipping...")
             #     continue
 
-            init_state_fn = (
-                net.val_init_state if not args.distributed
-                else net.module.val_init_state
-            )
+            init_state_fn = net.val_init_state
             # Validation never chunks: the whole volume is tracked in one pass, so
             # chunk_start is 0 and the state is never advanced. The pool is still
             # per-(volume, obj_id) and must not leak between them.
