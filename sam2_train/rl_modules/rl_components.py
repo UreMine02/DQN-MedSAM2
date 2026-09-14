@@ -137,7 +137,6 @@ class RLStates:
         frame_idx=None,
         next_image_feat=None,
         curr_memory_feat=None,
-        curr_iou_score=None,
         prev_memory_bank=None,
         global_pool=None,
         cand_age=None,
@@ -146,7 +145,6 @@ class RLStates:
         self.frame_ix = frame_idx
         self.next_image_feat = next_image_feat
         self.curr_memory_feat = curr_memory_feat
-        self.curr_iou_score = curr_iou_score
         self.prev_memory_bank = prev_memory_bank
         # None when the pool is disabled, which keeps every downstream module on its
         # pre-pool code path. Otherwise {"mem_feat", "obj_ptr", "valid", "age"}.

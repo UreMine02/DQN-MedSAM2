@@ -6,7 +6,7 @@ import contextlib
 import torch
 import torch.nn as nn
 from functools import partial
-from monai.losses import DiceLoss, FocalLoss
+from monai.losses import DiceLoss
 from sam2_train.rl_modules.rl_components import RLStates
 from sam2_train.modeling.position_encoding import compute_axial_cis
 
@@ -91,7 +91,6 @@ def prepare_rl_state(
     num_maskmem,
     num_max_prompt=10,
     offload_to_cpu=True,
-    training=False,
     global_pool=None,
 ):
     next_image_feat = current_vision_feats[-1] + current_vision_pos_embeds[-1]
@@ -198,27 +197,42 @@ def prepare_rl_state(
 
     return state, bank_frame_keys
 
+# Module level, not per call: GRPO calls compute_loss once per distinct group action
+# plus once for loss_before, i.e. ~10x per decision frame, and MONAI's loss modules are
+# stateless. The FocalLoss that used to be built alongside this was never applied.
+_DICE_LOSS = DiceLoss(sigmoid=True)
+
+
 def compute_loss(
     pred_masks,
     gt_masks,
     inference_state
 ):
-    dice_loss_fn = DiceLoss(sigmoid=True)
-    focal_loss_fn = FocalLoss()
+    """Dice loss of one frame's mask logits against its GT, both shaped [1,1,H,W].
 
+    The shapes are load-bearing. MONAI's DiceLoss reduces over `range(2, ndim)`, so the
+    squeezed [H,W] tensors this used to pass left that axis list empty -- it only ever
+    produced the right number because `torch.sum(x, dim=[])` happens to reduce over
+    every axis instead of none. Keeping the batch/channel dims makes the reduction
+    explicit rather than accidental, and a genuine H/W mismatch now raises here instead
+    of broadcasting into a silently wrong loss.
+    """
     video_H = inference_state["video_height"]
     video_W = inference_state["video_width"]
     if pred_masks.shape[-2:] == (video_H, video_W):
-        video_res_masks = pred_masks.squeeze()
+        video_res_masks = pred_masks
     else:
         video_res_masks = torch.nn.functional.interpolate(
             pred_masks,
             size=(video_H, video_W),
             mode="bilinear",
             align_corners=False,
-        ).squeeze()
-        
-    loss = dice_loss_fn(video_res_masks, gt_masks)
+        )
+
+    loss = _DICE_LOSS(
+        video_res_masks.reshape(1, 1, video_H, video_W),
+        gt_masks.reshape(1, 1, video_H, video_W),
+    )
 
     return loss
 

@@ -31,6 +31,40 @@ from hydra.utils import instantiate
 args = cfg.parse_args()
 device = torch.device('cuda', args.gpu_device)
 
+def _check_action_space(args, net, summarizer):
+    """Fail loudly when the three independent sizings of the memory bank disagree.
+
+    Nothing tied them together before:
+      * `-memory_bank_size` sizes the live bank and the action grid the environment
+        enumerates (`1 + c*M + j` in generate_rl_steps / agent_update_first_stage),
+      * the agent YAML's `num_maskmem` sizes the policy's bank-slot query tokens and the
+        `tensor_split` in BaseFeatureSummarizer.forward,
+      * SAM2's own `num_maskmem` bounds `maskmem_tpos_enc[num_maskmem - t_pos - 1]`.
+
+    A too-small YAML value is the dangerous one: it raises nothing at all. The summarizer
+    just reads its `num_maskmem` bank slots off a stack that also holds the conditioning
+    frames, so the last few "bank" tokens are actually support frames and the actions
+    that address them are never legal. A too-large one dies later with an opaque
+    IndexError inside select_action's action mask. And a bank at or above SAM2's
+    num_maskmem sends that temporal-encoding lookup negative, where it wraps around to
+    the far end of the table instead of raising.
+    """
+    if summarizer.num_maskmem != args.memory_bank_size:
+        raise ValueError(
+            f"-memory_bank_size {args.memory_bank_size} != agent num_maskmem "
+            f"{summarizer.num_maskmem} (from {args.rl_config}): the environment builds "
+            f"its action grid from the former and the policy its bank-slot tokens from "
+            f"the latter, so they have to match."
+        )
+    if args.memory_bank_size >= net.num_maskmem:
+        raise ValueError(
+            f"-memory_bank_size {args.memory_bank_size} must be < SAM2's num_maskmem "
+            f"{net.num_maskmem}: _prepare_memory_conditioned_features indexes "
+            f"maskmem_tpos_enc[num_maskmem - t_pos - 1] with t_pos running up to the "
+            f"bank size, which would wrap to a negative row."
+        )
+
+
 def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
     """ return given network
     """
@@ -45,9 +79,6 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
         net = build_sam2_video_predictor(args, config_file=model_cfg, ckpt_path=sam2_checkpoint, mode=None)
         
         if not args.no_agent:
-            hydra_overrides = [
-                f"++rl_modules.config.agent.num_support={args.num_support}",
-            ]
             cfg = compose(config_name=args.rl_config)
             print(cfg)
             OmegaConf.resolve(cfg)
@@ -59,6 +90,7 @@ def get_network(args, net, use_gpu=True, gpu_device = 0, distribution = True):
             if summarizer is None and getattr(net.agent, "actor", None) is not None:
                 summarizer = net.agent.actor.feat_summarizer
             if summarizer is not None:
+                _check_action_space(args, net, summarizer)
                 summarizer.load_sam2_temporal_prior(net.maskmem_tpos_enc, net.num_maskmem)
     else:
         print('the network name you have entered is not supported yet')

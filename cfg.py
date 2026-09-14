@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument('-lr', type=float, default=1e-4, help='initial learning rate')
     parser.add_argument('-weights', type=str, default=0, help='the weights file you want to test')
     parser.add_argument('-multimask_output', type=int, default=1 , help='the number of masks output for multi-class segmentation')
-    parser.add_argument('-memory_bank_size', type=int, default=16, help='sam 2d memory bank size')
+    parser.add_argument('-memory_bank_size', type=int, default=6, help='sam 2d memory bank size; must equal the agent config\'s num_maskmem and stay below SAM2\'s num_maskmem')
     parser.add_argument('-support_instance', type=str, default="img0039", help='support instance'),
     parser.add_argument('-data_path', type=str, default='/mnt/12T/cuong/AAAI/Combined_Dataset', help='The path of segmentation data'),
     parser.add_argument('-num_support', type=int, default=10, help='saving trained checkpoints')
@@ -50,12 +50,14 @@ def parse_args():
     parser.add_argument('-warmup_ep', type=int, default=0, help="Number of epoch to warmup before starting training agent")
     parser.add_argument('-stop_sam2_ep', type=int, default=-1, help="Epoch from which SAM2 is frozen and only the RL agent keeps training (-1 to train SAM2 for the whole run)")
     parser.add_argument('-agent_update_freq', type=int, default=1, help="Update agent every N SAM2 update step")
+    parser.add_argument('-agent_lr_T_max', type=int, default=0, help="Length of the agent's cosine LR schedule, in update() calls. 0 (default) derives it as -ep * volumes-per-epoch, which is exact for single-object tasks; set it explicitly for multi-object ones, where each volume runs one update per object")
     parser.add_argument('-pool_size', type=int, default=0, help="Global memory pool capacity; 0 disables recall and keeps the pre-pool action space")
     parser.add_argument('-pool_stride', type=int, default=4, help="Archive every Nth frame into the global pool (doubles when the pool overflows)")
     parser.add_argument('-recall_every', type=int, default=1, help="Offer the agent a pool-recall decision every N frames")
     parser.add_argument('-agent_act_every', type=int, default=1, help="Let the agent make a swap/no-op decision every N frames; the bank is frozen (forced no-op, no policy gradient) on the frames in between")
     parser.add_argument('-rl_extra_samples', type=int, default=0, help="At every real agent decision, sample N additional actions, score them with the same counterfactual and store them as extra policy-gradient samples (0 keeps one sample per decision). Each costs one extra SAM2 forward")
     parser.add_argument('-rl_extra_weight', type=float, default=1.0, help="Policy-loss weight of the extra sampled actions relative to the action actually taken; they never enter the value loss")
+    parser.add_argument('-rl_group_size', type=int, default=6, help="GRPO only: actions sampled and scored per decision. Each distinct one costs a SAM2 forward; the group is its own baseline, so it must be at least 2")
     parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "both", "no"], default="no", help="Memory gating: 'cw' modulates memory values channel-wise, 'tw' biases memory keys' attention logits (selection), 'both' applies both")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")

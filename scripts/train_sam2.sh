@@ -13,10 +13,9 @@
 # conda init
 # conda activate rlsam2
 
-export CUDA_VISIBLE_DEVICES=1
+# export CUDA_VISIBLE_DEVICES=0
 
-sleep 2h;
-for SEED in 1 2;
+for SEED in 0;
 do
     for FOLD in 0 1 2 3 4;
     do
@@ -30,11 +29,11 @@ do
             -dataset msd \
             -task Task02 \
             -data_path /data/datasets/nii/ \
-            -lr 2e-4 \
-            -val_freq 1 \
+            -lr 1e-4 \
+            -val_freq 30 \
             -ep 30 \
             -warmup_ep 0 \
-            -stop_sam2_ep 50 \
+            -stop_sam2_ep -1 \
             -num_support 5 \
             -memory_bank_size 6 \
             -no_agent \

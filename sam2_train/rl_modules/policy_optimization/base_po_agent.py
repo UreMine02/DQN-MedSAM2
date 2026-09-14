@@ -698,6 +698,7 @@ class BasePOAgent(BaseAgent):
             T_max=lr_T_max,
             eta_min=min_lr
         )
+        self.min_lr = min_lr
 
         self.tau = tau
         self.entropy_weight= entropy_weight
@@ -831,6 +832,32 @@ class BasePOAgent(BaseAgent):
                 ))
 
         self.await_trajectory = None
+
+    def set_lr_schedule(self, total_updates):
+        """Re-anchor the cosine schedule to the number of update() calls this run makes.
+
+        The config's `lr_T_max` has to be written before the dataset is known, while
+        update() runs once per (volume, object) -- so on a 13-volume fold at 50 epochs the
+        default of 100 puts the policy LR on its `min_lr` floor around epoch 8 and trains
+        the remaining 42 epochs there. `step_lr_scheduler` clamps at T_max rather than
+        letting the cosine anneal back up, so the floor is permanent.
+
+        Meant to be called once, after the dataloader exists and before the first
+        update. The explicit rewind to `initial_lr` is what makes it safe to call later
+        too: CosineAnnealingLR's `get_lr` returns the group's *current* lr at
+        `last_epoch == 0` and then advances recursively from it, so a scheduler rebuilt
+        mid-run would otherwise restart its cosine from wherever the old one had already
+        annealed to rather than from the top.
+        """
+        total_updates = int(total_updates)
+        if total_updates < 1:
+            return
+        optimizer = self.scheduler.optimizer
+        for group in optimizer.param_groups:
+            group["lr"] = group.get("initial_lr", group["lr"])
+        self.scheduler = optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=total_updates, eta_min=self.min_lr,
+        )
 
     def step_lr_scheduler(self):
         """Advance the cosine schedule by one agent update. Stops at T_max: past it a
@@ -1010,10 +1037,18 @@ class BasePOAgent(BaseAgent):
         self.value_net.to(device=device, non_blocking=non_blocking)
 
     def to_dtype(self, dtype):
+        """Record the compute dtype WITHOUT casting the parameters.
+
+        train_3d/eval_3d enter a process-wide `torch.autocast(bfloat16)`, so every matmul
+        in the agent already runs in bf16 whatever the parameter dtype is. Casting the
+        parameters as well used to leave AdamW optimizing bf16 *master* weights, and
+        bf16's ~2^-8 relative resolution swallows almost every step at these learning
+        rates: measured over 20 AdamW steps at policy_lr 1e-5 with grad-clip 0.1, only 6%
+        of weights moved at all and the net displacement was 29x smaller than in fp32
+        (at 1e-4: 48%, 3x smaller). Keeping fp32 masters costs a few MB and is what makes
+        the agent trainable at all.
+        """
         self.dtype = dtype
-        self.feat_summarizer.to(dtype=dtype)
-        self.policy_net.to(dtype=dtype)
-        self.value_net.to(dtype=dtype)
 
     def update(self, num_ep):
         local_count = torch.tensor([len(self.replay_buffer)], dtype=torch.long, device=self.device)
@@ -1061,14 +1096,24 @@ class BasePOAgent(BaseAgent):
                     metric_sums[k] = metric_sums.get(k, 0.0) + v
                     metric_counts[k] = metric_counts.get(k, 0) + 1
 
-                if self.target_kl is not None and metrics["approx_kl"] > self.target_kl:
-                    print(
-                        f"Early stopping at epoch {ep} after {num_update} minibatch "
-                        f"updates: approx_kl {metrics['approx_kl']:.4f} > "
-                        f"target_kl {self.target_kl}"
+                if self.target_kl is not None:
+                    stop = torch.tensor(
+                        [float(metrics["approx_kl"] > self.target_kl)],
+                        dtype=torch.float32, device=self.device,
                     )
-                    stopped_early = True
-                    break
+                    if self.distributed:
+                        # Every rank has to leave the loop on the same minibatch. A rank
+                        # that keeps going blocks forever inside DDP's backward all-reduce
+                        # waiting for the ranks that already stopped.
+                        dist.all_reduce(stop, op=dist.ReduceOp.MAX)
+                    if stop.item() > 0:
+                        print(
+                            f"Early stopping at epoch {ep} after {num_update} minibatch "
+                            f"updates: approx_kl {metrics['approx_kl']:.4f} > "
+                            f"target_kl {self.target_kl}"
+                        )
+                        stopped_early = True
+                        break
 
             if stopped_early:
                 stopped_ep = ep
@@ -1297,9 +1342,18 @@ class BasePOAgent(BaseAgent):
     def to_distributed(self, rank):
         self.distributed = True
         self.rank = rank
-        self.feat_summarizer = DDP(self.feat_summarizer, device_ids=[rank], output_device=rank)
-        self.policy_net = DDP(self.policy_net, device_ids=[rank], output_device=rank)
-        self.value_net = DDP(self.value_net, device_ids=[rank], output_device=rank)
+        # broadcast_buffers=False on all three: the only buffer is the summarizer's
+        # non-persistent `slot_tpos_prior`, re-derived identically on every rank from the
+        # same SAM2 checkpoint. DDP would otherwise run a collective inside every
+        # forward() -- including the no_grad ones in select_action, estimate_values and
+        # final_trajectory, which ranks reach a different number of times because volumes
+        # differ in length and object count, and which would therefore hang.
+        ddp = lambda m: DDP(
+            m, device_ids=[rank], output_device=rank, broadcast_buffers=False,
+        )
+        self.feat_summarizer = ddp(self.feat_summarizer)
+        self.policy_net = ddp(self.policy_net)
+        self.value_net = ddp(self.value_net)
 
     def num_parameters(self):
         """This function expect modules didn't wrapped by DDP"""

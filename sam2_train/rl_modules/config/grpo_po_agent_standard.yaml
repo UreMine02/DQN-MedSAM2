@@ -34,7 +34,7 @@ agent:
   # renormalized back up. Typical groups still land near unit scale, so entropy_weight
   # and policy_lr carry over; what changes is that late, low-spread decisions stop
   # producing full-size gradient steps.
-  advantage_norm: running_scale
+  advantage_norm: group_std
   # Floor on that divisor. Numerical hygiene only -- it exists so the division stays
   # finite if every reward is identically zero. The noise rejection comes from the scale
   # being global, not from this.

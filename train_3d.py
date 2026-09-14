@@ -152,7 +152,24 @@ def train(rank=0, world_size=1):
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
     scheduler = ExponentialLR(optimizer, gamma=0.95)
-    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+    # cache_enabled=False is load-bearing, not a tuning knob. This autocast region is
+    # entered once for the whole process and never exited, and autocast's fp32->bf16
+    # weight cache is only ever cleared on exit -- so it is populated once, on the first
+    # forward, and every forward for the rest of the run reuses those same bf16 copies.
+    # Two things follow, both silent:
+    #
+    #   1. The cached copies never see an optimizer step. Reproduced standalone: three
+    #      SGD steps at lr=1.0 move |w| from 0.1 to 7.1 while the forward output stays
+    #      bit-identical at 0.4385. SAM2's weights were being updated and then ignored.
+    #   2. A forward run under torch.no_grad() caches copies with no grad_fn, and later
+    #      training forwards inherit them. The agent always hits this -- its first forward
+    #      is select_action during the rollout -- which left 80 of its 130 parameters
+    #      receiving no gradient at all, with a finite-looking loss throughout.
+    #
+    # Disabling the cache re-casts weights per op (a few percent slower) and fixes both.
+    # The alternative -- scoping autocast per iteration with backward outside it, as the
+    # docs prescribe -- is the cleaner shape but a much larger change to train/val flow.
+    torch.autocast(device_type="cuda", dtype=torch.bfloat16, cache_enabled=False).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
@@ -169,6 +186,19 @@ def train(rank=0, world_size=1):
     if nice_val_loader is None and rank == 0:
         print("WARNING: -fold < 0 leaves no validation split; nothing is evaluated during "
               "this run and best.pth will not be written -- only per-epoch checkpoints")
+
+    # The agent's cosine LR schedule advances once per update(), and update() runs once
+    # per (volume, object) -- so its length is only knowable here, after the loader
+    # exists. Left at the config's lr_T_max (100) a 13-volume fold reaches min_lr around
+    # epoch 8 of 50 and trains the rest of the run on the floor. len(train_loader) counts
+    # volumes, which is exact for single-object tasks; -agent_lr_T_max overrides it for
+    # multi-object ones, where a volume performs one update per object and this estimate
+    # is therefore short.
+    if agent is not None and hasattr(agent, "set_lr_schedule"):
+        agent_lr_T_max = args.agent_lr_T_max or (args.ep * len(nice_train_loader))
+        agent.set_lr_schedule(agent_lr_T_max)
+        if is_main(rank):
+            print(f"Agent LR cosine schedule spans {agent_lr_T_max} update(s)")
 
     '''checkpoint path and tensorboard'''
     #create checkpoint folder to save model

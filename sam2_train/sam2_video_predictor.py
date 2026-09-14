@@ -190,7 +190,7 @@ class SAM2VideoPredictor(SAM2Base):
         inference_state["video_width"] = video_width
         inference_state["gt_masks"] = masks_tensor
         if offload_state_to_cpu:
-            inference_state["storage_device"] = torch.device("cpu")
+            inference_state["device"] = torch.device("cpu")
         else:
             inference_state["device"] = images.device
         # inputs on each frame
@@ -236,6 +236,8 @@ class SAM2VideoPredictor(SAM2Base):
             # loss; see agent_update_first_stage. 0 keeps one sample per decision.
             "extra_samples": getattr(args, "rl_extra_samples", 0),
             "extra_weight": getattr(args, "rl_extra_weight", 1.0),
+            # GRPO only: how many actions its group samples and scores per decision.
+            "group_size": getattr(args, "rl_group_size", 6),
         }
         # Validation tracks a whole volume in a single pass, so `chunk_start` is 0 and
         # `train_advance_chunk` never runs; the fields exist so the two paths index
@@ -364,6 +366,8 @@ class SAM2VideoPredictor(SAM2Base):
             # loss; see agent_update_first_stage. 0 keeps one sample per decision.
             "extra_samples": getattr(args, "rl_extra_samples", 0),
             "extra_weight": getattr(args, "rl_extra_weight", 1.0),
+            # GRPO only: how many actions its group samples and scores per decision.
+            "group_size": getattr(args, "rl_group_size", 6),
         }
         # Owned by the caller and shared by every chunk of one (volume, obj_id). Keyed by
         # volume-global frame index, same as everything else now that the state itself
@@ -1758,26 +1762,77 @@ class SAM2VideoPredictor(SAM2Base):
         generate_rl_samples=False,
         **kwargs
     ):
-        # compute loss before
-        loss_before = None
-        if train_agent:
-            with torch.no_grad():
-                output_before = self.track_step(
+        """GRPO's environment step: sample a group of actions at this frame, score each
+        by actually running SAM2 under the bank it would produce, and apply one of them.
+
+        The counterpart for every other agent is agent_update_first_stage, which measures
+        a single before/after counterfactual plus a few branches. Both share the action
+        layout and the global pool; what differs is that GRPO's group is its own baseline
+        (no critic), so every member is scored the same way and normalized against the
+        others rather than against V(s).
+        """
+        rl_config = inference_state["rl_config"]
+        memory_bank_size = rl_config["memory_bank_size"]
+        global_pool = inference_state.get("global_pool")
+        storage_key = "non_cond_frame_outputs"
+        bank = output_dict[storage_key]
+
+        bank_size = len(bank)
+        bank_full = (bank_size >= memory_bank_size)
+        agent_act_every = max(rl_config.get("agent_act_every", 1), 1)
+        is_decision_frame = (frame_idx % agent_act_every == 0)
+        # Either filling up the bank (nothing to evict) or between agent steps (bank
+        # frozen): the incoming frame's fate is decided without consulting the policy --
+        # see agent_update_first_stage for the same design. GRPO has no critic, so unlike
+        # the PPO path there is no weight-0 transition worth recording for those frames.
+        decision = bank_full and is_decision_frame
+        collect_group = generate_rl_samples and decision
+
+        candidate_key = frame_idx - 1
+        candidate_out = output_dict["await_outputs"][candidate_key]
+
+        # `frame_idx` is volume-global; `gt_masks` only holds the current chunk.
+        gt_masks = None
+        if collect_group:
+            local_idx = frame_idx - inference_state["chunk_start"]
+            gt_masks = inference_state["gt_masks"][local_idx].to(
+                device=storage_device, non_blocking=True
+            ).to(torch.float32)
+
+        def measure_loss(bank_override=None):
+            """Dice loss on this frame under `bank_override` (or the live bank).
+
+            Conditioning frames are shared by reference: track_step only reads
+            output_dict, so nothing downstream can mutate them.
+
+            Dropout-free, matching agent_update_first_stage: SAM2's memory attention runs
+            at dropout 0.1 under net.train(), and GRPO divides each group's rewards by
+            that group's own std -- so leaving the noise in would feed it straight into
+            the denominator and can reorder the group outright. SAM2 stays in train mode,
+            so the branches being trained are still the ones being measured; only the
+            randomness is gone.
+
+            run_mem_encoder is forced off because only `pred_masks` is read here:
+            encoding a memory for a bank that is discarded a line later costs a full
+            memory-encoder pass per group member. (The PPO path keeps it on because its
+            branches need that encoding to build successor states for the critic; GRPO
+            has no critic to bootstrap with.)
+            """
+            measured_dict = output_dict if bank_override is None else {
+                "cond_frame_outputs": output_dict["cond_frame_outputs"],
+                "non_cond_frame_outputs": bank_override,
+            }
+            with deterministic_dropout(self):
+                output = self.track_step(
                     frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
                     current_vision_pos_embeds=current_vision_pos_embeds,
-                    output_dict=output_dict,
+                    output_dict=measured_dict,
                     agent_act=True,
-                    **kwargs
+                    **{**kwargs, "run_mem_encoder": False},
                 )
-
-                pred_masks = output_before["pred_masks"]
-                pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-                local_idx = frame_idx - inference_state["chunk_start"]
-                gt_masks = inference_state["gt_masks"][local_idx].to(device=storage_device, non_blocking=True)
-                gt_masks = gt_masks.to(torch.float32)
-
-                loss_before = compute_loss(pred_masks, gt_masks, inference_state)
+            pred_masks = output["pred_masks"].to(storage_device, non_blocking=True).to(torch.float32)
+            return compute_loss(pred_masks, gt_masks, inference_state)
 
         if agent_act or generate_rl_samples:
             state, bank_frame_keys = prepare_rl_state(
@@ -1785,135 +1840,146 @@ class SAM2VideoPredictor(SAM2Base):
                 current_vision_pos_embeds,
                 output_dict,
                 frame_idx,
-                # num_maskmem=self.num_maskmem - 1,
-                num_maskmem=inference_state['rl_config']['memory_bank_size'],
+                num_maskmem=memory_bank_size,
                 num_max_prompt=inference_state["support_num_frames"],
-                offload_to_cpu=False,
-                training=train_agent
+                # A state is ~17MB of image feature plus memory bank, and the replay
+                # buffer holds thousands of them; keeping them on the accelerator pinned
+                # over a gigabyte of VRAM that is only read at update time. select_action
+                # and update() move each batch back via stack_state_feats.
+                offload_to_cpu=True,
+                global_pool=global_pool,
             )
+            state.offload_to_cpu()
 
-            memory_bank_size = inference_state['rl_config']['memory_bank_size']
-            bank_size = len(output_dict["non_cond_frame_outputs"])
-            bank_full = (bank_size >= memory_bank_size)
-            agent_act_every = max(inference_state['rl_config'].get("agent_act_every", 1), 1)
-            is_decision_frame = (frame_idx % agent_act_every == 0)
-            if bank_full and is_decision_frame:
-                # Action layout: 0 = no-op (reject), 1..M = swap(incoming frame, bank
-                # slot j), j = action - 1. GRPO runs without the global pool, so the
-                # incoming frame is the only candidate ever on offer.
-                valid_actions = [0] + [1 + j for j in range(memory_bank_size)]
-                with torch.no_grad():
-                    action_out = self.agent.select_action(
-                        state,
-                        valid_actions=torch.tensor(valid_actions),
-                        num_samples=6,
-                        training=train_agent,
-                    ) # ask agent
+            # Action layout, matching BasePolicyNetwork's query order [noop, candidates,
+            # bank slots] and agent_update_first_stage exactly:
+            #   0                     no-op: reject the incoming frame, bank untouched
+            #   1 .. M                swap(incoming frame, bank slot j), j = action - 1
+            #   M+1 .. (1+P)*M        swap(pool entry p, bank slot j), where
+            #                         c, j = divmod(action - 1, M) and p = c - 1
+            # M = memory_bank_size, P = pool capacity (0 when the pool is disabled). The
+            # space is fixed-size; what varies per frame is which of it is legal.
+            pool_view = []
+            valid_cand = [0]
+            if decision and global_pool is not None and global_pool.enabled:
+                pool_view = global_pool.local_view()
+                if frame_idx % max(rl_config.get("recall_every", 1), 1) == 0:
+                    # Entries already resident in the bank (or identical to the incoming
+                    # frame) are excluded: recalling one would duplicate a slot.
+                    valid_cand += [
+                        1 + p
+                        for p, (pooled_key, _) in enumerate(pool_view)
+                        if pooled_key not in bank and pooled_key != candidate_key
+                    ]
+
+            def resolve_action(candidate_action):
+                """(candidate key, candidate output, evicted bank key) an action stands
+                for. `None` for no-op, which touches nothing."""
+                if candidate_action == 0:
+                    return None, None, None
+                c, j = divmod(candidate_action - 1, memory_bank_size)
+                if c == 0:
+                    key, out = candidate_key, candidate_out
+                else:
+                    # Recalled from the pool: older than everything already in the bank,
+                    # so insertion order stops being chronological order; see
+                    # _sort_memory_bank.
+                    key, out = pool_view[c - 1]
+                return key, out, bank_frame_keys[j]
+
+            if decision:
+                valid_actions = [0] + [
+                    1 + c * memory_bank_size + j
+                    for c in valid_cand
+                    for j in range(memory_bank_size)
+                ]
+                action_out = self.agent.select_action(
+                    state,
+                    valid_actions=torch.tensor(valid_actions),
+                    num_samples=max(int(rl_config.get("group_size", 6)), 2),
+                    training=train_agent,
+                )
             else:
-                # Either filling up the bank (nothing to evict) or between agent steps
-                # (bank frozen): the incoming frame's fate is decided without consulting
-                # the policy -- see sam2_video_predictor.agent_update_first_stage for the
-                # same design.
                 action_out = {"main_action": None, "action": [], "log_probs": []}
 
-            # state.offload_to_cpu()
-
-        if generate_rl_samples:
+        if collect_group:
             self.agent.init_new_group()
 
-            actions = action_out["action"]
-            log_probs = action_out["log_probs"]
-            for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
-                reward = 0
-                temp_output_dict = {
-                    "cond_frame_outputs": output_dict["cond_frame_outputs"].copy(),
-                    "non_cond_frame_outputs": output_dict["non_cond_frame_outputs"].copy()
-                }
+            loss_before = measure_loss()
+            # A no-op provably cannot move the bank, so with dropout silenced its
+            # loss_after is exactly loss_before -- reward 0, no forward needed. The same
+            # shortcut agent_update_first_stage takes.
+            reward_cache = {0: 0.0 + rl_config["lazy_penalty"]}
 
-                drop_frame = None
-                storage_key = "non_cond_frame_outputs"
-                if action == 0:
-                    # No-op: reject the incoming frame.
-                    reward = inference_state['rl_config']['lazy_penalty']
-                else:
-                    # Evict bank slot j = action - 1 and admit the incoming frame.
-                    drop_frame = bank_frame_keys[action - 1]
-                    temp_output_dict[storage_key].pop(drop_frame)
-                    temp_output_dict[storage_key][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+            for action, log_prob in zip(action_out["action"], action_out["log_probs"]):
+                if action not in reward_cache:
+                    # The group is sampled with replacement over an action space that is
+                    # 1 + (1+P)*M wide, so scoring each distinct action once is what keeps
+                    # a repeated draw from costing a second SAM2 forward.
+                    cand_key, cand_out, evicted = resolve_action(action)
+                    branch_bank = dict(bank)
+                    branch_bank.pop(evicted)
+                    branch_bank[cand_key] = cand_out
+                    # A recalled memory is older than the bank's contents, so appending it
+                    # would label the oldest memory as the newest; see _sort_memory_bank.
+                    self._sort_bank_in_place(branch_bank)
+                    reward_cache[action] = (loss_before - measure_loss(branch_bank)).item()
 
-                # print(action, reward)
-                if action != 0:
-                    with torch.no_grad():
-                        output_before = self.track_step(
-                            frame_idx=frame_idx,
-                            current_vision_feats=current_vision_feats,
-                            current_vision_pos_embeds=current_vision_pos_embeds,
-                            output_dict=temp_output_dict,
-                            agent_act=True,
-                            **kwargs
-                        )
-
-                        pred_masks = output_before["pred_masks"]
-                        pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-
-                        loss_after = compute_loss(pred_masks, gt_masks, inference_state)
-
-                        loss_diff = loss_before.detach().cpu() - loss_after.detach().cpu()
-
-                        if loss_diff > 0:
-                            one_hot_rw = 1
-                        elif loss_diff < 0:
-                            one_hot_rw = -1
-                        else:
-                            one_hot_rw = 0
-
-                        # reward += (loss_before.detach().cpu() - loss_after.detach().cpu())
-                        
-                        reward += (1 - loss_after.detach().cpu())
-                else:
-                    reward += (1 - loss_before.detach().cpu())
-
-                replay_instance_info = {
-                    "frame_idx": frame_idx,
-                    "state": state,
-                    "action": action,
-                    "reward": reward,
-                    "log_probs": log_prob,
-                }
-
-                # print(replay_instance_info["action"], replay_instance_info["reward"])
-
-                self.agent.add_new_instance_to_group(**replay_instance_info)
+                self.agent.add_new_instance_to_group(
+                    frame_idx=frame_idx,
+                    state=state,
+                    action=action,
+                    reward=reward_cache[action],
+                    log_probs=log_prob,
+                    action_mask=action_out["action_mask"],
+                )
 
             self.agent.final_group()
 
         if agent_act:
-            drop_frame = None
-            reward = 0.0
+            mutated = False
+            admitted, evicted = None, None
             if not bank_full:
                 # Force insert: no decision to make, matches agent_update_first_stage.
-                action = None
-                output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
-            elif not is_decision_frame:
-                # Between agent steps: bank frozen, matches agent_update_first_stage.
-                action = None
-            else:
-                action = action_out['main_action']
-                if action == 0:
-                    # No-op: reject the incoming frame.
-                    drop_frame = frame_idx - 1
-                    reward = -0.0
-                else:
-                    # Evict bank slot j = action - 1 and admit the incoming frame.
-                    drop_frame = bank_frame_keys[action - 1]
-                    output_dict["non_cond_frame_outputs"].pop(drop_frame)
-                    output_dict["non_cond_frame_outputs"][frame_idx-1] = output_dict["await_outputs"][frame_idx-1]
+                bank[candidate_key] = candidate_out
+                mutated = True
+            elif is_decision_frame and action_out["main_action"] != 0:
+                admitted, cand_out, evicted = resolve_action(action_out["main_action"])
+                bank.pop(evicted)
+                bank[admitted] = cand_out
+                mutated = True
+            # Otherwise a no-op: the bank is frozen (between agent steps) or the policy
+            # rejected the incoming frame outright.
 
-            if not train_agent:
-                print(f"[Q] frame {frame_idx-1} "
-                    f"action {action} "
-                    f"drop_frame {drop_frame} "
-                    f"bank_size {bank_size} ")
+            if mutated:
+                self._sort_memory_bank(output_dict)
+
+            # The counterpart of the [Q] line agent_update_first_stage prints, adapted to
+            # GRPO's wider action space: one id encodes both which candidate was admitted
+            # and which slot was given up, so the resolved frame keys are more use here
+            # than the raw id on its own. `n_valid` is what says whether recall was even
+            # on offer this frame -- with the pool enabled it is 1 + (1+P)*M on a recall
+            # frame and 1 + M when recall_every gated the pool candidates out.
+            #
+            # Guarded on `decision`, not `is_decision_frame`: while the bank is still
+            # filling the policy is never consulted, and the reference line would report
+            # an action that was never chosen.
+            if not train_agent and decision:
+                main_action = action_out["main_action"]
+                if main_action == 0:
+                    resolved = "noop"
+                else:
+                    cand, _ = divmod(main_action - 1, memory_bank_size)
+                    source = "frame" if cand == 0 else f"pool[{cand - 1}]"
+                    resolved = f"admit {source} key {admitted} evict {evicted}"
+                print(
+                    f"[GRPO] frame {frame_idx}"
+                    f" action {main_action}"
+                    f" {resolved}"
+                    f" candidate_key {candidate_key}"
+                    f" bank_size {bank_size}"
+                    f" n_valid {len(valid_actions)}"
+                )
 
     @staticmethod
     def _sort_memory_bank(output_dict):
@@ -1998,7 +2064,6 @@ class SAM2VideoPredictor(SAM2Base):
                 num_maskmem=rl_config["memory_bank_size"],
                 num_max_prompt=inference_state["support_num_frames"],
                 offload_to_cpu=False,
-                training=False,
                 global_pool=global_pool,
             )
             return state
@@ -2108,7 +2173,6 @@ class SAM2VideoPredictor(SAM2Base):
             num_maskmem=memory_bank_size,
             num_max_prompt=inference_state["support_num_frames"],
             offload_to_cpu=True,
-            training=train_agent,
             global_pool=global_pool,
         )
         state.offload_to_cpu()
