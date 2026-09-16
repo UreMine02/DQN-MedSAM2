@@ -176,13 +176,18 @@ def train(rank=0, world_size=1):
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
 
-    # Training only ever sees the training folds and the held-out validation fold, both
-    # carved out of the training manifest by patient group. The test manifest is not
-    # requested here and so is never even read: eval_3d.py is the only thing that scores
-    # it, once, against a checkpoint this run selected on val alone.
-    nice_train_loader, nice_val_loader, _ = get_dataloader(
-        args, rank=rank, world_size=world_size, splits=("train", "val"),
+    # Training itself only ever sees the training folds and the held-out validation fold,
+    # both carved out of the training manifest by patient group. The test manifest is
+    # requested only under -eval_test, and even then it is scored once, after the last
+    # epoch, against weights already chosen on val -- see test_sam() below. Without the
+    # flag the *Ts.csv manifests are not so much as opened by a training run.
+    splits = ("train", "val", "test") if args.eval_test else ("train", "val")
+    nice_train_loader, nice_val_loader, nice_test_loader = get_dataloader(
+        args, rank=rank, world_size=world_size, splits=splits,
     )
+    if args.eval_test and args.test_ckpt == "best" and args.fold < 0 and rank == 0:
+        print("WARNING: -eval_test -test_ckpt best with -fold < 0: there is no val split to "
+              "select on, so the test pass scores the final epoch's weights instead")
     if nice_val_loader is None and rank == 0:
         print("WARNING: -fold < 0 leaves no validation split; nothing is evaluated during "
               "this run and best.pth will not be written -- only per-epoch checkpoints")
@@ -320,9 +325,9 @@ def train(rank=0, world_size=1):
         if args.distributed:
             torch.distributed.barrier()
 
-    # Training ends here. The test split is deliberately not scored: run eval_3d.py
-    # against the checkpoint below, with the same -fold/-n_folds/-split_seed/-fold_csv,
-    # so the test number is read exactly once and never steers a training decision.
+    # Training ends here. Whatever the test split is worth is read from here on only --
+    # never inside the loop above -- so no test number can have moved an epoch, an LR or a
+    # saved checkpoint. eval_3d.py remains the way to score a checkpoint in a separate job.
     if rank == 0:
         best_ckpt = os.path.join(checkpoint_path, "best.pth")
         if args.save_ckpt and os.path.exists(best_ckpt):
@@ -332,6 +337,9 @@ def train(rank=0, world_size=1):
                   f"(checkpoints in {checkpoint_path})")
         if args.wandb_enabled:
             wandb.summary['val/best_dice'] = best_dice
+
+    if args.eval_test:
+        test_sam(args, nice_test_loader, net, rank, world_size, checkpoint_path)
 
     if args.distributed:
         cleanup()
@@ -362,6 +370,51 @@ def evaluate(args, loader, epoch, net, rank, world_size):
         scores[0], scores[1] = iou, dice
     dist.broadcast(scores, src=0)
     return scores[0].item(), scores[1].item()
+
+
+def test_sam(args, loader, net, rank, world_size, checkpoint_path):
+    """Score the held-out test split once, after the last epoch.
+
+    Two things stop this becoming a second selection signal. It runs after the training
+    loop, so nothing it prints can have reached an epoch, the LR schedule or a saved
+    checkpoint; and by default it scores the checkpoint *val* chose rather than whichever
+    epoch happens to test best -- the run never gets to pick its test number. `-test_ckpt
+    last` scores the final epoch's weights as they stand, which is also the fallback when
+    -fold < 0 left no val split and hence no best.pth; that number is an unselected
+    model's, and the run says so rather than passing it off as a selected one's.
+
+    Like validation this is never sharded: rank 0 makes one pass over the whole split and
+    broadcasts the result, for the reasons in evaluate()'s docstring.
+    """
+    if loader is None:
+        if rank == 0:
+            print("WARNING: -eval_test was passed but no test loader was built; nothing scored")
+        return
+
+    best_ckpt = os.path.join(checkpoint_path, "best.pth")
+    if rank == 0:
+        if args.test_ckpt == "best" and os.path.exists(best_ckpt):
+            # Loaded on rank 0 alone: it is the only rank that scores, and training is
+            # over, so the replicas are free to diverge from here.
+            print(f"Test pass on the val-selected checkpoint {best_ckpt}")
+            weights = torch.load(best_ckpt, map_location=torch.device('cuda', rank))
+            target = function.unwrap(net)
+            target.load_state_dict(weights["model"], strict=False)
+            if "agent" in weights and not args.no_agent:
+                target.agent.load_state_dict(weights["agent"])
+        elif args.test_ckpt == "best":
+            print(f"Test pass on the final epoch's weights: no {best_ckpt} to score "
+                  f"(no val split, or -save_ckpt off). This model was never selected.")
+        else:
+            print("Test pass on the final epoch's weights (-test_ckpt last)")
+
+    net.eval()
+    iou, dice = evaluate(args, loader, args.ep, net, rank, world_size)
+    if rank == 0:
+        print(f"test/IOU: {iou}, test/dice : {dice}")
+        if args.wandb_enabled:
+            wandb.summary['test/IOU'] = iou
+            wandb.summary['test/dice'] = dice
 
 
 def save_checkpoint(args, net, epoch, dice, path):

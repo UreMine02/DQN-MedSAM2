@@ -12,35 +12,14 @@ agent:
   # deque before update() ever saw them.
   buffer_size: 4096
   batch_size: 128
-  entropy_weight: 0.02
+  entropy_weight: 0.01
   epsilon: 0.2
   target_kl: 0.02
   lr_T_max: 500
   min_lr: 1e-5
   n_layers: 4
-  # How a group's centered rewards become advantages.
-  #
-  # "group_std" (the code default) is textbook GRPO: divide each group by its own std.
-  # That is sound for the bounded 0/1 verifier rewards GRPO was designed around, but our
-  # reward is an unbounded dice-loss delta measured through a bf16 forward. Observed
-  # group_reward_spread_mean falls from ~4e-3 early to ~1e-4 late, i.e. down to the
-  # resolution of the measurement itself -- and dividing by the group's own std rescales
-  # that to unit variance, so the back half of a run trains on rounding noise as hard as
-  # the front half trains on real preference.
-  #
-  # "running_scale" keeps the group mean as the baseline (that is what makes GRPO
-  # critic-free) but divides by a lifetime running std shared across groups, so a group
-  # whose spread is 25x below average yields advantages 25x smaller instead of being
-  # renormalized back up. Typical groups still land near unit scale, so entropy_weight
-  # and policy_lr carry over; what changes is that late, low-spread decisions stop
-  # producing full-size gradient steps.
   advantage_norm: running_scale
-  # Floor on that divisor. Numerical hygiene only -- it exists so the division stays
-  # finite if every reward is identically zero. The noise rejection comes from the scale
-  # being global, not from this.
   adv_min_scale: 1e-6
-  # Scales the resulting advantage. Under "group_std", 1.0 leaves every group at unit
-  # std; under "running_scale", unit std on average across groups.
   range: 1.0
   sam2_dim:
     n_query: 16

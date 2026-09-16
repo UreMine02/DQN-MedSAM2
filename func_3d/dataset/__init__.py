@@ -27,8 +27,9 @@ def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "te
     manifest and leaves nothing to select on.
 
     `splits` is what keeps the test set out of a training run: train_3d.py asks for
-    ("train", "val") only, so the *Ts.csv manifests are never even opened while
-    training. Scoring the test split is eval_3d.py's job alone.
+    ("train", "val") unless -eval_test was passed, so by default the *Ts.csv manifests are
+    never even opened while training. Under -eval_test train_3d.py also asks for "test",
+    but scores it once after the last epoch, on weights val already selected.
 
     Only the training loader is ever sharded across ranks. The val and test loaders come
     back covering the whole split on every rank, because evaluation runs on a single GPU:

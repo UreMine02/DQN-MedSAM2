@@ -40,6 +40,8 @@ def parse_args():
     parser.add_argument('-split_seed', type=int, default=0, help='selects which fold-assignment CSV to read, and seeds the fixed val/test support draws')
     parser.add_argument('-fold_csv', type=str, default='', help='fold assignment written by split_fold.py; default is data/splits/folds_seed<split_seed>_k<n_folds>.csv')
     parser.add_argument('-eval_split', type=str, choices=['val', 'test'], default='test', help='which split eval_3d.py scores')
+    parser.add_argument('-eval_test', action="store_true", help='after the last epoch, score the held-out test split once with the checkpoint val already selected. Off by default, and while it is off a training run never so much as opens the *Ts.csv manifests')
+    parser.add_argument('-test_ckpt', type=str, choices=['best', 'last'], default='best', help="which weights -eval_test scores: 'best' reloads the best-val checkpoint (falls back to the final epoch when -fold < 0 left no val split to select on), 'last' scores the final epoch's weights as they stand")
     parser.add_argument('-ep', type=int, default=50, help='number of training epoch')
     parser.add_argument('-lazy_penalty', type=float, default=0.0, help='number of training epoch')
     parser.add_argument('-invalid_penalty', type=float, default=0.0, help='number of training epoch')

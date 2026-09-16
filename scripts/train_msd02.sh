@@ -15,40 +15,39 @@
 
 # export CUDA_VISIBLE_DEVICES=1
 
-for SEED in 0;
-do
-    for FOLD in 0 1 2 3 4;
-    do
-        EXP=msd_task02+icl+grpo+group8+pool_size8+warmup15+fold${FOLD}+seed${SEED}
-        python train_3d.py \
-            -exp_name $EXP \
-            -sam_config sam2_hiera_t \
-            -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
-            -rl_config rl_modules/config/grpo_po_agent.yaml \
-            -checkpoint_path ./output/$EXP \
-            -dataset msd \
-            -task Task02 \
-            -data_path /data/datasets/nii/ \
-            -lr 2e-4 \
-            -val_freq 50 \
-            -ep 50 \
-            -warmup_ep 5 \
-            -stop_sam2_ep -1 \
-            -q_updates_per_step 8 \
-            -num_support 5 \
-            -memory_bank_size 6 \
-            -pool_size 8 \
-            -pool_stride 1 \
-            -recall_every 1 \
-            -agent_act_every 1 \
-            -rl_group_size 12 \
-            -agent_lr_T_max 300 \
-            -gating_dimension no \
-            -gating_softness soft \
-            -fold ${FOLD} \
-            -n_folds 5 \
-            -seed ${SEED} \
-            -wandb_enabled \
-            -distributed
-    done
-done
+# for SEED in 0;
+# do
+#     for FOLD in 0 1 2 3 4;
+#     do
+EXP=msd_task02+icl+grpo+group12+pool_size16 #+fold${FOLD}+seed${SEED}
+python train_3d.py \
+    -exp_name $EXP \
+    -sam_config sam2_hiera_t \
+    -sam_ckpt /data/rlsam2/checkpoints/sam2_hiera_tiny.pt \
+    -rl_config rl_modules/config/grpo_po_agent.yaml \
+    -checkpoint_path ./output/$EXP \
+    -dataset msd \
+    -task Task02 \
+    -data_path /data/rlsam2/datasets/nii/ \
+    -lr 2e-4 \
+    -val_freq 30 \
+    -ep 30 \
+    -warmup_ep 0 \
+    -stop_sam2_ep -1 \
+    -q_updates_per_step 8 \
+    -num_support 5 \
+    -memory_bank_size 6 \
+    -pool_size 16 \
+    -pool_stride 1 \
+    -recall_every 1 \
+    -agent_act_every 1 \
+    -rl_group_size 12 \
+    -agent_lr_T_max 300 \
+    -gating_dimension no -gating_softness soft \
+    -fold -1 -n_folds 5 \
+    -eval_test \
+    -seed 0 \
+    -wandb_enabled \
+    -distributed
+#     done
+# done
