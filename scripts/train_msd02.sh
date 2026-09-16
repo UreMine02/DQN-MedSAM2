@@ -19,7 +19,7 @@
 # do
 #     for FOLD in 0 1 2 3 4;
 #     do
-EXP=msd_task02+icl+grpo+group12+pool_size16 #+fold${FOLD}+seed${SEED}
+EXP=msd_task02+icl+grpo+group12+pool_size8 #+fold${FOLD}+seed${SEED}
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -30,19 +30,19 @@ python train_3d.py \
     -task Task02 \
     -data_path /data/rlsam2/datasets/nii/ \
     -lr 2e-4 \
-    -val_freq 50 \
-    -ep 50 \
+    -val_freq 30 \
+    -ep 30 \
     -warmup_ep 0 \
     -stop_sam2_ep -1 \
     -q_updates_per_step 8 \
     -num_support 5 \
     -memory_bank_size 6 \
-    -pool_size 16 \
+    -pool_size 8 \
     -pool_stride 1 \
     -recall_every 1 \
     -agent_act_every 1 \
     -rl_group_size 12 \
-    -agent_lr_T_max 100 \
+    -agent_lr_T_max 50 \
     -fold -1 -n_folds 5 \
     -eval_test \
     -seed 0 \
