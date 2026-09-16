@@ -30,8 +30,8 @@ python train_3d.py \
     -task Task02 \
     -data_path /data/rlsam2/datasets/nii/ \
     -lr 2e-4 \
-    -val_freq 30 \
-    -ep 30 \
+    -val_freq 50 \
+    -ep 50 \
     -warmup_ep 0 \
     -stop_sam2_ep -1 \
     -q_updates_per_step 8 \
@@ -42,8 +42,7 @@ python train_3d.py \
     -recall_every 1 \
     -agent_act_every 1 \
     -rl_group_size 12 \
-    -agent_lr_T_max 300 \
-    -gating_dimension no -gating_softness soft \
+    -agent_lr_T_max 100 \
     -fold -1 -n_folds 5 \
     -eval_test \
     -seed 0 \
