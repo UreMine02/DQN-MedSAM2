@@ -30,7 +30,7 @@ python train_3d.py \
     -task Task02 \
     -data_path /data/rlsam2/datasets/nii/ \
     -lr 2e-4 \
-    -val_freq 30 \
+    -val_freq 1 \
     -ep 30 \
     -warmup_ep 0 \
     -stop_sam2_ep -1 \
