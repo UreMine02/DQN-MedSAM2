@@ -12,13 +12,13 @@ agent:
   # deque before update() ever saw them.
   buffer_size: 4096
   batch_size: 128
-  entropy_weight: 0.01
+  entropy_weight: 0.02
   epsilon: 0.2
   target_kl: 0.02
   lr_T_max: 500
   min_lr: 1e-5
   n_layers: 2
-  advantage_norm: running_scale
+  advantage_norm: group_std
   adv_min_scale: 1e-6
   range: 1.0
   sam2_dim:
