@@ -29,9 +29,9 @@ python train_3d.py \
     -dataset msd \
     -task Task02 \
     -data_path /data/rlsam2/datasets/nii/ \
-    -lr 2e-4 \
+    -lr 1e-4 \
     -val_freq 1 \
-    -ep 30 \
+    -ep 50 \
     -warmup_ep 0 \
     -stop_sam2_ep -1 \
     -q_updates_per_step 8 \
