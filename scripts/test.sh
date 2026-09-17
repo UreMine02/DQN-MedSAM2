@@ -16,15 +16,17 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    # output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
-    # output/msd_task02+icl+grpo+raw_dice+long_horizon+no_augment/2026-05-06-10-30-25/best.pth
-    # output/msd_task02+icl+random_drop+long_horizon+flip_augment/2026-04-24-12-59-55/best.pth
-    # output/msd_task02+icl+grpo+penalty0.0+long_horizon+no_augment/2026-05-05-14-52-15/best.pth
-    # output/msd_task02+icl+grpo+long_horizon+no_augment+lr2e-4/2026-05-01-07-12-31/best.pth
-    # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
-    # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
-    # output/msd_task02+icl+ppo+penalty0.001+raw_dice+long_horizon+no_augment/2026-05-09-20-01-30/best.pth
-    output/msd_task02+icl+ppo+long_horizon+no_augment/2026-07-27-19-40-02/best.pth
+    output/msd_task02+icl+no_agent+topk_mem/2026-09-17-12-41-48/epoch_29_dice0.8437.pth
+    output/msd_task03+icl+no_agent+long_horizon+no_augment/2026-04-30-05-44-46/epoch_30_dice0.6514.pth
+    output/msd_task04+no_agent+icl+long_horizon+no_augment/2026-04-28-20-05-44/epoch_30_dice0.7700.pth
+    output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/epoch_30_dice0.6146.pth
+    output/msd_task06+icl+no_agent+long_horizon+no_augment/2026-04-28-17-12-14/epoch_30_dice0.5449.pth
+    output/msd_task07+no_agent+icl+long_horizon+no_augment/2026-04-28-20-07-36/epoch_30_dice0.5643.pth
+    output/msd_task08+no_agent+icl+long_horizon+no_augment/2026-04-28-20-20-31/epoch_30_dice0.5185.pth
+    output/msd_task09+icl+no_agent+long_horizon+no_augment/2026-04-11-12-19-00/epoch_30_dice0.9007.pth
+    output/msd_task10+icl+no_agent+long_horizon+no_augment/2026-04-12-15-52-38/epoch_30_dice0.5119.pth
+    output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/epoch_30_dice0.7361.pth
+    output/btcv+icl+no_agent+long_horizon+no_augment/2026-04-30-00-40-30/epoch_30_dice0.6800.pth
 )
 
 export CUDA_VISIBLE_DEVICES=0
@@ -41,6 +43,7 @@ do
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
+            -memory_select topk \
             # -no_agent \
             # -random_drop
     done
