@@ -74,14 +74,8 @@ def train(rank=0, world_size=1):
         GPUdevice = torch.device('cuda', args.gpu_device)
         torch.cuda.set_device(GPUdevice)
 
-    # mp.spawn re-imports this module in each child, so main()'s seeding never reached
-    # them. Seed here instead, offset by rank so the ranks draw different augmentations
-    # and chunk offsets rather than all replaying rank 0's stream. Model init still
-    # matches across ranks: DDP broadcasts rank 0's parameters at construction.
     set_seed(args.seed + rank)
-
-    # NOTE: WANDB -- one run per job, owned by rank 0. Every other rank turns the flag
-    # off for itself, which also silences the wandb.log calls inside func_3d.function.
+    
     args.wandb_enabled = args.wandb_enabled and is_main(rank)
     if args.wandb_enabled:
         wandb.init(
@@ -134,16 +128,7 @@ def train(rank=0, world_size=1):
             print(f'Distributed over {world_size} GPU(s); evaluation runs on rank 0 alone')
 
     if args.distributed:
-        # device_ids=None on purpose. With device_ids set, DDP scatters its forward inputs,
-        # and scatter rebuilds every dict it is handed -- so the SAM2 tracking state would
-        # arrive inside the module as a *copy*. Each chunk's registered objects and memory
-        # bank would then be written to that copy and thrown away, and the next chunk would
-        # come back with an empty object registry (KeyError on obj_id in the loss loop).
-        # With device_ids=None DDP skips the scatter and passes the state through by
-        # reference, exactly as the single-GPU path does; the caller already moves every
-        # tensor to this rank's device, and torch.cuda.set_device above makes it the default.
         net = DDP(net, device_ids=None, output_device=None, find_unused_parameters=True)
-        # net = torch.nn.SyncBatchNorm.convert_sync_batchnorm(net)
         if not args.no_agent:
             net.module.agent.to_distributed(rank=rank)
             if is_main(rank):
@@ -152,35 +137,13 @@ def train(rank=0, world_size=1):
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
     scheduler = ExponentialLR(optimizer, gamma=0.95)
-    # cache_enabled=False is load-bearing, not a tuning knob. This autocast region is
-    # entered once for the whole process and never exited, and autocast's fp32->bf16
-    # weight cache is only ever cleared on exit -- so it is populated once, on the first
-    # forward, and every forward for the rest of the run reuses those same bf16 copies.
-    # Two things follow, both silent:
-    #
-    #   1. The cached copies never see an optimizer step. Reproduced standalone: three
-    #      SGD steps at lr=1.0 move |w| from 0.1 to 7.1 while the forward output stays
-    #      bit-identical at 0.4385. SAM2's weights were being updated and then ignored.
-    #   2. A forward run under torch.no_grad() caches copies with no grad_fn, and later
-    #      training forwards inherit them. The agent always hits this -- its first forward
-    #      is select_action during the rollout -- which left 80 of its 130 parameters
-    #      receiving no gradient at all, with a finite-looking loss throughout.
-    #
-    # Disabling the cache re-casts weights per op (a few percent slower) and fixes both.
-    # The alternative -- scoping autocast per iteration with backward outside it, as the
-    # docs prescribe -- is the cleaner shape but a much larger change to train/val flow.
+    
     torch.autocast(device_type="cuda", dtype=torch.bfloat16, cache_enabled=False).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
         torch.backends.cuda.matmul.allow_tf32 = True
         torch.backends.cudnn.allow_tf32 = True
-
-    # Training itself only ever sees the training folds and the held-out validation fold,
-    # both carved out of the training manifest by patient group. The test manifest is
-    # requested only under -eval_test, and even then it is scored once, after the last
-    # epoch, against weights already chosen on val -- see test_sam() below. Without the
-    # flag the *Ts.csv manifests are not so much as opened by a training run.
     splits = ("train", "val", "test") if args.eval_test else ("train", "val")
     nice_train_loader, nice_val_loader, nice_test_loader = get_dataloader(
         args, rank=rank, world_size=world_size, splits=splits,
@@ -192,13 +155,6 @@ def train(rank=0, world_size=1):
         print("WARNING: -fold < 0 leaves no validation split; nothing is evaluated during "
               "this run and best.pth will not be written -- only per-epoch checkpoints")
 
-    # The agent's cosine LR schedule advances once per update(), and update() runs once
-    # per (volume, object) -- so its length is only knowable here, after the loader
-    # exists. Left at the config's lr_T_max (100) a 13-volume fold reaches min_lr around
-    # epoch 8 of 50 and trains the rest of the run on the floor. len(train_loader) counts
-    # volumes, which is exact for single-object tasks; -agent_lr_T_max overrides it for
-    # multi-object ones, where a volume performs one update per object and this estimate
-    # is therefore short.
     if agent is not None and hasattr(agent, "set_lr_schedule"):
         agent_lr_T_max = args.agent_lr_T_max or (args.ep * len(nice_train_loader))
         agent.set_lr_schedule(agent_lr_T_max)
@@ -231,10 +187,6 @@ def train(rank=0, world_size=1):
     '''begin training'''
     best_dice = 0.0
     for epoch in range(args.ep):
-        # From stop_sam2_ep on, SAM2 is frozen and only the RL agent keeps training.
-        # It also switches to eval() so the agent learns against the same forward path
-        # validation uses (memory-mask binarization, obj-ptr selection, mask-decoder
-        # stability branch, no dropout).
         train_sam2 = args.stop_sam2_ep < 0 or epoch < args.stop_sam2_ep
         if not train_sam2 and epoch == args.stop_sam2_ep:
             for param in net.parameters():
@@ -275,12 +227,7 @@ def train(rank=0, world_size=1):
             'train/aux_loss': aux_loss,
             'train/lr': optimizer.param_groups[0]['lr'] if train_sam2 else 0.0,
         }
-        # RL diagnostics: whatever the agent's update() returned this epoch (actor/critic
-        # loss, PPO ratio/entropy/KL/explained-variance/advantage stats, episodic return
-        # stats, ...), logged under rl/* rather than train/* since they're not SAM2
-        # training signals. agent_loss is empty when the agent never ran an update this
-        # epoch (still warming up, or the replay buffer hasn't filled) -- skip logging
-        # entirely rather than log a stale/flat 0 under rl/*.
+
         if agent_loss:
             loss_dict.update({f"rl/{key}": value for key, value in agent_loss.items()})
         # No point annealing an LR that no longer drives any update.
