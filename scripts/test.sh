@@ -29,7 +29,7 @@ declare -a ckpt=(
     output/btcv+icl+no_agent+long_horizon+no_augment/2026-04-30-00-40-30/epoch_30_dice0.6800.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpt[@]}
 do
@@ -43,8 +43,8 @@ do
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \
-            -memory_select topk \
-            # -no_agent \
+            -no_agent \
+            # -memory_select topk \
             # -random_drop
     done
 done
