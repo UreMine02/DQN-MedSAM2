@@ -47,7 +47,6 @@ python train_3d.py \
     -eval_test \
     -seed 0 \
     -wandb_enabled \
-    -no_agent \
     -distributed
 #     done
 # done
