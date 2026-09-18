@@ -19,7 +19,7 @@
 # do
 #     for FOLD in 0 1 2 3 4;
 #     do
-EXP=msd_task02+icl+no_agent #+fold${FOLD}+seed${SEED}
+EXP=msd_task02+icl+no_agent+lr2e-4 #+fold${FOLD}+seed${SEED}
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -29,7 +29,7 @@ python train_3d.py \
     -dataset msd \
     -task Task02 \
     -data_path /data/rlsam2/datasets/nii/ \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
     -warmup_ep 0 \
