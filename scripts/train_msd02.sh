@@ -19,7 +19,7 @@
 # do
 #     for FOLD in 0 1 2 3 4;
 #     do
-EXP=msd_task02+icl+grpo+group12+pool_size8 #+fold${FOLD}+seed${SEED}
+EXP=msd_task02+icl+no_agent #+fold${FOLD}+seed${SEED}
 python train_3d.py \
     -exp_name $EXP \
     -sam_config sam2_hiera_t \
@@ -47,6 +47,7 @@ python train_3d.py \
     -eval_test \
     -seed 0 \
     -wandb_enabled \
+    -no_agent \
     -distributed
 #     done
 # done
