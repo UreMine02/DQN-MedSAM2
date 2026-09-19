@@ -24,7 +24,7 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset msd \
     -task "Task03" \
-    -data_path /data/rlsam2/datasets/nii/MSD \
+    -data_path /data/rlsam2/datasets/nii/ \
     -lr 2e-4 \
     -val_freq 1 \
     -ep 50 \
