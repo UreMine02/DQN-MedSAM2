@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+icl+grpo+long_horizon+no_augment
+EXP=msd_task03+icl+grpo+global_pool8+group12
 
 python train_3d.py \
     -exp_name $EXP \
@@ -25,14 +25,22 @@ python train_3d.py \
     -dataset msd \
     -task "Task03" \
     -data_path /data/rlsam2/datasets/nii/MSD \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
-    -ep 100 \
-    -q_updates_per_step 1 \
-    -lazy_penalty 0.0 \
-    -invalid_penalty -0.01 \
+    -ep 50 \
+    -warmup_ep 0 \
+    -stop_sam2_ep -1 \
+    -q_updates_per_step 8 \
     -num_support 5 \
     -memory_bank_size 6 \
-    -distributed \
-    -wandb_enabled \
+    -pool_size 8 \
+    -pool_stride 1 \
+    -recall_every 1 \
+    -agent_act_every 1 \
+    -rl_group_size 12 \
+    -agent_lr_T_max 50 \
+    -fold -1 -n_folds 5 \
+    -eval_test \
+    -seed 0 \
+    -wandb_enabled
     

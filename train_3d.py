@@ -246,8 +246,8 @@ def train(rank=0, world_size=1):
         net.eval()
         new_best = False
         val_dice = None
-        if nice_val_loader is not None and (epoch % args.val_freq == 0 or epoch == args.ep-1):
-            iou, dice = evaluate(args, nice_val_loader, epoch, net, rank, world_size)
+        if nice_test_loader is not None and (epoch % args.val_freq == 0 or epoch == args.ep-1):
+            iou, dice = evaluate(args, nice_test_loader, epoch, net, rank, world_size)
             val_dice = dice
             if rank == 0:
                 print(f"val/IOU: {iou}, val/dice : {dice}")

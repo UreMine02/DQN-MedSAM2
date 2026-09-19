@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-# export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
 for SEED in 0;
 do
