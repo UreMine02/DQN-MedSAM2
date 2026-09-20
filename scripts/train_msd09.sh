@@ -13,7 +13,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task09+icl+grpo+global_pool8
+EXP=msd_task09+icl+grpo
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -42,4 +42,5 @@ python train_3d.py \
     -fold -1 -n_folds 5 \
     -eval_test \
     -seed 0 \
+    -no_agent \
     -wandb_enabled
