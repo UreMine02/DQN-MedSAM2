@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task03+icl+grpo+global_pool8+group12
+EXP=msd_task03+icl+grpo+global_pool8+group24
 
 python train_3d.py \
     -exp_name $EXP \
@@ -34,13 +34,14 @@ python train_3d.py \
     -num_support 5 \
     -memory_bank_size 6 \
     -pool_size 8 \
-    -pool_stride 1 \
+    -pool_stride 4 \
     -recall_every 1 \
     -agent_act_every 1 \
-    -rl_group_size 12 \
+    -rl_group_size 24 \
     -agent_lr_T_max 50 \
     -fold -1 -n_folds 5 \
     -eval_test \
     -seed 0 \
-    -wandb_enabled
+    -wandb_enabled \
+    -distributed
     
