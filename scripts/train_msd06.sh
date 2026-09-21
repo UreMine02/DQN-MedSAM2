@@ -14,7 +14,7 @@
 # conda init
 # conda activate rlsam2
 
-EXP=msd_task06+icl+no_agent+long_horizon+no_augment
+EXP=msd_task06+icl+grpo
 export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
@@ -25,13 +25,21 @@ python train_3d.py \
     -dataset msd \
     -task Task06 \
     -data_path /data/datasets/nii/ \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
-    -ep 100 \
-    -q_updates_per_step 1 \
-    -lazy_penalty 0.0 \
-    -invalid_penalty -0.01 \
+    -ep 50 \
+    -warmup_ep 0 \
+    -stop_sam2_ep -1 \
+    -q_updates_per_step 8 \
     -num_support 5 \
     -memory_bank_size 6 \
-    -wandb_enabled \
-    -no_agent
+    -pool_size 8 \
+    -pool_stride 4 \
+    -recall_every 1 \
+    -agent_act_every 1 \
+    -rl_group_size 24 \
+    -agent_lr_T_max 50 \
+    -fold -1 -n_folds 5 \
+    -eval_test \
+    -seed 0 \
+    -wandb_enabled

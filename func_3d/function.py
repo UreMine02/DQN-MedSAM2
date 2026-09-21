@@ -45,6 +45,45 @@ def unwrap(net):
 
 torch.backends.cudnn.benchmark = True
 
+
+def _make_global_pool(args):
+    """One pool per (volume, obj_id). Its admission policy is an experiment knob, so every
+    construction site reads the same args rather than growing its own default."""
+    return GlobalMemoryPool(
+        capacity=args.pool_size,
+        stride=args.pool_stride,
+        policy=args.pool_policy,
+        novelty_iou=args.pool_novelty_iou,
+        min_area=args.pool_min_area,
+        mask_res=args.pool_mask_res,
+        div_obj=args.pool_div_obj,
+    )
+
+
+def _accumulate_pool_stats(acc, pool):
+    if pool is None or not pool.enabled:
+        return
+    for key, value in pool.summary().items():
+        acc[key] = acc.get(key, 0.0) + value
+    acc["num_pool"] = acc.get("num_pool", 0) + 1
+
+
+def _pool_log_dict(acc, split):
+    """The pass's pool telemetry: counters summed over volumes, gauges averaged.
+
+    Only the diverse policy can reject anything, so under the stride policy this is just
+    how full the pool got and where its stride ended up.
+    """
+    num_pool = acc.get("num_pool", 0)
+    if not num_pool:
+        return {}
+    gauges = {"size", "stride", "mean_pair_iou", "max_pair_iou"}
+    return {
+        f"{split}/pool/{key}": (value / num_pool if key in gauges else value)
+        for key, value in acc.items() if key != "num_pool"
+    }
+
+
 max_iterations = settings.EPOCH
 dice_val_best = 0.0
 global_step_best = 0
@@ -82,6 +121,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
     agent_metric_sums = {}
     agent_metric_counts = {}
     agent_step = 0
+    # Summed over every (volume, obj_id) pool this epoch; see _pool_log_dict.
+    pool_stats = {}
     metric_logger = MetricLogger(delimiter=" ")
     header = 'Epoch: [{}]'.format(epoch)
     print_freq = 10
@@ -175,9 +216,7 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                 # One pool per (volume, obj_id), created before the chunk loop and shared
                 # by every chunk of it: an archive of frames the agent has already evicted
                 # from the (much smaller) memory bank and may want to recall.
-                global_pool = GlobalMemoryPool(
-                    capacity=args.pool_size, stride=args.pool_stride
-                )
+                global_pool = _make_global_pool(args)
 
                 # One tracking state per (volume, obj_id) as well. Chunking exists only to
                 # bound the autograd graph SAM2 backprops through; the RL environment --
@@ -319,6 +358,8 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                             agent_metric_counts[metric_name] = agent_metric_counts.get(metric_name, 0) + 1
                         agent_step += 1
 
+                _accumulate_pool_stats(pool_stats, global_pool)
+
             average_loss(instance_loss)
 
             update_loss(total_loss,
@@ -331,6 +372,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
             pbar.update()
 
     average_loss(total_loss)
+    pool_log = _pool_log_dict(pool_stats, "train")
+    if pool_log and args.wandb_enabled and (not args.distributed or rank == 0):
+        wandb.log(pool_log, step=epoch)
     dice_loss_per_class = {f"{class_}":dice_loss_output["dice_loss"]/dice_loss_output["num_step"] for class_, dice_loss_output in dice_loss_per_class.items()}
 
     # Empty when the agent never ran an update this epoch (still warming up, or the
@@ -394,6 +438,8 @@ def _validation_sam(args, val_loader, epoch, net: nn.Module, agent, inferencing=
     score_per_class = {}
     masks = {}
     preds = {}
+    # Summed over every (volume, obj_id) pool this pass; see _pool_log_dict.
+    pool_stats = {}
     agent_act = not args.no_agent
     # lossfunc = paper_loss
 
@@ -461,13 +507,12 @@ def _validation_sam(args, val_loader, epoch, net: nn.Module, agent, inferencing=
             # Validation never chunks: the whole volume is tracked in one pass, so
             # chunk_start is 0 and the state is never advanced. The pool is still
             # per-(volume, obj_id) and must not leak between them.
+            global_pool = _make_global_pool(args)
             train_state = init_state_fn(
                 args=args,
                 imgs_tensor=imgs_tensor, masks_tensor=masks_tensor,
                 support_imgs_tensor=support_imgs_tensor,
-                global_pool=GlobalMemoryPool(
-                    capacity=args.pool_size, stride=args.pool_stride
-                ),
+                global_pool=global_pool,
                 chunk_start=0,
             )
 
@@ -516,6 +561,8 @@ def _validation_sam(args, val_loader, epoch, net: nn.Module, agent, inferencing=
                 else:
                     mask = torch.zeros_like(pred).to(device=GPUdevice, dtype=torch.float32)
 
+            _accumulate_pool_stats(pool_stats, global_pool)
+
     avg = {
         "iou": torch.FloatTensor([]).to(device=GPUdevice),
         "dice": torch.FloatTensor([]).to(device=GPUdevice),
@@ -554,6 +601,16 @@ def _validation_sam(args, val_loader, epoch, net: nn.Module, agent, inferencing=
     ))
 
     print(tabulate(table_data, headers=["name", "iou", "dice", "fb_iou", "th"], floatfmt=".4f", tablefmt="grid"))
+
+    # What the pool admitted and how redundant it ended up. Under -pool_policy diverse
+    # this is the only place the heuristic's own behaviour is visible -- a pool that never
+    # fills, or one whose mean pairwise IoU sits at the novelty threshold, explains a flat
+    # recall rate that the Dice column on its own would not.
+    pool_log = _pool_log_dict(pool_stats, "val")
+    if pool_log:
+        if args.wandb_enabled:
+            wandb.log(pool_log, step=epoch)
+        print(pool_log)
 
     # RL diagnostics from this validation pass: reward the agent's greedy decisions
     # produced on held-out data, and what it actually decided. Empty (nothing logged)
