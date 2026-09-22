@@ -18,8 +18,8 @@ agent:
   lr_T_max: 500
   min_lr: 1e-5
   n_layers: 2
-  advantage_norm: running_scale
-  adv_min_scale: 1e-6
+  advantage_norm: group_std
+  adv_min_scale: 1e-8
   range: 1.0
   sam2_dim:
     n_query: 16
