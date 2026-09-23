@@ -228,6 +228,9 @@ class GRPOAgent(BasePOAgent):
         self._raw_spread_sum = 0.0
         self._raw_std_sum = 0.0
 
+        # update() calls that actually trained; seeds each one's minibatch shuffles.
+        self._num_updates = 0
+
         # For distributed training
         self.rank = 0
         self.distributed = False
@@ -365,9 +368,6 @@ class GRPOAgent(BasePOAgent):
         actor.eval()
 
         device = next(actor.parameters()).device
-        # The state was offloaded to CPU by the caller, so this is also what moves it back
-        # onto the accelerator; stack_state_feats is the same batching the PPO path uses,
-        # and it carries the pool stack and the age tensors when the pool is enabled.
         action_logits = actor(**stack_state_feats([state], device=device))
         action_logits = action_logits.squeeze(0).detach().float().cpu()
 
@@ -376,24 +376,13 @@ class GRPOAgent(BasePOAgent):
         action_mask[valid_actions] = True
 
         log_probs, probs, minus_entropy = self._masked_readout(action_logits, action_mask, dim=0)
+        
+        if not training:
+            print("[GRPO Probs]", probs)
 
         if training:
-            # WITH replacement: the group is a Monte-Carlo estimate of the policy, and
-            # its mean is only an unbiased baseline if the members are i.i.d. draws.
-            # Sampling without replacement (the old behaviour) turned a 6-of-7 group into
-            # a near-exhaustive enumeration, over-weighting low-probability actions and
-            # biasing the baseline towards a uniform-over-actions mean. Duplicates are
-            # cheap: the caller scores each distinct action once. Masked actions have
-            # probability exactly 0, so an index drawn here is always legal and *is* the
-            # action id -- no mapping back through valid_actions.
             action_idx = torch.multinomial(probs, num_samples, replacement=True)
             return {
-                # The group's first draw rather than a separate multinomial. Both are
-                # i.i.d. from the same masked distribution, so this is the same random
-                # variable -- but it guarantees the action actually applied to the live
-                # bank is one the group scored. Drawn independently, the executed action
-                # was frequently absent from the group, so the trajectory the environment
-                # went on to follow was never trained on.
                 "main_action": action_idx[0].item(),
                 "action": action_idx.tolist(),
                 "log_probs": log_probs[action_idx].tolist(),
@@ -401,8 +390,6 @@ class GRPOAgent(BasePOAgent):
             }
 
         action = torch.argmax(probs).item()
-        # Feeds pop_val_stats (val_noop_frac / val_action_entropy_mean), the same
-        # diagnostics the PPO path reports. This used to be a bare print per frame.
         self.record_val_action(action, -minus_entropy.item())
         return {"main_action": action}
 
@@ -416,7 +403,15 @@ class GRPOAgent(BasePOAgent):
         if self.distributed:
             dist.all_reduce(local_count, op=dist.ReduceOp.MIN)
 
-        if local_count < self.batch_size or num_update <= 0:
+        # On-policy, the same gate PPOAgent.update uses: train only once every rank's
+        # buffer is full, then clear it. Collection spans as many volumes as it takes to
+        # fill it, which is still on-policy -- the actor does not move between updates.
+        #
+        # The gate is also what keeps DDP in step. Every minibatch below runs collectives
+        # (DDP's gradient all-reduce in backward, the target_kl all-reduce), so every rank
+        # must run the same number of them. A full deque holds exactly `buffer_size` on
+        # every rank; a partial one would not, since collapsed groups are dropped per rank.
+        if local_count < self.buffer_size or num_update <= 0:
             return None
 
         self.actor.train()
@@ -427,8 +422,12 @@ class GRPOAgent(BasePOAgent):
         # independently drawn minibatches -- the same shape BasePOAgent.update uses. Every
         # sample in here cost a SAM2 forward to score, by far the most expensive thing in
         # this training loop, and the old random.sample form consumed roughly 40% of a
-        # volume's collection once before clear() threw the rest away unseen.
-        np.random.seed(self.rank + self.epoch * 100 + buffer_size)
+        # buffer's collection once before clear() threw the rest away unseen.
+        #
+        # Seeded per update, not per buffer size: the size is now always `buffer_size`,
+        # so a size-based seed would replay the same shuffles on every update of an epoch.
+        np.random.seed([self.rank, self.epoch, self._num_updates])
+        self._num_updates += 1
 
         # Read once, before the loop: every minibatch of one update() has to be scaled
         # identically, or the ratio against old_log_probs means something different from

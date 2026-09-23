@@ -208,9 +208,16 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None, t
                     # dist.all_reduce(local_size, op=dist.ReduceOp.MIN)
                     # sliding_window = sliding_window[:local_size]
                 else:
+                    # rounded_length = (imgs_tensor.shape[0] // args.video_length) * args.video_length
+                    # start_slice = random.randint(0, imgs_tensor.shape[0] - rounded_length)
+                    # sliding_window = [
+                    #     slice(i, i+args.video_length) 
+                    #     for i in range(start_slice, start_slice+rounded_length, args.video_length)
+                    # ]
+                    
                     sliding_window = [
                         slice(i, i+args.video_length) 
-                        for i in range(0, local_length, args.video_length)
+                        for i in range(0, imgs_tensor.shape[0], args.video_length)
                     ]
                 
                 # One pool per (volume, obj_id), created before the chunk loop and shared

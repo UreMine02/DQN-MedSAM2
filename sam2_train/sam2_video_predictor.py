@@ -1833,7 +1833,8 @@ class SAM2VideoPredictor(SAM2Base):
                 )
             pred_masks = output["pred_masks"].to(storage_device, non_blocking=True).to(torch.float32)
             return compute_loss(pred_masks, gt_masks, inference_state)
-
+        
+        valid_cand = None
         if agent_act or generate_rl_samples:
             state, bank_frame_keys = prepare_rl_state(
                 current_vision_feats,
@@ -1978,6 +1979,7 @@ class SAM2VideoPredictor(SAM2Base):
                     f" {resolved}"
                     f" candidate_key {candidate_key}"
                     f" bank_size {bank_size}"
+                    f" pool_size {valid_cand}"
                     f" n_valid {len(valid_actions)}"
                 )
 

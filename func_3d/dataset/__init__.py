@@ -18,26 +18,6 @@ def _build_loader(dataset, shuffle, num_workers, rank=None, world_size=None, dis
 
 
 def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "test")):
-    """Return (train, val, test) loaders; any split not named in `splits` comes back None.
-
-    `val` is carved out of the training manifest by patient group, following the fold
-    assignment split_fold.py committed under data/splits (see
-    func_3d/dataset/splits.py), and is what model selection should use; `test` is the
-    held-out manifest. `val` is None when -fold < 0, which trains on the whole training
-    manifest and leaves nothing to select on.
-
-    `splits` is what keeps the test set out of a training run: train_3d.py asks for
-    ("train", "val") unless -eval_test was passed, so by default the *Ts.csv manifests are
-    never even opened while training. Under -eval_test train_3d.py also asks for "test",
-    but scores it once after the last epoch, on weights val already selected.
-
-    Only the training loader is ever sharded across ranks. The val and test loaders come
-    back covering the whole split on every rank, because evaluation runs on a single GPU:
-    sharding them would give each rank a different subset of volumes -- hence a different
-    set of (task, obj_id) classes to average over -- and DistributedSampler would pad the
-    tail by repeating volumes, so the resulting dice would depend on how many GPUs the run
-    happened to use. In a DDP run only rank 0 iterates the eval loaders.
-    """
     unknown = set(splits) - {"train", "val", "test"}
     if unknown:
         raise ValueError(f"unknown split(s) {sorted(unknown)}; expected any of 'train', 'val', 'test'")
@@ -69,11 +49,11 @@ def get_dataloader(args, rank=None, world_size=None, splits=("train", "val", "te
         workers = (4, 4)
     elif args.dataset == 'msd':
         build = lambda mode: MSD(args, mode=mode)
-        workers = (4, 2)
+        workers = (4, 4)
     elif args.dataset == 'btcv': #png
         '''btcv data'''
         build = lambda mode: BTCV(args, subset=mode)
-        workers = (2, 2)
+        workers = (4, 4)
     else:
         raise ValueError(f"the dataset {args.dataset} is not supported now!!!")
 

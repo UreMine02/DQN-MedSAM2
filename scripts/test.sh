@@ -16,17 +16,18 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    output/msd_task02+icl+no_agent+topk_mem/2026-09-17-12-41-48/epoch_29_dice0.8437.pth
-    output/msd_task03+icl+no_agent+long_horizon+no_augment/2026-04-30-05-44-46/epoch_30_dice0.6514.pth
-    output/msd_task04+no_agent+icl+long_horizon+no_augment/2026-04-28-20-05-44/epoch_30_dice0.7700.pth
-    output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/epoch_30_dice0.6146.pth
-    output/msd_task06+icl+no_agent+long_horizon+no_augment/2026-04-28-17-12-14/epoch_30_dice0.5449.pth
-    output/msd_task07+no_agent+icl+long_horizon+no_augment/2026-04-28-20-07-36/epoch_30_dice0.5643.pth
-    output/msd_task08+no_agent+icl+long_horizon+no_augment/2026-04-28-20-20-31/epoch_30_dice0.5185.pth
-    output/msd_task09+icl+no_agent+long_horizon+no_augment/2026-04-11-12-19-00/epoch_30_dice0.9007.pth
-    output/msd_task10+icl+no_agent+long_horizon+no_augment/2026-04-12-15-52-38/epoch_30_dice0.5119.pth
-    output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/epoch_30_dice0.7361.pth
-    output/btcv+icl+no_agent+long_horizon+no_augment/2026-04-30-00-40-30/epoch_30_dice0.6800.pth
+    # output/msd_task02+icl+no_agent+topk_mem/2026-09-17-12-41-48/epoch_29_dice0.8437.pth
+    # output/msd_task03+icl+no_agent+long_horizon+no_augment/2026-04-30-05-44-46/epoch_30_dice0.6514.pth
+    # output/msd_task04+no_agent+icl+long_horizon+no_augment/2026-04-28-20-05-44/epoch_30_dice0.7700.pth
+    # output/msd_task05+no_agent+long_horizon+no_augment/2026-04-13-18-04-27/epoch_30_dice0.6146.pth
+    # output/msd_task06+icl+no_agent+long_horizon+no_augment/2026-04-28-17-12-14/epoch_30_dice0.5449.pth
+    # output/msd_task07+no_agent+icl+long_horizon+no_augment/2026-04-28-20-07-36/epoch_30_dice0.5643.pth
+    # output/msd_task08+no_agent+icl+long_horizon+no_augment/2026-04-28-20-20-31/epoch_30_dice0.5185.pth
+    # output/msd_task09+icl+no_agent+long_horizon+no_augment/2026-04-11-12-19-00/epoch_30_dice0.9007.pth
+    # output/msd_task10+icl+no_agent+long_horizon+no_augment/2026-04-12-15-52-38/epoch_30_dice0.5119.pth
+    # output/sarcoma+icl+no_agent+long_horizon+no_augment/2026-04-10-19-47-31/epoch_30_dice0.7361.pth
+    # output/btcv+icl+no_agent+long_horizon+no_augment/2026-04-30-00-40-30/epoch_30_dice0.6800.pth
+    output/msd_task02+icl+grpo+pool_size16+rl_group_size12/2026-09-23-00-39-12/best.pth
 )
 
 export CUDA_VISIBLE_DEVICES=1
@@ -41,9 +42,14 @@ do
             -dataset msd \
             -task "Task02" \
             -data_path /data/datasets/nii/ \
-            -num_support $shot \
-            -memory_bank_size 6 \
-            -no_agent \
+            -lr 2e-4 -val_freq 30 -ep 30 -warmup_ep 0 -stop_sam2_ep -1 \
+            -num_support 5 -memory_bank_size 6 \
+            -pool_size 16 -pool_stride 1 -pool_policy diverse -pool_novelty_iou 0.1 -recall_every 1 \
+            -agent_act_every 1 -rl_group_size 12 -agent_lr_T_max 100 -q_updates_per_step 4 \
+            -fold -1 -n_folds 5 \
+            -eval_test \
+            -seed 0 \
+            -wandb_enabled
             # -memory_select topk \
             # -random_drop
     done
