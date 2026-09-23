@@ -7,19 +7,16 @@ agent:
   value_lr: 1e-4
   gamma: 0.99
   tau: 0.9
-  # A volume produces ~6 samples per frame, all of which cost a full SAM2 forward to
-  # score. At the old 500 a 200-frame volume silently dropped ~58% of them out of the
-  # deque before update() ever saw them.
   buffer_size: 4096
   batch_size: 128
-  entropy_weight: 0.02
+  entropy_weight: 0.01
   epsilon: 0.2
   target_kl: 0.05
   lr_T_max: 500
-  min_lr: 1e-5
+  min_lr: 2e-5
   n_layers: 2
-  advantage_norm: running_scale
-  adv_min_scale: 1e-6
+  advantage_norm: group_std
+  adv_min_scale: 1e-8
   range: 1.0
   sam2_dim:
     n_query: 16
