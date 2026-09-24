@@ -377,8 +377,8 @@ class GRPOAgent(BasePOAgent):
 
         log_probs, probs, minus_entropy = self._masked_readout(action_logits, action_mask, dim=0)
         
-        if not training:
-            print("[GRPO Probs]", probs)
+        # if not training:
+        #     print("[GRPO Probs]", probs)
 
         if training:
             action_idx = torch.multinomial(probs, num_samples, replacement=True)
