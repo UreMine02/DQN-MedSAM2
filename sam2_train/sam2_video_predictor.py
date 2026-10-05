@@ -238,6 +238,8 @@ class SAM2VideoPredictor(SAM2Base):
             "extra_weight": getattr(args, "rl_extra_weight", 1.0),
             # GRPO only: how many actions its group samples and scores per decision.
             "group_size": getattr(args, "rl_group_size", 6),
+            # GRPO only: |dice-loss delta| below this counts as no difference at all.
+            "reward_threshold": getattr(args, "rl_reward_threshold", 0.0),
         }
         # Validation tracks a whole volume in a single pass, so `chunk_start` is 0 and
         # `train_advance_chunk` never runs; the fields exist so the two paths index
@@ -368,6 +370,8 @@ class SAM2VideoPredictor(SAM2Base):
             "extra_weight": getattr(args, "rl_extra_weight", 1.0),
             # GRPO only: how many actions its group samples and scores per decision.
             "group_size": getattr(args, "rl_group_size", 6),
+            # GRPO only: |dice-loss delta| below this counts as no difference at all.
+            "reward_threshold": getattr(args, "rl_reward_threshold", 0.0),
         }
         # Owned by the caller and shared by every chunk of one (volume, obj_id). Keyed by
         # volume-global frame index, same as everything else now that the state itself
@@ -1911,6 +1915,9 @@ class SAM2VideoPredictor(SAM2Base):
             # loss_after is exactly loss_before -- reward 0, no forward needed. The same
             # shortcut agent_update_first_stage takes.
             reward_cache = {0: 0.0 + rl_config["lazy_penalty"]}
+            # Applied to the measured delta only, never to the no-op's lazy penalty: the
+            # threshold is a noise floor on what SAM2 reports, not on shaping terms.
+            reward_threshold = float(rl_config.get("reward_threshold", 0.0))
 
             for action, log_prob in zip(action_out["action"], action_out["log_probs"]):
                 if action not in reward_cache:
@@ -1924,7 +1931,13 @@ class SAM2VideoPredictor(SAM2Base):
                     # A recalled memory is older than the bank's contents, so appending it
                     # would label the oldest memory as the newest; see _sort_memory_bank.
                     self._sort_bank_in_place(branch_bank)
-                    reward_cache[action] = (loss_before - measure_loss(branch_bank)).item()
+                    delta = (loss_before - measure_loss(branch_bank)).item()
+                    # A delta this small is indistinguishable from the no-op's exact 0,
+                    # and group_std normalization would otherwise scale it up to a
+                    # unit-size advantage.
+                    if abs(delta) < reward_threshold:
+                        delta = 0.0
+                    reward_cache[action] = delta
 
                 self.agent.add_new_instance_to_group(
                     frame_idx=frame_idx,
@@ -2429,6 +2442,10 @@ class SAM2VideoPredictor(SAM2Base):
         add_support=True,
         device="cpu"
     ):
+        # The state is per (volume, obj_id), but `gt_masks` is the volume's raw label map;
+        # compute_loss needs this to score the RL reward against this object alone.
+        train_state["obj_id"] = obj_id
+
         # The support frames are prompted once per volume, on the chunk that created the
         # state. Later chunks reuse the conditioning frames those prompts produced, which
         # are still sitting in `output_dict["cond_frame_outputs"]`.

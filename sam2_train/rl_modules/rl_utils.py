@@ -216,7 +216,19 @@ def compute_loss(
     every axis instead of none. Keeping the batch/channel dims makes the reduction
     explicit rather than accidental, and a genuine H/W mismatch now raises here instead
     of broadcasting into a silently wrong loss.
+
+    `gt_masks` is the raw label map (every structure's id), so it is binarized against
+    the tracked object here -- the same `label == obj_id` target the SAM2 loss uses.
+    Scoring against the raw map instead rewards covering every labelled structure, with
+    ids > 1 weighted up.
     """
+    if "obj_id" not in inference_state:
+        raise KeyError(
+            "compute_loss needs inference_state['obj_id'] to binarize the label map; "
+            "SAM2VideoPredictor.forward sets it"
+        )
+    gt_masks = (gt_masks == inference_state["obj_id"]).to(pred_masks.dtype)
+
     video_H = inference_state["video_height"]
     video_W = inference_state["video_width"]
     if pred_masks.shape[-2:] == (video_H, video_W):

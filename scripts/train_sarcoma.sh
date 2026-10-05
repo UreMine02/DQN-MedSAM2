@@ -15,21 +15,28 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+icl+grpo
 export CUDA_VISIBLE_DEVICES=0
 
-python train_3d.py \
-    -exp_name $EXP \
-    -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
-    -rl_config rl_modules/config/grpo_po_agent.yaml \
-    -checkpoint_path ./output/$EXP \
-    -dataset sarcoma \
-    -data_path /data/datasets/nii/ \
-    -lr 1e-4 -val_freq 1 -ep 30 -warmup_ep 0 -stop_sam2_ep -1 \
-    -num_support 5 -memory_bank_size 6 \
-    -pool_size 16 -pool_stride 1 -pool_policy diverse -pool_novelty_iou 0.05 -recall_every 1 \
-    -agent_act_every 1 -rl_group_size 12 -agent_lr_T_max 100 -q_updates_per_step 4 \
-    -fold -1 -n_folds 5 \
-    -eval_test \
-    -seed 0 \
-    -wandb_enabled
+for SEED in 0;
+do
+    for FOLD in 0 1 2 3 4;
+    do
+    EXP=sarcoma+icl+global_pool8_diverse+group_size12_group_std+rw_thr1e-3/seed${SEED}/fold${FOLD}
+    python train_3d.py \
+        -exp_name $EXP \
+        -sam_config sam2_hiera_t \
+        -sam_ckpt ./checkpoints/sam2_hiera_tiny.pt \
+        -rl_config rl_modules/config/grpo_po_agent.yaml \
+        -checkpoint_path ./output/$EXP \
+        -dataset sarcoma \
+        -data_path /data/datasets/nii/ \
+        -lr 2e-4 -val_freq 50 -ep 50 -warmup_ep 0 -stop_sam2_ep -1 \
+        -num_support 5 -memory_bank_size 6 \
+        -pool_size 8 -pool_stride 1 -pool_policy diverse -pool_novelty_iou 0.05 -recall_every 1 \
+        -agent_act_every 1 -rl_group_size 12 -agent_lr_T_max 100 -q_updates_per_step 4 \
+        -rl_reward_threshold 0.001 \
+        -fold $FOLD -n_folds 5 \
+        -seed 0 \
+        -wandb_enabled
+    done
+done

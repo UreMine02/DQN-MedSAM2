@@ -64,6 +64,10 @@ class GRPOGroup:
         # agent's metrics.
         self.raw_spread = 0.0
         self.raw_std = 0.0
+        # Set when distinct actions all scored exactly the same reward -- which the reward
+        # threshold makes common, by flooring every small delta to 0. Counted apart from
+        # same-action collapse so final_group can tell the two failure modes apart.
+        self.zero_spread = False
 
         if len(self.group) < 2:
             # A single-member group has no spread to normalize against: the unbiased std
@@ -86,6 +90,15 @@ class GRPOGroup:
         group_rewards = torch.tensor([float(ins.reward) for ins in self.group])
         self.raw_spread = (group_rewards.max() - group_rewards.min()).item()
         self.raw_std = group_rewards.std().item()
+
+        if self.raw_spread == 0.0:
+            # Distinct actions, identical rewards: every advantage is exactly 0, so this is
+            # the same dead weight as a same-action group and is dropped for the same
+            # reasons -- plus, under "running_scale", feeding its zeros to the global scale
+            # would shrink it and inflate every later advantage.
+            self.zero_spread = True
+            self.group = []
+            return
 
         # Centering is the part that has to happen here: the group mean is only knowable
         # inside the group, and it is what makes GRPO critic-free.
@@ -225,6 +238,7 @@ class GRPOAgent(BasePOAgent):
         # See pop_group_stats.
         self._group_count = 0
         self._collapsed_count = 0
+        self._zero_spread_count = 0
         self._raw_spread_sum = 0.0
         self._raw_std_sum = 0.0
 
@@ -260,7 +274,9 @@ class GRPOAgent(BasePOAgent):
         self._group_count += 1
         self._raw_spread_sum += self.await_group.raw_spread
         self._raw_std_sum += self.await_group.raw_std
-        if not new_normalized_instances:
+        if self.await_group.zero_spread:
+            self._zero_spread_count += 1
+        elif not new_normalized_instances:
             self._collapsed_count += 1
 
         if new_normalized_instances and self.advantage_norm == "running_scale":
@@ -314,10 +330,14 @@ class GRPOAgent(BasePOAgent):
             "group_reward_spread_mean": self._raw_spread_sum / self._group_count,
             "group_reward_std_mean": self._raw_std_sum / self._group_count,
             "group_collapse_frac": self._collapsed_count / self._group_count,
+            # Distinct actions that all scored the same (after -rl_reward_threshold): the
+            # share of decisions the threshold judged to carry no signal at all.
+            "group_zero_spread_frac": self._zero_spread_count / self._group_count,
             "n_groups": float(self._group_count),
         }
         self._group_count = 0
         self._collapsed_count = 0
+        self._zero_spread_count = 0
         self._raw_spread_sum = 0.0
         self._raw_std_sum = 0.0
         return stats

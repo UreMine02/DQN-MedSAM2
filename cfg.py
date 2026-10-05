@@ -65,6 +65,7 @@ def parse_args():
     parser.add_argument('-rl_extra_samples', type=int, default=0, help="At every real agent decision, sample N additional actions, score them with the same counterfactual and store them as extra policy-gradient samples (0 keeps one sample per decision). Each costs one extra SAM2 forward")
     parser.add_argument('-rl_extra_weight', type=float, default=1.0, help="Policy-loss weight of the extra sampled actions relative to the action actually taken; they never enter the value loss")
     parser.add_argument('-rl_group_size', type=int, default=6, help="GRPO only: actions sampled and scored per decision. Each distinct one costs a SAM2 forward; the group is its own baseline, so it must be at least 2")
+    parser.add_argument('-rl_reward_threshold', type=float, default=0.0, help="GRPO only: zero out any group member's dice-loss delta whose magnitude is below this, so noise-level differences between actions are not normalized up into full-size advantages (0 disables)")
     parser.add_argument('-gating_dimension', type=str, choices=["cw", "tw", "both", "no"], default="no", help="Memory gating: 'cw' modulates memory values channel-wise, 'tw' biases memory keys' attention logits (selection), 'both' applies both")
     parser.add_argument('-gating_softness', type=str, choices=["soft", "threshold", "gumbel"], default="soft", help="Whether gating object pointer")
     parser.add_argument('-obj_ptr_gating', action="store_true", help="Whether gating object pointer")
