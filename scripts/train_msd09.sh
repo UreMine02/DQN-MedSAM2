@@ -13,14 +13,13 @@
 # conda init
 # conda activate rlsam2
 
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=0
 
-sleep 5h;
 for SEED in 0;
 do
     for FOLD in 0 1 2 3 4;
     do
-    EXP=msd_task09+icl+global_pool8_diverse+group_size12_group_std+rw_thr1e-3/seed${SEED}/fold${FOLD}
+    EXP=msd_task09+icl+no_agent/seed${SEED}/fold${FOLD}
     python train_3d.py \
         -exp_name $EXP \
         -sam_config sam2_hiera_t \
@@ -37,6 +36,7 @@ do
         -rl_reward_threshold 0.001 \
         -fold $FOLD -n_folds 5 \
         -seed 0 \
-        -wandb_enabled
+        -wandb_enabled \
+        -no_agent
     done
 done
