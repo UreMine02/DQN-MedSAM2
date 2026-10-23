@@ -16,7 +16,7 @@
 
 for SEED in 0;
 do
-    for FOLD in 0 1 2 3 4;
+    for FOLD in 1 2 3 4;
     do
     EXP=msd_task03+icl+global_pool8_diverse+group_size12_group_std+rw_thr1e-3/seed${SEED}/fold${FOLD}
     python train_3d.py \

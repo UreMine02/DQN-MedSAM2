@@ -18,7 +18,7 @@ for SEED in 0;
 do
     for FOLD in 0 1 2 3 4;
     do
-    EXP=msd_task04+icl+global_pool8_diverse+group_size12_group_std+rw_thr1e-3/seed${SEED}/fold${FOLD}
+    EXP=msd_task04+no_agent/seed${SEED}/fold${FOLD}
     python train_3d.py \
         -exp_name $EXP \
         -sam_config sam2_hiera_t \
@@ -36,6 +36,7 @@ do
         -fold $FOLD -n_folds 5 \
         -seed 0 \
         -wandb_enabled \
-        -distributed
+        -distributed \
+        -no_agent
     done
 done
