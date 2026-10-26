@@ -6,8 +6,10 @@
 """
 
 import os
+import sys
 import time
 import random
+import traceback
 import pytz
 import numpy as np
 from datetime import datetime, timedelta
@@ -29,21 +31,29 @@ from torch.optim.lr_scheduler import ExponentialLR
 
 import wandb # NOTE: WANDB
 
+# Gloo group for the waits that are long by design; see setup().
+_HOST_GROUP = None
+
 def setup(args, rank, world_size):
+    global _HOST_GROUP
     os.environ['MASTER_ADDR'] = args.master_addr
     os.environ['MASTER_PORT'] = str(args.master_port)
     # Pin this process to its GPU before the process group is built. Without it every
     # rank's NCCL collectives and any device-less .cuda() default to device 0, which
     # either serialises the run onto one GPU or deadlocks.
     torch.cuda.set_device(rank)
-    # The default 30-minute collective timeout is too tight here: on validation epochs
-    # every other rank sits in evaluate()'s broadcast for as long as rank 0 takes to score
-    # the entire split by itself, and rank 0 then writes checkpoints while they wait at the
-    # end-of-epoch barrier.
+    # The NCCL timeout is the only thing that turns a stuck collective into an error, so
+    # it is sized for what a training collective can legitimately wait: ranks drift apart
+    # by at most one volume's step. The waits that are long on purpose -- every other rank
+    # idling in evaluate() while rank 0 scores the whole split alone, then at the
+    # end-of-epoch barrier while it writes checkpoints -- go through a gloo group with its
+    # own long timeout instead. They used to sit on NCCL, which forced a 6 h timeout onto
+    # every collective, so any real hang spun silently for 6 h before anything reported it.
     dist.init_process_group(
         backend="nccl", rank=rank, world_size=world_size,
-        timeout=timedelta(hours=6),
+        timeout=timedelta(minutes=30),
     )
+    _HOST_GROUP = dist.new_group(backend="gloo", timeout=timedelta(hours=6))
 
 def cleanup():
     dist.destroy_process_group()
@@ -270,7 +280,7 @@ def train(rank=0, world_size=1):
                 save_checkpoint(args, net, epoch, val_dice, os.path.join(checkpoint_path, "best.pth"))
 
         if args.distributed:
-            torch.distributed.barrier()
+            dist.barrier(group=_HOST_GROUP)
 
     # Training ends here. Whatever the test split is worth is read from here on only --
     # never inside the loop above -- so no test number can have moved an epoch, an LR or a
@@ -308,14 +318,16 @@ def evaluate(args, loader, epoch, net, rank, world_size):
         iou, dice = function.validation_sam(args, loader, epoch, net, rank=rank)
         return iou.item(), dice.item()
 
-    scores = torch.zeros(2, dtype=torch.float32, device=torch.device('cuda', rank))
+    # A CPU tensor over the gloo group: the other ranks wait here for the whole pass,
+    # which is too long to hold an NCCL collective open; see setup().
+    scores = torch.zeros(2, dtype=torch.float32)
     if is_main(rank):
         iou, dice = function.validation_sam(
             args, loader, epoch, function.unwrap(net),
             rank=rank, device=torch.device('cuda', rank),
         )
-        scores[0], scores[1] = iou, dice
-    dist.broadcast(scores, src=0)
+        scores[0], scores[1] = float(iou), float(dice)
+    dist.broadcast(scores, src=0, group=_HOST_GROUP)
     return scores[0].item(), scores[1].item()
 
 
@@ -381,6 +393,25 @@ def set_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
+def _spawned_train(rank, world_size):
+    """mp.spawn entry point: a rank that raises must go down at once, not hang the rest.
+
+    mp.spawn only reports a rank's traceback after that process has exited, and an
+    ordinary exit with the NCCL group still alive can block in teardown (the group's
+    abort, wandb's atexit flush). Meanwhile every other rank sits in its next collective
+    until the NCCL timeout, so a one-rank crash -- an OOM on a large volume, a dead
+    DataLoader worker -- looked like an NCCL hang with no error anywhere. Print the
+    traceback here and hard-exit, so the parent sees the failure and kills the others.
+    """
+    try:
+        train(rank, world_size)
+    except Exception:
+        print(f"[rank {rank}] training failed:", file=sys.stderr)
+        traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
+
 def main():
     args = cfg.parse_args()
     set_seed(args.seed)
@@ -393,7 +424,7 @@ def main():
             print("WARNING: -distributed with a single visible GPU; set CUDA_VISIBLE_DEVICES "
                   "to the GPUs you want, or drop -distributed")
         print(f"Spawning {world_size} training rank(s) on port {args.master_port}")
-        mp.spawn(train, args=(world_size,), nprocs=world_size, join=True)
+        mp.spawn(_spawned_train, args=(world_size,), nprocs=world_size, join=True)
     else:
         train()
 

@@ -14,6 +14,20 @@
 # conda init
 # conda activate rlsam2
 
+# One rendezvous port per job: submit_jobs.sh launches several -distributed jobs at
+# once, and two of them on one node would otherwise both claim the default 12348.
+MASTER_PORT=$((20000 + ${SLURM_JOB_ID:-0} % 20000))
+
+# If a collective stalls, the NCCL watchdog fails the run after the 30-min timeout in
+# train_3d.setup() and dumps each rank's last collectives (op, size, sequence number) to
+# these files; diffing them shows which rank stopped where.
+mkdir -p ./output/nccl_trace
+export TORCH_NCCL_TRACE_BUFFER_SIZE=2000
+export TORCH_NCCL_DUMP_ON_TIMEOUT=1
+export TORCH_NCCL_DEBUG_INFO_TEMP_FILE=./output/nccl_trace/${SLURM_JOB_ID:-local}_rank_
+export NCCL_DEBUG=WARN
+echo "node $(hostname), job ${SLURM_JOB_ID:-local}, port $MASTER_PORT"
+
 for SEED in 0;
 do
     for FOLD in 1 2 3 4;
@@ -36,7 +50,7 @@ do
         -fold $FOLD -n_folds 5 \
         -seed 0 \
         -wandb_enabled \
-        -distributed
+        -distributed -master_port $MASTER_PORT
     done
 done
     
