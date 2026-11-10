@@ -97,10 +97,10 @@ class MemoryAttentionLayer(nn.Module):
     ) -> torch.Tensor:
 
         # Self-Attn, Cross-Attn
-        # tgt = self._forward_sa(tgt, query_pos)
-        # tgt = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
-        tgt, self_attn = checkpoint(self._forward_sa, tgt, query_pos, need_weights, use_reentrant=False)
-        tgt, cross_attn = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, need_weights, use_reentrant=False)
+        tgt, self_attn = self._forward_sa(tgt, query_pos)
+        tgt, cross_attn = self._forward_ca(tgt, memory, query_pos, pos, num_k_exclude_rope)
+        # tgt, self_attn = checkpoint(self._forward_sa, tgt, query_pos, need_weights, use_reentrant=False)
+        # tgt, cross_attn = checkpoint(self._forward_ca, tgt, memory, query_pos, pos, num_k_exclude_rope, gated_indices, need_weights, use_reentrant=False)
         # MLP
         tgt2 = self.norm3(tgt)
         tgt2 = self.linear2(self.dropout(self.activation(self.linear1(tgt2))))

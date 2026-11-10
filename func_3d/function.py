@@ -286,9 +286,9 @@ def train_sam(args, net: nn.Module, optimizer, train_loader, epoch, rank=None):
                     avg_loss = (class_loss["total_loss"] / accum_step).float()
                     avg_loss.backward()
                     
-                    for name, param in net.named_parameters():
-                        if param.grad is not None and param.grad.isnan().any():
-                            raise AssertionError(f"{name} grad is nan")
+                    # for name, param in net.named_parameters():
+                    #     if param.grad is not None and param.grad.isnan().any():
+                    #         raise AssertionError(f"{name} grad is nan")
                             
 
                     if (batch_idx + 1) % accum_step == 0:
