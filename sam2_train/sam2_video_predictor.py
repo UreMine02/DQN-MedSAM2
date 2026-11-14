@@ -1840,6 +1840,19 @@ class SAM2VideoPredictor(SAM2Base):
                   f"drop_frame {drop_frame} "
                   f"bank_size {bank_size} ")
 
+    def _frame_index_state(self, output_dict, storage_device):
+        """Multi-hot vector marking which frame indices are in the non-cond memory bank."""
+        state_dim = self.agent.state_dim
+        bank_frames = list(output_dict["non_cond_frame_outputs"].keys())
+        if bank_frames and max(bank_frames) >= state_dim:
+            raise ValueError(
+                f"Frame index {max(bank_frames)} does not fit in the agent state (state_dim={state_dim}). "
+                f"Increase `state_dim` in the RL agent config."
+            )
+        state = torch.zeros(1, state_dim, device=storage_device)
+        state[:, bank_frames] = 1
+        return state
+
     def agent_update_first_stage(
         self,
         inference_state,
@@ -1855,8 +1868,7 @@ class SAM2VideoPredictor(SAM2Base):
         bank_full = (bank_size >= inference_state['rl_config']['memory_bank_size'])
         valid_actions = [1] if bank_full else [0, 1]
         valid_actions.extend([i+2 for i in range(bank_size)])
-        state = torch.zeros(1, 80, device=storage_device)
-        state[:, list(output_dict["non_cond_frame_outputs"].keys())] = 1
+        state = self._frame_index_state(output_dict, storage_device)
         with torch.no_grad():
             action_out = self.agent.select_action(
                 state,
@@ -1932,8 +1944,7 @@ class SAM2VideoPredictor(SAM2Base):
 
         loss_after = compute_loss(pred_masks, gt_masks, inference_state)
 
-        next_state = torch.zeros(1, 80, device=storage_device)
-        next_state[:, list(output_dict["non_cond_frame_outputs"].keys())] = 1
+        next_state = self._frame_index_state(output_dict, storage_device)
 
         self.agent.update_await_replay_instance(loss_after=loss_after.detach().cpu(), next_state=next_state)
 

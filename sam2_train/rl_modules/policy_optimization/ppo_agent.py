@@ -19,7 +19,8 @@ class PPOAgent(BasePOAgent):
         device="cpu",
         entropy_weight=0.1,
         epsilon=0.2,
-        sam2_dim={}
+        sam2_dim={},
+        state_dim=80
     ):
         super().__init__(
             num_maskmem=num_maskmem,
@@ -32,10 +33,11 @@ class PPOAgent(BasePOAgent):
             batch_size=batch_size,
             device=device,
             entropy_weight=entropy_weight,
-            sam2_dim=sam2_dim
+            sam2_dim=sam2_dim,
+            state_dim=state_dim
         )
         self.epsilon = epsilon
-        
+
     def clear_buffer(self):
         self.replay_buffer.clear()
         

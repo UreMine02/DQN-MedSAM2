@@ -10,6 +10,7 @@ agent:
   entropy_weight: 1e-4
   epsilon: 0.2
   tau: 0.9
+  state_dim: 320 # must exceed the longest volume's slice count (MSD max is 299); checkpoints trained before this option need 80
   sam2_dim:
     n_query: 32
     image_dim: 256

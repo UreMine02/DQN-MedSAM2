@@ -250,12 +250,15 @@ class BasePOAgent(BaseAgent):
         batch_size=64,
         device="cpu",
         entropy_weight=0.1,
-        sam2_dim={}
+        sam2_dim={},
+        state_dim=80
     ):
         super().__init__(num_maskmem, policy_lr, gamma, beta, buffer_size, batch_size, device)
-        
+
+        # Width of the frame-index state vector: must exceed the largest frame index in any volume
+        self.state_dim = state_dim
         self.policy_net = nn.Sequential(
-            nn.Linear(80,1024),
+            nn.Linear(state_dim,1024),
             nn.Linear(1024,8)
         )
 
