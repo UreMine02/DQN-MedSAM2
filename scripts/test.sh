@@ -16,20 +16,11 @@
 # conda activate rlsam2
 
 declare -a ckpt=(
-    # output/msd_task02+icl+no_agent+long_horizon+no_augment/2026-04-15-19-42-29/best.pth
-    # output/msd_task02+icl+grpo+raw_dice+long_horizon+no_augment/2026-05-06-10-30-25/best.pth
-    # output/msd_task02+icl+random_drop+long_horizon+flip_augment/2026-04-24-12-59-55/best.pth
-    # output/msd_task02+icl+grpo+penalty0.0+long_horizon+no_augment/2026-05-05-14-52-15/best.pth
-    # output/msd_task02+icl+grpo+long_horizon+no_augment+lr2e-4/2026-05-01-07-12-31/best.pth
-    # output/msd_task02+icl+grpo+lazy_pen0.1+long_horizon+flip_augment/2026-04-23-09-52-39/best.pth
-    # output/msd_task02+icl+grpo+lazy_pen1.0+long_horizon+flip_augment/2026-04-23-16-01-08/best.pth
-    # output/msd_task02+icl+ppo+penalty0.001+raw_dice+long_horizon+no_augment/2026-05-09-20-01-30/best.pth
-    # output/msd_task02+icl+ppo+long_horizon+no_augment/2026-07-27-19-40-02/best.pth
-    # output/msd_task02+icl+no_agent/2026-08-08-19-37-19/best.pth
-    output/msd_task02+icl+no_agent/2026-08-08-19-37-19/epoch_50_dice0.8557.pth
+    # output/sarcoma+icl+grpo+long_horizon+lr2e-4+100ep+n_epoch/2026-11-13-01-36-15/best.pth
+    output/sarcoma+icl+no_agent+long_horizon+lr2e-4+100ep/2026-11-13-01-37-55/best.pth
 )
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 for idx in ${!ckpt[@]}
 do
@@ -37,9 +28,9 @@ do
     do
         python eval_3d.py \
             -pretrain ${ckpt[idx]} \
-            -rl_config rl_modules/config/ppo_po_agent.yaml \
-            -dataset msd \
-            -task "Task02" \
+            -rl_config rl_modules/config/grpo_po_agent.yaml \
+            -dataset sarcoma \
+            -task "" \
             -data_path /data/datasets/nii/ \
             -num_support $shot \
             -memory_bank_size 6 \

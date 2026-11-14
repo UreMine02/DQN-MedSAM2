@@ -4,12 +4,13 @@ agent:
   policy_lr: 1e-5
   value_lr: 1e-5
   gamma: 0.99
-  buffer_size: 500
+  buffer_size: 2048
   batch_size: 128
-  entropy_weight: 1e-4
+  entropy_weight: 0.01
   epsilon: 0.2
   tau: 0.99
   range: 1.0
+  min_group_std: 1e-5
   sam2_dim:
     n_query: 32
     image_dim: 256

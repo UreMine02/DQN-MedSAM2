@@ -15,8 +15,8 @@
 # conda init
 # conda activate rlsam2
 
-EXP=sarcoma+icl+grpo+long_horizon+no_augment
-export CUDA_VISIBLE_DEVICES=0
+EXP=sarcoma+icl+grpo+long_horizon+lr2e-4+50ep
+export CUDA_VISIBLE_DEVICES=1
 
 python train_3d.py \
     -exp_name $EXP \
@@ -25,9 +25,9 @@ python train_3d.py \
     -checkpoint_path ./output/$EXP \
     -dataset sarcoma \
     -data_path /data/datasets/nii/ \
-    -lr 1e-4 \
+    -lr 2e-4 \
     -val_freq 1 \
-    -ep 100 \
+    -ep 50 \
     -q_updates_per_step 2 \
     -lazy_penalty 0 \
     -invalid_penalty 0 \

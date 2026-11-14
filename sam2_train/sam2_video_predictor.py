@@ -1126,7 +1126,7 @@ class SAM2VideoPredictor(SAM2Base):
 
         inference_state["support_set_stage"] = False
         processing_order = range(num_frames)
-        print("processing_order: ", processing_order)
+
         for frame_idx in processing_order:
             # We skip those frames already in consolidated outputs (these are frames
             # that received input clicks or mask). Note that we cannot directly run
@@ -1573,6 +1573,17 @@ class SAM2VideoPredictor(SAM2Base):
                     train_agent=train_agent,
                     **track_step_kwargs
                 )
+    def _get_rl_gt_mask(self, inference_state, frame_idx, device):
+        """Binary ground truth of the tracked object on this frame, for the RL reward.
+
+        `gt_masks` holds raw labels whose foreground value is the class id, so it has to
+        be binarized here the same way the SAM2 loss does (`mask == obj_id`). The reward
+        is computed for a single tracked object, hence obj_ids[0].
+        """
+        gt_masks = inference_state["gt_masks"][frame_idx].to(device=device, non_blocking=True)
+        obj_id = inference_state["obj_ids"][0]
+        return (gt_masks == obj_id).to(torch.float32)
+
     @torch.no_grad()
     def generate_rl_steps(
         self,
@@ -1588,9 +1599,15 @@ class SAM2VideoPredictor(SAM2Base):
         **kwargs
     ):
         # compute loss before
+        #
+        # Every reward in a group is a counterfactual on the same frame: same image,
+        # different memory bank. They are compared against each other (and divided by
+        # their spread) in GRPOGroup.finalize, so they must come from the same
+        # deterministic function of the bank. SAM2 runs with dropout under net.train(),
+        # hence deterministic_dropout around each measurement below; see rl_utils.
         loss_before = None
         if train_agent:
-            with torch.no_grad():
+            with torch.no_grad(), deterministic_dropout(self):
                 output_before = self.track_step(
                     frame_idx=frame_idx,
                     current_vision_feats=current_vision_feats,
@@ -1602,8 +1619,7 @@ class SAM2VideoPredictor(SAM2Base):
 
                 pred_masks = output_before["pred_masks"]
                 pred_masks = pred_masks.to(storage_device, non_blocking=True).to(torch.float32)
-                gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-                gt_masks = gt_masks.to(torch.float32)
+                gt_masks = self._get_rl_gt_mask(inference_state, frame_idx, storage_device)
 
                 loss_before = compute_loss(pred_masks, gt_masks, inference_state)
 
@@ -1640,7 +1656,11 @@ class SAM2VideoPredictor(SAM2Base):
 
             actions = action_out["action"]
             log_probs = action_out["log_probs"]
-            for i, (action, log_prob) in enumerate(zip(actions, log_probs)):
+            # The group is sampled with replacement, so an action can appear several
+            # times. The reward is a deterministic function of (frame, action), so it is
+            # measured once per distinct action and shared by its duplicates.
+            reward_by_action = {}
+            for action in dict.fromkeys(actions):
                 reward = 0
                 temp_output_dict = {
                     "cond_frame_outputs": output_dict["cond_frame_outputs"].copy(),
@@ -1665,7 +1685,7 @@ class SAM2VideoPredictor(SAM2Base):
 
                 # print(action, reward)
                 if action != 1:
-                    with torch.no_grad():
+                    with torch.no_grad(), deterministic_dropout(self):
                         output_before = self.track_step(
                             frame_idx=frame_idx,
                             current_vision_feats=current_vision_feats,
@@ -1695,12 +1715,16 @@ class SAM2VideoPredictor(SAM2Base):
                 else:
                     reward += (1 - loss_before.detach().cpu())
 
+                reward_by_action[action] = reward
+
+            for action, log_prob in zip(actions, log_probs):
                 replay_instance_info = {
                     "frame_idx": frame_idx,
                     "state": state,
                     "action": action,
-                    "reward": reward,
+                    "reward": reward_by_action[action],
                     "log_probs": log_prob,
+                    "action_mask": action_out["action_mask"],
                 }
 
                 # print(replay_instance_info["action"], replay_instance_info["reward"])
@@ -1763,8 +1787,8 @@ class SAM2VideoPredictor(SAM2Base):
                     **kwargs
                 )
             pred_masks = output["pred_masks"].to(storage_device, non_blocking=True).to(torch.float32)
-            gt_masks = inference_state["gt_masks"][frame_idx].to(device=storage_device, non_blocking=True)
-            return compute_loss(pred_masks, gt_masks.to(torch.float32), inference_state)
+            gt_masks = self._get_rl_gt_mask(inference_state, frame_idx, storage_device)
+            return compute_loss(pred_masks, gt_masks, inference_state)
 
         loss_before = measure_loss() if train_agent else None
 
@@ -1861,7 +1885,9 @@ class SAM2VideoPredictor(SAM2Base):
         device="cpu"
     ):
         for frame_idx in range(support_masks_tensor.shape[0]):
-            mask = support_masks_tensor[frame_idx]
+            # Labels carry the class id (1, 2, ...), not 0/1; the mask prompt must be
+            # binary or its magnitude would depend on which class is being tracked.
+            mask = (support_masks_tensor[frame_idx] == obj_id).float()
             _, _, _ = self.train_add_new_mask(
                 inference_state=train_state,
                 frame_idx=frame_idx,

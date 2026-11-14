@@ -238,9 +238,10 @@ def load_video_frames_from_data(
         imgs_tensor = imgs_tensor.to(device=device)
         img_mean = img_mean.to(device=device)
         img_std = img_std.to(device=device)
-    # normalize by mean and std
-    imgs_tensor -= img_mean
-    imgs_tensor /= img_std
+    # normalize by mean and std. Out of place on purpose: the caller reuses the same
+    # support tensor for every chunk of a volume, so normalizing in place would
+    # re-normalize it once per chunk.
+    imgs_tensor = (imgs_tensor - img_mean) / img_std
     return imgs_tensor
 
 

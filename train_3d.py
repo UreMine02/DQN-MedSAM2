@@ -54,10 +54,10 @@ def train(rank=0, world_size=0):
         )
 
     net = get_network(args, args.net, use_gpu=args.gpu, gpu_device=GPUdevice, distribution=args.distributed)
-    net.to(dtype=torch.bfloat16)
     agent = getattr(net, "agent", None)
-    if agent is not None:
-        agent.to_dtype(torch.bfloat16)
+    # net.to(dtype=torch.bfloat16)
+    # if agent is not None:
+    #     agent.to_dtype(torch.bfloat16)
         
     if args.wandb_enabled:
         wandb.watch(net)
@@ -101,8 +101,8 @@ def train(rank=0, world_size=0):
 
     param_list = [{'params': head, 'initial_lr': args.lr}]
     optimizer = torch_optim.AdamW(param_list, lr=args.lr, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.01)
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.stop_sam2_ep//10, eta_min=args.lr/10)
-    torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+    scheduler = CosineAnnealingLR(optimizer, T_max=args.ep, eta_min=args.lr/10)
+    torch.autocast(device_type="cuda", dtype=torch.bfloat16, cache_enabled=False).__enter__()
 
     if torch.cuda.get_device_properties(0).major >= 8:
         # turn on tfloat32 for Ampere GPUs (https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices)
@@ -172,7 +172,7 @@ def train(rank=0, world_size=0):
             'train/bce_loss': bce_loss,
             'train/aux_loss': aux_loss,
             "train/actor_loss": agent_loss["actor_loss"],
-            "train/critic_loss": agent_loss["critic_loss"],
+            "train/critic_loss": agent_loss["critic_loss"] if "critic_loss" in agent_loss else 0.0,
             "train/lr": optimizer.param_groups[0]['lr'] if train_sam2 else 0.0,
         }
         # PPO training diagnostics (only present when the agent's update() produced
